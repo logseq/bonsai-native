@@ -20,8 +20,9 @@
  (libraries bonsai_android core bonsai_android_examples)
  (foreign_stubs
   (language c)
-  (names bonsai_android_jni)
+  (names bonsai_android_jni_wrapper)
   (include_dirs
+   ../jni
    %{env:JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}/include
    %{env:JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}/include/darwin))
  (flags :standard -linkall))

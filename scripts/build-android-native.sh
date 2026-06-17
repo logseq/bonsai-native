@@ -5,8 +5,8 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 android_home=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}
 android_abi=${BONSAI_ANDROID_ABI:-arm64-v8a}
-dune_target=${BONSAI_ANDROID_DUNE_TARGET:-android_arm64v8a}
-opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-android34-ndk27-arm64-v8a}
+dune_target=${BONSAI_ANDROID_DUNE_TARGET:-android}
+opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-/Users/tiensonqin/Codes/projects/bonsai-apple}
 native_lib_name=libbonsai_android_counter.so
 out_dir="$repo_root/android/_build/android/jniLibs/$android_abi"
 artifact="$repo_root/_build/default.$dune_target/examples/android_counter_entry.so"
@@ -47,6 +47,7 @@ opam exec --switch="$opam_switch" -- \
 require_file "$artifact" "expected Dune artifact was not produced: $artifact"
 
 mkdir -p "$out_dir"
+rm -f "$out_dir/$native_lib_name"
 cp "$artifact" "$out_dir/$native_lib_name"
 
 echo "Copied $artifact"

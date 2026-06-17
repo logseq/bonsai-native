@@ -8,7 +8,8 @@ static int ocaml_runtime_started = 0;
 
 static void ensure_ocaml_runtime(void) {
   if (!ocaml_runtime_started) {
-    char *argv[] = { "bonsai_android", NULL };
+    static char program_name[] = "bonsai_android";
+    char *argv[] = { program_name, NULL };
     caml_startup(argv);
     ocaml_runtime_started = 1;
   }
@@ -17,9 +18,9 @@ static void ensure_ocaml_runtime(void) {
 JNIEXPORT jstring JNICALL
 Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_renderNative(JNIEnv *env, jobject self) {
   (void)self;
+  ensure_ocaml_runtime();
   CAMLparam0();
   CAMLlocal1(result);
-  ensure_ocaml_runtime();
   const value *callback = caml_named_value("bonsai_android_render");
   if (callback == NULL) {
     CAMLreturnT(
@@ -36,8 +37,8 @@ JNIEXPORT void JNICALL
 Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_dispatchClickNative(JNIEnv *env, jobject self, jint event_id) {
   (void)env;
   (void)self;
-  CAMLparam0();
   ensure_ocaml_runtime();
+  CAMLparam0();
   const value *callback = caml_named_value("bonsai_android_dispatch_click");
   if (callback != NULL) caml_callback(*callback, Val_int(event_id));
   CAMLreturn0;
@@ -50,9 +51,9 @@ Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_dispatchChangeNative(
     jint event_id,
     jstring text) {
   (void)self;
+  ensure_ocaml_runtime();
   CAMLparam0();
   CAMLlocal2(ocaml_text, result);
-  ensure_ocaml_runtime();
   const value *callback = caml_named_value("bonsai_android_dispatch_change");
   if (callback == NULL) CAMLreturn0;
 
