@@ -1,108 +1,84 @@
 # Architecture
 
-`bonsai-android` follows the same split as `bonsai-apple`, with a shared
-OCaml-native layer factored as `bonsai_native`:
+`bonsai-native` keeps the Bonsai programming model and swaps only the rendering
+backend.
 
 ```text
 Bonsai
   -> bonsai_native node tree
   -> renderer + event table
   -> platform bridge
-  -> Android JNI / iOS Camlkit
-  -> Kotlin Compose backend / UIKit backend
-  -> Android native UI
+  -> UIKit / Jetpack Compose
+  -> native Apple / Android UI
 ```
 
-Compose is not the authoring API. It is the Android renderer for OCaml-authored
-nodes.
+## Shared Core
 
-## Shared code
+`native/` is the platform-neutral layer:
 
-The reusable code is:
+- SwiftUI-like node constructors.
+- Modifiers for padding, frame, searchable, toolbar, and sheet.
+- A render bridge that produces platform payloads and a per-render event table.
+- `Bonsai_driver` integration for state, effects, and incremental recomputing.
 
-- `native/`: platform-neutral node DSL, JSON renderer, event table, and
-  `Bonsai_driver` integration.
-- `src/`: Android package facade that currently re-exports `bonsai_native`.
-- `examples/`: OCaml-authored Bonsai components that can be rendered by Android
-  now and iOS later.
+Platform packages should depend on this layer instead of duplicating Bonsai
+state handling.
 
-Future Datascript/SQLite/sync code should live beside `bonsai_native` or in a
-separate OCaml package that both `bonsai_android` and `bonsai_apple` depend on.
+## Backend Packages
 
-## OCaml surface
+`bonsai_android` is the Android facade. Kotlin Compose is the renderer, not the
+authoring API. The UI tree comes from OCaml.
 
-The public OCaml API starts with:
+`bonsai_apple` is the Apple facade. The renderer is backend-agnostic; UIKit and
+AppKit backends implement the backend operations with Camlkit objects.
 
-- `text`
-- `button`
-- `text_field`
-- `vstack`
-- `hstack`
-- `scroll_view`
-- `list`
-- `navigation_stack`
-- `image`
-- `custom_view`
-- `padding`
-- `frame`
-- `searchable`
-- `toolbar`
-- `sheet`
+## Event And State Flow
 
-The API uses `Bonsai.Effect.t` for events, so state, effects, composition, and
-incremental recomputation still belong to Bonsai.
+1. Platform code asks OCaml to render.
+2. OCaml flushes the Bonsai driver and builds the current node tree.
+3. Rendering assigns stable-per-render integer event ids.
+4. The native renderer attaches those ids to widget callbacks.
+5. Platform code dispatches `click` or `change` events back to OCaml.
+6. OCaml looks up the event id, schedules the stored `Bonsai.Effect.t`, and the
+   next render observes the updated Bonsai state.
 
-Android consumes this shared surface through JSON. The Compose backend maps:
-
-- `searchable` to a native `OutlinedTextField` search control.
-- `toolbar` to native Material3 text buttons.
-- `sheet` to a native Material3 modal bottom sheet.
-- `list` to `LazyColumn` so large keyed lists are not eagerly materialized by
-  Compose.
-
-## Event and state flow
-
-`Bonsai_native.App` owns a `Bonsai_driver.t`.
-
-1. Android asks OCaml to render.
-2. OCaml flushes the Bonsai driver and returns JSON for the current node tree.
-3. During rendering, OCaml assigns stable-per-render integer event ids.
-4. Compose renders native widgets and keeps those ids on event callbacks.
-5. Android sends `click` or `change` events back to OCaml through JNI.
-6. OCaml looks up the id, schedules the stored `Bonsai.Effect.t`, and the next
-   render observes the updated Bonsai state.
-
-`Bonsai_native.Bridge.render` produces:
-
-- a JSON node tree for Compose
-- a per-render event table mapping integer ids to Bonsai effects
-
-Kotlin calls:
+Android calls:
 
 - `renderNative() : String`
 - `dispatchClickNative(eventId: Int)`
 - `dispatchChangeNative(eventId: Int, text: String)`
 
-The JNI C shim maps those calls to OCaml callbacks registered by the Android
-entrypoint.
+iOS/AppKit backends should expose the same shape through a retained app driver:
+render, dispatch, flush, update native views.
 
-## Current Android demo
+## Native Mapping
 
-The debug app can run before the Android OCaml `.so` exists. In that mode Gradle
-packages `android/app/src/main/assets/bonsai_counter.json`, which is generated
-from the OCaml counter component by `scripts/generate-android-assets.sh`.
+Android:
 
-This proves the OCaml-authored node tree and Compose renderer contract in the
-Android emulator. Interactive Bonsai state updates require the native `.so`
-path below.
+| bonsai_native | Android |
+| --- | --- |
+| `Text` | Compose `Text` |
+| `Button` | Compose `Button` |
+| `Text_field` | Material `OutlinedTextField` |
+| `VStack` / `HStack` | `Column` / `Row` |
+| `Scroll_view` | vertical scroll container |
+| `List` | `LazyColumn` |
+| `Searchable` | Material text field wrapper |
+| `Sheet` | Material modal bottom sheet |
 
-## Native Android `.so` step
+Apple:
 
-Create an Android OCaml cross switch and build a shared library that links:
+| bonsai_apple | UIKit |
+| --- | --- |
+| `Text` | `UILabel` |
+| `Button` | `UIButton` |
+| `Text_field` | `UITextField` |
+| `VStack` / `HStack` | `UIStackView` |
+| `Scroll_view` | `UIScrollView` |
+| `List` | `UITableView` |
+| `Navigation_stack` | `UINavigationController` |
+| `Searchable` | `UISearchController` |
 
-- OCaml runtime
-- `bonsai_android`
-- app component
-- `jni/bonsai_android_jni.c`
-
-Then copy the resulting `.so` into Gradle's `jniLibs` directory.
+Future core logic such as SQLite-backed Datascript state, sync, and domain
+effects should live in shared OCaml packages above `bonsai_native`, then be used
+by both platform backends.

@@ -11,7 +11,7 @@ Build Jane Street OCaml packages for the opam-cross-android target toolchain and
 install them into the switch's android-sysroot findlib tree.
 
 Options:
-  --switch NAME        Opam switch to use. Default: /Users/tiensonqin/Codes/projects/bonsai-apple
+  --switch NAME        Opam switch to use. Default: repository-local switch
   --workspace PATH     Dune workspace to use. Default: dune-workspace.basement-flags
   --jobs N             Dune build jobs. Default: 1
   --clean              Run dune clean before each package build
@@ -25,7 +25,8 @@ Bonsai counter example is used.
 EOF
 }
 
-switch_name=${BONSAI_ANDROID_OPAM_SWITCH:-/Users/tiensonqin/Codes/projects/bonsai-apple}
+repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+switch_name=${BONSAI_ANDROID_OPAM_SWITCH:-${BONSAI_NATIVE_OPAM_SWITCH:-$repo_root}}
 workspace=${BONSAI_ANDROID_WORKSPACE:-dune-workspace.basement-flags}
 dune_jobs=${BONSAI_ANDROID_DUNE_JOBS:-1}
 clean=false
@@ -89,7 +90,6 @@ while (($# > 0)); do
   esac
 done
 
-repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 if [[ $workspace != /* ]]; then
   workspace=$repo_root/$workspace
 fi

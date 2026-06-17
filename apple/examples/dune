@@ -1,0 +1,100 @@
+(executables
+ (names counter todo searchable_list navigation)
+ (modules counter todo searchable_list navigation)
+ (enabled_if
+  (not
+   (or
+    (= %{context_name} device.ios)
+    (= %{context_name} simulator.ios)
+    (= %{context_name} simulator-arm.ios)
+    (= %{context_name} catalyst.ios))))
+ (libraries bonsai_apple core)
+ (preprocess
+  (pps ppx_jane bonsai.ppx_bonsai)))
+
+(executable
+ (name ios_app)
+ (modules ios_app counter todo searchable_list)
+ (enabled_if
+  (or
+   (= %{context_name} device.ios)
+   (= %{context_name} simulator.ios)
+   (= %{context_name} simulator-arm.ios)
+   (= %{context_name} catalyst.ios)))
+ (flags
+  :standard
+  -ccopt
+  "-target"
+  -ccopt
+  "%{env:IOS_TARGET=arm64-apple-ios17.0-simulator}"
+  -ccopt
+  "-arch"
+  -ccopt
+  "%{env:IOS_ARCH=arm64}"
+  -ccopt
+  "-isysroot"
+  -ccopt
+  "%{env:IOS_SDKROOT=/Applications/Xcode.app/Contents/Developer/Platforms/iPhoneSimulator.platform/Developer/SDKs/iPhoneSimulator26.0.sdk}"
+  -ccopt
+  "-miphoneos-version-min=17.0"
+  -ccopt
+  "-framework UIKit"
+  -ccopt
+  "-framework Security")
+ (libraries
+  bonsai_apple
+  bonsai_apple_uikit
+  core
+  camlkit-base.CoreGraphics
+  camlkit-base.Foundation
+  camlkit-gui.UIKit)
+ (preprocess
+  (pps ppx_jane bonsai.ppx_bonsai)))
+
+(subdir
+ BonsaiNativeCounter.app
+ (rule
+  (alias default)
+  (deps ../Info.plist ../ios_app.exe)
+  (targets Info.plist BonsaiNativeCounter)
+  (enabled_if
+   (or
+    (= %{context_name} device.ios)
+    (= %{context_name} simulator.ios)
+    (= %{context_name} simulator-arm.ios)
+    (= %{context_name} catalyst.ios)))
+  (action
+   (progn
+    (copy ../Info.plist Info.plist)
+    (copy ../ios_app.exe BonsaiNativeCounter)
+    (run
+     codesign
+     --force
+     --sign
+     %{env:CODESIGN_IDENTITY=20C6BAC6D27E2CC8D07385E763D2618774727C50}
+     --timestamp=none
+     BonsaiNativeCounter)))))
+
+(subdir
+ BonsaiNativeDemos.app
+ (rule
+  (alias default)
+  (deps ../Info.demos.plist ../ios_app.exe)
+  (targets Info.plist BonsaiNativeDemos)
+  (enabled_if
+   (or
+    (= %{context_name} device.ios)
+    (= %{context_name} simulator.ios)
+    (= %{context_name} simulator-arm.ios)
+    (= %{context_name} catalyst.ios)))
+  (action
+   (progn
+    (copy ../Info.demos.plist Info.plist)
+    (copy ../ios_app.exe BonsaiNativeDemos)
+    (run
+     codesign
+     --force
+     --sign
+     %{env:CODESIGN_IDENTITY=20C6BAC6D27E2CC8D07385E763D2618774727C50}
+     --timestamp=none
+     BonsaiNativeDemos)))))

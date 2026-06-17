@@ -14,5 +14,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "bonsai-android"
+rootProject.name = "bonsai-native"
 include(":app")

@@ -1,0 +1,19 @@
+*** src/dune.orig
+--- src/dune
+***************
+*** 23,38 ****
+- (rule
+-  (targets ast_pattern_generated.ml)
+-  (deps gen/gen_ast_pattern.exe)
+-  (action
+-   (run ./gen/gen_ast_pattern.exe %{lib:ppxlib.ast:ast.ml})))
+- 
+- (rule
+-  (targets ast_builder_generated.ml)
+-  (deps gen/gen_ast_builder.exe)
+-  (action
+-   (run ./gen/gen_ast_builder.exe %{lib:ppxlib.ast:ast.ml})))
+- 
+  (ocamllex skip_hash_bang)
+--- 23,28 ----
+  (ocamllex skip_hash_bang)

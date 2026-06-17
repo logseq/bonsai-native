@@ -6,7 +6,7 @@ repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 android_home=${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$HOME/Library/Android/sdk}}
 android_abi=${BONSAI_ANDROID_ABI:-arm64-v8a}
 dune_target=${BONSAI_ANDROID_DUNE_TARGET:-android}
-opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-/Users/tiensonqin/Codes/projects/bonsai-apple}
+opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-${BONSAI_NATIVE_OPAM_SWITCH:-$repo_root}}
 native_lib_name=libbonsai_android_counter.so
 out_dir="$repo_root/android/_build/android/jniLibs/$android_abi"
 artifact="$repo_root/_build/default.$dune_target/examples/android_counter_entry.so"
@@ -27,12 +27,11 @@ if ! opam switch list --short | grep -qx "$opam_switch"; then
 error: missing opam switch '$opam_switch'
 
 Create an Android OCaml cross switch first. The currently viable upstream path
-is DkML's Android cross compiler, for example an arm64-v8a switch named:
+is logseq/opam-cross-android with OCaml 5.2.1, for example a repo-local switch:
 
   $opam_switch
 
-See docs/android-native-build.md for the exact bootstrap notes and the current
-Bonsai/OCaml-version constraint.
+See docs/android-native-build.md for the bootstrap commands.
 EOF
   exit 1
 fi

@@ -1,0 +1,49 @@
+--- core_unix/src/core_unix_stubs.c
++++ core_unix/src/core_unix_stubs.c
+@@
+ #if defined(__APPLE__)
+ #define _POSIX_SOURCE
++#include <TargetConditionals.h>
+ #include <sys/socket.h>
+ #include <xlocale.h>
+ #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
+ #include <sys/socket.h>
+ #endif
+@@
+ #include "timespec.h"
+ #include "thread_id.h"
+ 
++#if defined(__APPLE__) && TARGET_OS_IPHONE
++#define JSC_TARGET_IOS 1
++#endif
++
+ #if defined(JSC_WORDEXP)
+ #include <wordexp.h>
+ #endif
+@@
+ CAMLprim value core_unix_clock_settime(value v_cl, value v_t) {
++#if defined(JSC_TARGET_IOS)
++  errno = ENOSYS;
++  uerror("clock_settime", Nothing);
++#else
+   struct timespec ts = timespec_of_double(Double_val(v_t));
+   if (clock_settime(clockid_t_val(v_cl), &ts))
+     uerror("clock_settime", Nothing);
++#endif
+   return Val_unit;
+ }
+@@
+ CAMLprim value core_unix_wordexp(value v_flags, value v_str) {
+   CAMLparam0();
++#if defined(JSC_TARGET_IOS)
++  unix_error(ENOSYS, "wordexp", v_str);
++#else
+   CAMLlocal1(v_res);
+   int flags = Int32_val(v_flags);
+   unsigned int i, len = caml_string_length(v_str) + 1;
+@@
+   default:
+     caml_failwith("wordexp: impossible");
+   }
++#endif
+ }

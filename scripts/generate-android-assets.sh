@@ -4,7 +4,7 @@ set -euo pipefail
 
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 asset_dir="$repo_root/android/app/src/main/assets"
-opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-/Users/tiensonqin/Codes/projects/bonsai-apple}
+opam_switch=${BONSAI_ANDROID_OPAM_SWITCH:-${BONSAI_NATIVE_OPAM_SWITCH:-$repo_root}}
 
 mkdir -p "$asset_dir"
 opam exec --switch="$opam_switch" -- \

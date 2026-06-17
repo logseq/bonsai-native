@@ -1,8 +1,35 @@
-# bonsai-android
+# bonsai-native
 
-Native Android UI experiments for Bonsai.
+`bonsai-native` is an OCaml native UI experiment for building iOS and Android
+apps with the Bonsai programming model.
 
-The UI is authored in OCaml:
+The app UI is authored in OCaml. Platform code is only the renderer bridge:
+
+```text
+Bonsai component
+  -> bonsai_native node tree
+  -> platform renderer + event table
+  -> Android JNI / iOS Camlkit
+  -> Jetpack Compose / UIKit
+  -> native app UI
+```
+
+This is not a WebView and not a SwiftUI wrapper.
+
+## Packages
+
+- `bonsai_native`: shared OCaml node DSL, JSON/event bridge, and Bonsai driver
+  integration.
+- `bonsai_android`: Android facade over `bonsai_native`; rendered by Kotlin
+  Compose through JNI.
+- `bonsai_apple`: iOS/macOS-facing API and renderer abstractions; UIKit backend
+  lives under `apple/uikit`.
+
+Backend package names intentionally remain explicit. Existing Android code can
+continue to open `Bonsai_android`, and iOS code can continue to open
+`Bonsai_apple`.
+
+## OCaml UI Example
 
 ```ocaml
 let component graph =
@@ -15,117 +42,77 @@ let component graph =
     ]
 ```
 
-Kotlin/Jetpack Compose is only the Android rendering backend. It consumes the
-OCaml node tree and sends event ids back to OCaml through JNI.
+On Android, Compose receives a native node tree JSON payload and sends event ids
+back to OCaml through JNI. OCaml owns the Bonsai driver and event table, so
+state updates are still Bonsai effects.
 
-## Current status
+## Repository Layout
 
-- Shared OCaml DSL and Android node JSON bridge are implemented in
-  `bonsai_native`.
-- Jetpack Compose host renders the node JSON contract.
-- JNI names are defined for an OCaml-produced native library and dispatch
-  events back through the Bonsai driver.
-- Android Gradle app builds and runs without the OCaml `.so` by rendering an
-  OCaml-generated fallback asset.
+- `native/`: shared `bonsai_native` implementation.
+- `src/`: Android OCaml facade.
+- `android/`: Gradle/Compose demo app.
+- `jni/`: Android JNI bridge into OCaml.
+- `apple/`: Apple OCaml package, UIKit backend, and iOS examples.
+- `examples/`: shared Android counter entrypoint and smoke examples.
+- `scripts/`: Android and iOS bootstrap/build helpers.
+- `docs/`: architecture and platform build notes.
 
-The missing production step is an Android OCaml cross switch that builds
-`libbonsai_android_counter.so` and copies it into:
+## Android Quick Check
+
+Use a switch with the Android cross compiler and Jane preview packages. The
+current working path is documented in
+[docs/android-native-build.md](docs/android-native-build.md).
+
+```sh
+export BONSAI_NATIVE_OPAM_SWITCH=/path/to/your/ocaml-android-switch
+
+scripts/build-android-native.sh
+cd android
+rtk proxy ./gradlew :app:assembleDebug
+```
+
+The debug APK should contain:
 
 ```text
-android/_build/android/jniLibs/arm64-v8a/libbonsai_android_counter.so
+lib/arm64-v8a/libbonsai_android_counter.so
 ```
 
-See [docs/android-native-build.md](docs/android-native-build.md) for the native
-build path and current OCaml/Bonsai toolchain constraint.
-
-## Build checks
-
-OCaml host smoke build:
-
-```sh
-export BONSAI_ANDROID_OPAM_SWITCH=/Users/tiensonqin/Codes/projects/bonsai-apple
-opam exec --switch="$BONSAI_ANDROID_OPAM_SWITCH" -- dune build
-```
-
-Regenerate the checked Android fallback asset from the OCaml counter:
-
-```sh
-BONSAI_ANDROID_OPAM_SWITCH=/Users/tiensonqin/Codes/projects/bonsai-apple \
-  scripts/generate-android-assets.sh
-```
-
-Android shell build:
-
-```sh
-cd android
-./gradlew :app:assembleDebug
-```
-
-Host shared-object shape check:
-
-```sh
-opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
-  dune build examples/android_counter_entry.so
-nm -gU _build/default/examples/android_counter_entry.so | rg 'Java_com_logseq'
-```
-
-OCaml Bonsai event smoke check:
-
-```sh
-opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
-  dune exec examples/counter_interaction_smoke.exe
-```
-
-Shared surface smoke check:
-
-```sh
-opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
-  dune exec examples/shared_surface_smoke.exe
-```
-
-Emulator smoke test:
+Run the emulator smoke test:
 
 ```sh
 scripts/test-android-emulator.sh
 ```
 
-The default AVD is `Medium_Phone_API_36.1`. Override it with:
+It installs the APK, launches the counter, taps `Increment`, and verifies the UI
+changes from `Count: 0` to `Count: 1`.
+
+## iOS Quick Check
+
+The iOS package is under `apple/` and builds through Camlkit/opam-cross-ios
+contexts. See [docs/apple-native-build.md](docs/apple-native-build.md).
+
+The simulator app target is:
 
 ```sh
-BONSAI_ANDROID_AVD=<your-avd-name> scripts/test-android-emulator.sh
+opam exec -- dune build apple/examples/BonsaiNativeDemos.app \
+  --workspace dune-workspace.simulator
 ```
 
-If `emulator -list-avds` hangs or `sdkmanager` is missing, install/repair the
-official Android command-line tools in `$ANDROID_HOME/cmdline-tools/latest` and
-then run:
+## Status
 
-```sh
-yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses
-"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "emulator"
-```
+Working now:
 
-## Architecture
+- Shared OCaml DSL for text, button, text fields, stacks, scroll views, keyed
+  lists, navigation stacks, images, custom views, and common modifiers.
+- Android JNI native library built with OCaml 5.2.1, Core, Bonsai, and
+  `bonsai.ppx_bonsai`.
+- Android Compose renderer loads real native OCaml state and dispatches clicks
+  back into Bonsai.
+- Apple source/backend scaffolding is included in the same repo.
 
-```mermaid
-flowchart TD
-  A["OCaml Bonsai component"] --> B["Bonsai_android.node"]
-  B --> C["Bridge.render JSON + event table"]
-  C --> D["JNI renderNative / dispatch"]
-  D --> E["Kotlin Compose renderer"]
-  E --> F["Native Android Views"]
-```
+Still early:
 
-This keeps app UI in OCaml while still using real native Compose widgets on
-Android.
-
-## Native event path
-
-When `libbonsai_android_counter.so` is present, Android calls:
-
-- `renderNative()` to get the current Bonsai-rendered node tree.
-- `dispatchClickNative(eventId)` for button events.
-- `dispatchChangeNative(eventId, text)` for text field events.
-
-OCaml owns the event table and schedules `Bonsai.Effect.t` values on the
-`Bonsai_driver`. The next render flushes the driver and sends the updated tree
-back to Compose.
+- Android release-size optimization.
+- More complete iOS packaging automation.
+- AppKit backend.
+- Shared persistence/sync packages above the UI layer.
