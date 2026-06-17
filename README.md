@@ -35,6 +35,9 @@ The missing production step is an Android OCaml cross switch that builds
 android/_build/android/jniLibs/arm64-v8a/libbonsai_android_counter.so
 ```
 
+See [docs/android-native-build.md](docs/android-native-build.md) for the native
+build path and current OCaml/Bonsai toolchain constraint.
+
 ## Build checks
 
 OCaml host smoke build:
@@ -56,6 +59,21 @@ Android shell build:
 ```sh
 cd android
 ./gradlew :app:assembleDebug
+```
+
+Host shared-object shape check:
+
+```sh
+opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
+  dune build examples/android_counter_entry.so
+nm -gU _build/default/examples/android_counter_entry.so | rg 'Java_com_logseq'
+```
+
+OCaml Bonsai event smoke check:
+
+```sh
+opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
+  dune exec examples/counter_interaction_smoke.exe
 ```
 
 Emulator smoke test:
