@@ -40,11 +40,25 @@ The public OCaml API starts with:
 - `hstack`
 - `scroll_view`
 - `list`
+- `navigation_stack`
+- `image`
+- `custom_view`
 - `padding`
 - `frame`
+- `searchable`
+- `toolbar`
+- `sheet`
 
 The API uses `Bonsai.Effect.t` for events, so state, effects, composition, and
 incremental recomputation still belong to Bonsai.
+
+Android consumes this shared surface through JSON. The Compose backend maps:
+
+- `searchable` to a native `OutlinedTextField` search control.
+- `toolbar` to native Material3 text buttons.
+- `sheet` to a native Material3 modal bottom sheet.
+- `list` to `LazyColumn` so large keyed lists are not eagerly materialized by
+  Compose.
 
 ## Event and state flow
 

@@ -76,6 +76,13 @@ opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
   dune exec examples/counter_interaction_smoke.exe
 ```
 
+Shared surface smoke check:
+
+```sh
+opam exec --switch=/Users/tiensonqin/Codes/projects/bonsai-apple -- \
+  dune exec examples/shared_surface_smoke.exe
+```
+
 Emulator smoke test:
 
 ```sh

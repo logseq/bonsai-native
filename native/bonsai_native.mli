@@ -16,6 +16,12 @@ type frame =
   }
 [@@deriving sexp_of]
 
+type toolbar_item =
+  { id : string
+  ; title : string
+  ; on_click : unit Effect.t
+  }
+
 type node
 
 val text : string -> node
@@ -31,8 +37,20 @@ val vstack : ?spacing:float -> node list -> node
 val hstack : ?spacing:float -> node list -> node
 val scroll_view : node -> node
 val list : 'a list -> key:('a -> string) -> row:('a -> node) -> node
+val navigation_stack : node list -> node
+val image : string -> node
+val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
 val frame : ?width:float -> ?height:float -> node -> node
+val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
+val toolbar_item : id:string -> title:string -> on_click:unit Effect.t -> toolbar_item
+val toolbar : toolbar_item list -> node -> node
+val sheet
+  :  is_presented:bool
+  -> content:node
+  -> ?on_dismiss:unit Effect.t
+  -> node
+  -> node
 
 module Bridge : sig
   type t

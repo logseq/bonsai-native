@@ -7,8 +7,8 @@
   (pps ppx_jane bonsai.ppx_bonsai)))
 
 (executables
- (names counter export_counter_json counter_interaction_smoke)
- (modules counter export_counter_json counter_interaction_smoke)
+ (names counter export_counter_json counter_interaction_smoke shared_surface_smoke)
+ (modules counter export_counter_json counter_interaction_smoke shared_surface_smoke)
  (libraries bonsai_android core bonsai_android_examples)
  (preprocess
   (pps ppx_jane bonsai.ppx_bonsai)))

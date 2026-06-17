@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -16,10 +17,13 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -47,9 +51,94 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BonsaiNode(node: JSONObject, refresh: () -> Unit) {
-    val modifier = node.optJSONArray("modifiers").toModifier()
+    val modifiers = node.optJSONArray("modifiers")
+    BonsaiModifierWrappers(modifiers = modifiers, index = 0, refresh = refresh) {
+        BonsaiNodeContent(node = node, modifier = modifiers.toLayoutModifier(), refresh = refresh)
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun BonsaiModifierWrappers(
+    modifiers: JSONArray?,
+    index: Int,
+    refresh: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    if (modifiers == null || index >= modifiers.length()) {
+        content()
+        return
+    }
+
+    val item = modifiers.getJSONObject(index)
+    when (item.getString("type")) {
+        "searchable" -> {
+            val eventId = item.getInt("eventId")
+            var value by remember(eventId, item.optString("text")) {
+                mutableStateOf(item.optString("text"))
+            }
+            Column {
+                OutlinedTextField(
+                    modifier = Modifier.fillMaxWidth(),
+                    value = value,
+                    singleLine = true,
+                    placeholder = { Text("Search") },
+                    onValueChange = {
+                        value = it
+                        BonsaiAndroidNative.dispatchChange(eventId, it)
+                        refresh()
+                    },
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+            }
+        }
+        "toolbar" -> {
+            Column {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    val items = item.getJSONArray("items")
+                    for (itemIndex in 0 until items.length()) {
+                        val toolbarItem = items.getJSONObject(itemIndex)
+                        TextButton(
+                            onClick = {
+                                BonsaiAndroidNative.dispatchClick(toolbarItem.getInt("eventId"))
+                                refresh()
+                            },
+                        ) {
+                            Text(toolbarItem.getString("title"))
+                        }
+                    }
+                }
+                BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+            }
+        }
+        "sheet" -> {
+            BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+            if (item.optBoolean("isPresented", false)) {
+                ModalBottomSheet(
+                    onDismissRequest = {
+                        if (!item.isNull("dismissEventId")) {
+                            BonsaiAndroidNative.dispatchClick(item.getInt("dismissEventId"))
+                        }
+                        refresh()
+                    },
+                ) {
+                    BonsaiNode(item.getJSONObject("content"), refresh)
+                }
+            }
+        }
+        else -> BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+    }
+}
+
+@Composable
+private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () -> Unit) {
     when (node.getString("type")) {
         "text" -> Text(text = node.getString("text"), modifier = modifier)
         "button" -> {
@@ -112,10 +201,20 @@ private fun BonsaiNode(node: JSONObject, refresh: () -> Unit) {
                 }
             }
         }
+        "navigationStack" -> {
+            Column(modifier = modifier) {
+                val children = node.getJSONArray("children")
+                for (index in 0 until children.length()) {
+                    BonsaiNode(children.getJSONObject(index), refresh)
+                }
+            }
+        }
+        "image" -> Text(text = node.getString("name"), modifier = modifier)
+        "customView" -> Text(text = node.getString("kind"), modifier = modifier)
     }
 }
 
-private fun JSONArray?.toModifier(): Modifier {
+private fun JSONArray?.toLayoutModifier(): Modifier {
     var modifier: Modifier = Modifier
     if (this == null) return modifier
     forEachObject { item ->

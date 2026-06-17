@@ -16,6 +16,12 @@ type frame =
   }
 [@@deriving sexp_of]
 
+type toolbar_item =
+  { id : string
+  ; title : string
+  ; on_click : unit Effect.t
+  }
+
 type node =
   | Text of string
   | Button of
@@ -34,6 +40,12 @@ type node =
       }
   | Scroll_view of node
   | List of keyed_node list
+  | Navigation_stack of node list
+  | Image of string
+  | Custom_view of
+      { key : string option
+      ; kind : string
+      }
   | Modified of modifier * node
 
 and keyed_node =
@@ -44,6 +56,16 @@ and keyed_node =
 and modifier =
   | Padding of edge_insets
   | Frame of frame
+  | Searchable of
+      { text : string
+      ; on_change : string -> unit Effect.t
+      }
+  | Toolbar of toolbar_item list
+  | Sheet of
+      { is_presented : bool
+      ; content : node
+      ; on_dismiss : unit Effect.t option
+      }
 
 let text value = Text value
 let button title ~on_click = Button { title; on_click }
@@ -55,6 +77,9 @@ let text_field ?placeholder ~text ~on_change () =
 let vstack ?spacing children = Stack { axis = `Vertical; spacing; children }
 let hstack ?spacing children = Stack { axis = `Horizontal; spacing; children }
 let scroll_view child = Scroll_view child
+let navigation_stack children = Navigation_stack children
+let image name = Image name
+let custom_view ?key ~kind () = Custom_view { key; kind }
 
 let list rows ~key ~row =
   let seen = String.Hash_set.create () in
@@ -69,6 +94,14 @@ let list rows ~key ~row =
 let default_insets = { top = 8.; start = 8.; bottom = 8.; end_ = 8. }
 let padding ?(insets = default_insets) node = Modified (Padding insets, node)
 let frame ?width ?height node = Modified (Frame { width; height }, node)
+
+let searchable ~text ~on_change node = Modified (Searchable { text; on_change }, node)
+let toolbar_item ~id ~title ~on_click = { id; title; on_click }
+let toolbar items node = Modified (Toolbar items, node)
+
+let sheet ~is_presented ~content ?on_dismiss node =
+  Modified (Sheet { is_presented; content; on_dismiss }, node)
+;;
 
 module Bridge = struct
   type event_handler =
@@ -99,6 +132,7 @@ module Bridge = struct
   let field name value = sprintf "\"%s\":%s" name value
   let object_ fields = sprintf "{%s}" (String.concat fields ~sep:",")
   let array values = sprintf "[%s]" (String.concat values ~sep:",")
+  let bool value = if value then "true" else "false"
 
   let float value =
     let value = Float.to_string value in
@@ -116,23 +150,6 @@ module Bridge = struct
       let node, modifiers = unwrap_modifiers node in
       node, modifier :: modifiers
     | node -> node, []
-  ;;
-
-  let render_modifier = function
-    | Padding { top; start; bottom; end_ } ->
-      object_
-        [ field "type" (string "padding")
-        ; field "top" (float top)
-        ; field "start" (float start)
-        ; field "bottom" (float bottom)
-        ; field "end" (float end_)
-        ]
-    | Frame { width; height } ->
-      object_
-        [ field "type" (string "frame")
-        ; field "width" (option_float width)
-        ; field "height" (option_float height)
-        ]
   ;;
 
   let render ~schedule_event node =
@@ -195,7 +212,71 @@ module Bridge = struct
                     object_ [ field "key" (string key); field "node" (render_node node) ])))
           ; modifier_field
           ]
+      | Navigation_stack children ->
+        object_
+          [ field "type" (string "navigationStack")
+          ; field "children" (array (List.map children ~f:render_node))
+          ; modifier_field
+          ]
+      | Image name ->
+        object_
+          [ field "type" (string "image"); field "name" (string name); modifier_field ]
+      | Custom_view { key; kind } ->
+        object_
+          [ field "type" (string "customView")
+          ; field "kind" (string kind)
+          ; field "key" (Option.value_map key ~default:"null" ~f:string)
+          ; modifier_field
+          ]
       | Modified _ -> assert false
+    and render_modifier = function
+      | Padding { top; start; bottom; end_ } ->
+        object_
+          [ field "type" (string "padding")
+          ; field "top" (float top)
+          ; field "start" (float start)
+          ; field "bottom" (float bottom)
+          ; field "end" (float end_)
+          ]
+      | Frame { width; height } ->
+        object_
+          [ field "type" (string "frame")
+          ; field "width" (option_float width)
+          ; field "height" (option_float height)
+          ]
+      | Searchable { text; on_change } ->
+        let event_id = register (Change on_change) in
+        object_
+          [ field "type" (string "searchable")
+          ; field "text" (string text)
+          ; field "eventId" (Int.to_string event_id)
+          ]
+      | Toolbar items ->
+        object_
+          [ field "type" (string "toolbar")
+          ; field
+              "items"
+              (array
+                 (List.map items ~f:(fun { id; title; on_click } ->
+                    let event_id = register (Click on_click) in
+                    object_
+                      [ field "id" (string id)
+                      ; field "title" (string title)
+                      ; field "eventId" (Int.to_string event_id)
+                      ])))
+          ]
+      | Sheet { is_presented; content; on_dismiss } ->
+        object_
+          [ field "type" (string "sheet")
+          ; field "isPresented" (bool is_presented)
+          ; field "content" (render_node content)
+          ; field
+              "dismissEventId"
+              (Option.value_map
+                 on_dismiss
+                 ~default:"null"
+                 ~f:(fun effect -> register (Click effect) |> Int.to_string))
+          ]
     in
     { json = render_node node; schedule_event; handlers }
   ;;
