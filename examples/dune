@@ -1,7 +1,7 @@
 (library
  (name bonsai_android_examples)
  (wrapped false)
- (modules counter_component)
+ (modules android_demo_components counter_component)
  (libraries bonsai_android core)
  (preprocess
   (pps ppx_jane bonsai.ppx_bonsai)))

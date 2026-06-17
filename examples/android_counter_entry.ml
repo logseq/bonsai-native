@@ -1,17 +1,32 @@
 open! Core
 
-let app =
-  lazy
-    (Bonsai_android.App.create
-       ~time_source:(Bonsai.Time_source.create ~start:Time_ns.epoch)
-       Counter_component.component)
+let app_by_id =
+  let table = String.Table.create () in
+  List.iter Android_demo_components.metadata ~f:(fun (id, _) ->
+    Hashtbl.set
+      table
+      ~key:id
+      ~data:
+        (lazy
+          (Bonsai_android.App.create
+             ~time_source:(Bonsai.Time_source.create ~start:Time_ns.epoch)
+             (Android_demo_components.component_by_id id))));
+  table
 ;;
 
-let render () = Bonsai_android.App.render_json (Lazy.force app)
-let dispatch_click event_id = Bonsai_android.App.dispatch_click (Lazy.force app) event_id
+let app_for demo_id =
+  let demo_id = Android_demo_components.normalize_id demo_id in
+  Hashtbl.find_exn app_by_id demo_id |> Lazy.force
+;;
 
-let dispatch_change event_id text =
-  Bonsai_android.App.dispatch_change (Lazy.force app) event_id ~text
+let render demo_id = Bonsai_android.App.render_json (app_for demo_id)
+
+let dispatch_click demo_id event_id =
+  Bonsai_android.App.dispatch_click (app_for demo_id) event_id
+;;
+
+let dispatch_change demo_id event_id text =
+  Bonsai_android.App.dispatch_change (app_for demo_id) event_id ~text
 ;;
 
 let () =

@@ -9,11 +9,11 @@ let () =
       Counter_component.component
   in
   let before = Bonsai_android.App.render_json app in
-  if not (contains before ~substring:"Count: 0")
-  then failwithf "expected initial render to contain Count: 0, got: %s" before ();
+  if not (contains before ~substring:{|"text":"0"|})
+  then failwithf "expected initial render to contain counter text 0, got: %s" before ();
   Bonsai_android.App.dispatch_click app 1;
   let after = Bonsai_android.App.render_json app in
-  if not (contains after ~substring:"Count: 1")
-  then failwithf "expected click dispatch to contain Count: 1, got: %s" after ();
+  if not (contains after ~substring:{|"text":"1"|})
+  then failwithf "expected click dispatch to contain counter text 1, got: %s" after ();
   print_endline after
 ;;

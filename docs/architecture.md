@@ -44,9 +44,13 @@ AppKit backends implement the backend operations with Camlkit objects.
 
 Android calls:
 
-- `renderNative() : String`
-- `dispatchClickNative(eventId: Int)`
-- `dispatchChangeNative(eventId: Int, text: String)`
+- `renderNative(demoId: String) : String`
+- `dispatchClickNative(demoId: String, eventId: Int)`
+- `dispatchChangeNative(demoId: String, eventId: Int, text: String)`
+
+The Android demo keeps one Bonsai driver per demo id (`counter`, `todo`,
+`search`) so tab-local state and event tables remain isolated while the Kotlin
+renderer stays generic.
 
 iOS/AppKit backends should expose the same shape through a retained app driver:
 render, dispatch, flush, update native views.

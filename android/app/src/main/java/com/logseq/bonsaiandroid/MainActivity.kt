@@ -3,6 +3,7 @@ package com.logseq.bonsaiandroid
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -22,6 +23,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Tab
+import androidx.compose.material3.TabRow
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -40,29 +43,79 @@ class MainActivity : ComponentActivity() {
         setContent {
             MaterialTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
-                    var treeJson by remember { mutableStateOf(BonsaiAndroidNative.render(this)) }
-                    BonsaiNode(
-                        node = JSONObject(treeJson),
-                        refresh = { treeJson = BonsaiAndroidNative.render(this) },
-                    )
+                    BonsaiDemoApp(activity = this)
                 }
             }
         }
     }
 }
 
+private data class DemoScreen(val id: String, val title: String)
+
+private val demoScreens = listOf(
+    DemoScreen("counter", "Counter"),
+    DemoScreen("todo", "Todo"),
+    DemoScreen("search", "Search"),
+)
+
+@Composable
+private fun BonsaiDemoApp(activity: ComponentActivity) {
+    var selectedIndex by remember { mutableStateOf(0) }
+    val selectedDemo = demoScreens[selectedIndex]
+    var treeJson by remember {
+        mutableStateOf(BonsaiAndroidNative.render(activity, selectedDemo.id))
+    }
+
+    fun refresh() {
+        treeJson = BonsaiAndroidNative.render(activity, selectedDemo.id)
+    }
+
+    fun selectDemo(index: Int, screen: DemoScreen) {
+        selectedIndex = index
+        treeJson = BonsaiAndroidNative.render(activity, screen.id)
+    }
+
+    Column(modifier = Modifier.fillMaxSize()) {
+        TabRow(selectedTabIndex = selectedIndex) {
+            demoScreens.forEachIndexed { index, screen ->
+                Tab(
+                    selected = selectedIndex == index,
+                    onClick = { selectDemo(index, screen) },
+                    text = {
+                        Text(
+                            text = screen.title,
+                            modifier = Modifier.clickable { selectDemo(index, screen) },
+                        )
+                    },
+                )
+            }
+        }
+        BonsaiNode(
+            demoId = selectedDemo.id,
+            node = JSONObject(treeJson),
+            refresh = ::refresh,
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun BonsaiNode(node: JSONObject, refresh: () -> Unit) {
+private fun BonsaiNode(demoId: String, node: JSONObject, refresh: () -> Unit) {
     val modifiers = node.optJSONArray("modifiers")
-    BonsaiModifierWrappers(modifiers = modifiers, index = 0, refresh = refresh) {
-        BonsaiNodeContent(node = node, modifier = modifiers.toLayoutModifier(), refresh = refresh)
+    BonsaiModifierWrappers(demoId = demoId, modifiers = modifiers, index = 0, refresh = refresh) {
+        BonsaiNodeContent(
+            demoId = demoId,
+            node = node,
+            modifier = modifiers.toLayoutModifier(),
+            refresh = refresh,
+        )
     }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun BonsaiModifierWrappers(
+    demoId: String,
     modifiers: JSONArray?,
     index: Int,
     refresh: () -> Unit,
@@ -88,12 +141,12 @@ private fun BonsaiModifierWrappers(
                     placeholder = { Text("Search") },
                     onValueChange = {
                         value = it
-                        BonsaiAndroidNative.dispatchChange(eventId, it)
+                        BonsaiAndroidNative.dispatchChange(demoId, eventId, it)
                         refresh()
                     },
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-                BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+                BonsaiModifierWrappers(demoId, modifiers, index + 1, refresh, content)
             }
         }
         "toolbar" -> {
@@ -107,7 +160,10 @@ private fun BonsaiModifierWrappers(
                         val toolbarItem = items.getJSONObject(itemIndex)
                         TextButton(
                             onClick = {
-                                BonsaiAndroidNative.dispatchClick(toolbarItem.getInt("eventId"))
+                                BonsaiAndroidNative.dispatchClick(
+                                    demoId,
+                                    toolbarItem.getInt("eventId"),
+                                )
                                 refresh()
                             },
                         ) {
@@ -115,30 +171,38 @@ private fun BonsaiModifierWrappers(
                         }
                     }
                 }
-                BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+                BonsaiModifierWrappers(demoId, modifiers, index + 1, refresh, content)
             }
         }
         "sheet" -> {
-            BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+            BonsaiModifierWrappers(demoId, modifiers, index + 1, refresh, content)
             if (item.optBoolean("isPresented", false)) {
                 ModalBottomSheet(
                     onDismissRequest = {
                         if (!item.isNull("dismissEventId")) {
-                            BonsaiAndroidNative.dispatchClick(item.getInt("dismissEventId"))
+                            BonsaiAndroidNative.dispatchClick(
+                                demoId,
+                                item.getInt("dismissEventId"),
+                            )
                         }
                         refresh()
                     },
                 ) {
-                    BonsaiNode(item.getJSONObject("content"), refresh)
+                    BonsaiNode(demoId, item.getJSONObject("content"), refresh)
                 }
             }
         }
-        else -> BonsaiModifierWrappers(modifiers, index + 1, refresh, content)
+        else -> BonsaiModifierWrappers(demoId, modifiers, index + 1, refresh, content)
     }
 }
 
 @Composable
-private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () -> Unit) {
+private fun BonsaiNodeContent(
+    demoId: String,
+    node: JSONObject,
+    modifier: Modifier,
+    refresh: () -> Unit,
+) {
     when (node.getString("type")) {
         "text" -> Text(text = node.getString("text"), modifier = modifier)
         "button" -> {
@@ -146,7 +210,7 @@ private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () 
             Button(
                 modifier = modifier,
                 onClick = {
-                    BonsaiAndroidNative.dispatchClick(eventId)
+                    BonsaiAndroidNative.dispatchClick(demoId, eventId)
                     refresh()
                 },
             ) {
@@ -162,7 +226,7 @@ private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () 
                 placeholder = node.optString("placeholder").takeIf { it.isNotBlank() }?.let { { Text(it) } },
                 onValueChange = {
                     value = it
-                    BonsaiAndroidNative.dispatchChange(eventId, it)
+                    BonsaiAndroidNative.dispatchChange(demoId, eventId, it)
                     refresh()
                 },
             )
@@ -174,7 +238,7 @@ private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () 
             ) {
                 val children = node.getJSONArray("children")
                 for (index in 0 until children.length()) {
-                    BonsaiNode(children.getJSONObject(index), refresh)
+                    BonsaiNode(demoId, children.getJSONObject(index), refresh)
                 }
             }
         }
@@ -185,19 +249,19 @@ private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () 
             ) {
                 val children = node.getJSONArray("children")
                 for (index in 0 until children.length()) {
-                    BonsaiNode(children.getJSONObject(index), refresh)
+                    BonsaiNode(demoId, children.getJSONObject(index), refresh)
                 }
             }
         }
         "scrollView" -> {
             Column(modifier = modifier.verticalScroll(rememberScrollState())) {
-                BonsaiNode(node.getJSONObject("child"), refresh)
+                BonsaiNode(demoId, node.getJSONObject("child"), refresh)
             }
         }
         "list" -> {
             LazyColumn(modifier = modifier) {
                 items(node.getJSONArray("rows").objects(), key = { it.getString("key") }) {
-                    BonsaiNode(it.getJSONObject("node"), refresh)
+                    BonsaiNode(demoId, it.getJSONObject("node"), refresh)
                 }
             }
         }
@@ -205,7 +269,7 @@ private fun BonsaiNodeContent(node: JSONObject, modifier: Modifier, refresh: () 
             Column(modifier = modifier) {
                 val children = node.getJSONArray("children")
                 for (index in 0 until children.length()) {
-                    BonsaiNode(children.getJSONObject(index), refresh)
+                    BonsaiNode(demoId, children.getJSONObject(index), refresh)
                 }
             }
         }

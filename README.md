@@ -37,7 +37,7 @@ let component graph =
   let count, set_count = Bonsai.state 0 graph in
   let%arr count and set_count in
   Bonsai_android.vstack
-    [ Bonsai_android.text ("Count: " ^ Int.to_string count)
+    [ Bonsai_android.text (Int.to_string count)
     ; Bonsai_android.button "Increment" ~on_click:(set_count (count + 1))
     ]
 ```
@@ -53,7 +53,7 @@ state updates are still Bonsai effects.
 - `android/`: Gradle/Compose demo app.
 - `jni/`: Android JNI bridge into OCaml.
 - `apple/`: Apple OCaml package, UIKit backend, and iOS examples.
-- `examples/`: shared Android counter entrypoint and smoke examples.
+- `examples/`: Android demo entrypoints and smoke examples.
 - `scripts/`: Android and iOS bootstrap/build helpers.
 - `docs/`: architecture and platform build notes.
 
@@ -84,7 +84,8 @@ scripts/test-android-emulator.sh
 ```
 
 It installs the APK, launches the counter, taps `Increment`, and verifies the UI
-changes from `Count: 0` to `Count: 1`.
+changes from `0` to `1`. It also switches through the Android `Todo` and
+`Search` tabs, which mirror the current iOS demo tabs.
 
 ## iOS Quick Check
 
@@ -108,6 +109,8 @@ Working now:
   `bonsai.ppx_bonsai`.
 - Android Compose renderer loads real native OCaml state and dispatches clicks
   back into Bonsai.
+- Android and iOS demo apps expose the same `Counter`, `Todo`, and `Search`
+  OCaml views.
 - Apple source/backend scaffolding is included in the same repo.
 
 Still early:

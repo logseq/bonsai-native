@@ -16,11 +16,14 @@ static void ensure_ocaml_runtime(void) {
 }
 
 JNIEXPORT jstring JNICALL
-Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_renderNative(JNIEnv *env, jobject self) {
+Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_renderNative(
+    JNIEnv *env,
+    jobject self,
+    jstring demo_id) {
   (void)self;
   ensure_ocaml_runtime();
   CAMLparam0();
-  CAMLlocal1(result);
+  CAMLlocal2(ocaml_demo_id, result);
   const value *callback = caml_named_value("bonsai_android_render");
   if (callback == NULL) {
     CAMLreturnT(
@@ -29,18 +32,35 @@ Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_renderNative(JNIEnv *env, jobj
         env,
         "{\"type\":\"text\",\"text\":\"OCaml render callback missing\",\"modifiers\":[]}"));
   }
-  result = caml_callback(*callback, Val_unit);
+
+  const char *demo_id_utf8 = (*env)->GetStringUTFChars(env, demo_id, NULL);
+  ocaml_demo_id = caml_copy_string(demo_id_utf8);
+  (*env)->ReleaseStringUTFChars(env, demo_id, demo_id_utf8);
+
+  result = caml_callback(*callback, ocaml_demo_id);
   CAMLreturnT(jstring, (*env)->NewStringUTF(env, String_val(result)));
 }
 
 JNIEXPORT void JNICALL
-Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_dispatchClickNative(JNIEnv *env, jobject self, jint event_id) {
-  (void)env;
+Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_dispatchClickNative(
+    JNIEnv *env,
+    jobject self,
+    jstring demo_id,
+    jint event_id) {
   (void)self;
   ensure_ocaml_runtime();
   CAMLparam0();
+  CAMLlocal2(ocaml_demo_id, result);
   const value *callback = caml_named_value("bonsai_android_dispatch_click");
-  if (callback != NULL) caml_callback(*callback, Val_int(event_id));
+  if (callback == NULL) CAMLreturn0;
+
+  const char *demo_id_utf8 = (*env)->GetStringUTFChars(env, demo_id, NULL);
+  ocaml_demo_id = caml_copy_string(demo_id_utf8);
+  (*env)->ReleaseStringUTFChars(env, demo_id, demo_id_utf8);
+
+  value args[2] = { ocaml_demo_id, Val_int(event_id) };
+  result = caml_callbackN(*callback, 2, args);
+  (void)result;
   CAMLreturn0;
 }
 
@@ -48,21 +68,26 @@ JNIEXPORT void JNICALL
 Java_com_logseq_bonsaiandroid_BonsaiAndroidNative_dispatchChangeNative(
     JNIEnv *env,
     jobject self,
+    jstring demo_id,
     jint event_id,
     jstring text) {
   (void)self;
   ensure_ocaml_runtime();
   CAMLparam0();
-  CAMLlocal2(ocaml_text, result);
+  CAMLlocal3(ocaml_demo_id, ocaml_text, result);
   const value *callback = caml_named_value("bonsai_android_dispatch_change");
   if (callback == NULL) CAMLreturn0;
 
-  const char *utf8 = (*env)->GetStringUTFChars(env, text, NULL);
-  ocaml_text = caml_copy_string(utf8);
-  (*env)->ReleaseStringUTFChars(env, text, utf8);
+  const char *demo_id_utf8 = (*env)->GetStringUTFChars(env, demo_id, NULL);
+  ocaml_demo_id = caml_copy_string(demo_id_utf8);
+  (*env)->ReleaseStringUTFChars(env, demo_id, demo_id_utf8);
 
-  value args[2] = { Val_int(event_id), ocaml_text };
-  result = caml_callbackN(*callback, 2, args);
+  const char *text_utf8 = (*env)->GetStringUTFChars(env, text, NULL);
+  ocaml_text = caml_copy_string(text_utf8);
+  (*env)->ReleaseStringUTFChars(env, text, text_utf8);
+
+  value args[3] = { ocaml_demo_id, Val_int(event_id), ocaml_text };
+  result = caml_callbackN(*callback, 3, args);
   (void)result;
   CAMLreturn0;
 }

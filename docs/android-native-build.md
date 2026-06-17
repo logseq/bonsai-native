@@ -10,7 +10,7 @@ That shared library contains:
 
 - the OCaml runtime
 - Core/Bonsai/Jane preview packages built for Android
-- the OCaml counter entrypoint
+- the OCaml Android demo entrypoint
 - JNI functions from `jni/bonsai_android_jni.c`
 
 ## Cross Compiler
@@ -98,8 +98,12 @@ scripts/test-android-emulator.sh
 Expected result:
 
 ```text
-Verified native Bonsai click dispatch: Count: 0 -> Count: 1
+Verified Android demo parity tabs and native Bonsai click dispatch: 0 -> 1
 ```
+
+The smoke test installs the APK, verifies the Android `Counter`, `Todo`, and
+`Search` tabs, and confirms that tapping `Increment` updates Bonsai state through
+JNI.
 
 ## Notes
 
