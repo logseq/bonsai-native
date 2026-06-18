@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: OCaml tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config
+
+      - name: Set up OCaml
+        uses: ocaml/setup-ocaml@v3
+        with:
+          ocaml-compiler: 5.2.1
+
+      - name: Add Jane Street preview repositories
+        run: |
+          opam repo add janestreet-bleeding-external git+https://github.com/janestreet/opam-repository.git#external-packages
+          opam repo add janestreet-bleeding git+https://github.com/janestreet/opam-repository.git
+          opam update
+
+      - name: Install OCaml dependencies
+        run: opam install . --deps-only --with-test -y
+
+      - name: Build
+        run: opam exec -- dune build @all
+
+      - name: Test
+        run: opam exec -- dune runtest
