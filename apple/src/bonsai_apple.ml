@@ -22,6 +22,78 @@ type toolbar_item =
   ; on_click : unit Effect.t
   }
 
+type text_style =
+  | Large_title
+  | Title
+  | Title2
+  | Title3
+  | Headline
+  | Body
+  | Callout
+  | Subheadline
+  | Footnote
+  | Caption
+  | Caption2
+[@@deriving sexp_of, equal]
+
+type text_weight =
+  | Regular
+  | Semibold
+  | Bold
+[@@deriving sexp_of, equal]
+
+type text_color =
+  | Primary
+  | Secondary
+  | Tertiary
+[@@deriving sexp_of, equal]
+
+type text_attributes =
+  { style : text_style
+  ; weight : text_weight
+  ; color : text_color
+  }
+[@@deriving sexp_of, equal]
+
+type row_action_style =
+  | Default
+  | Destructive
+[@@deriving sexp_of, equal]
+
+type row_leading_button =
+  { system_image : string
+  ; selected_system_image : string option
+  ; selected : bool
+  ; accessibility_label : string
+  ; on_click : unit Effect.t
+  }
+
+type row_action =
+  { title : string
+  ; system_image : string option
+  ; style : row_action_style
+  ; on_click : unit Effect.t
+  }
+
+type list_row =
+  { title : string
+  ; subtitle : string option
+  ; trailing_text : string option
+  ; title_strikethrough : bool
+  ; leading_button : row_leading_button option
+  ; swipe_actions : row_action list
+  }
+
+type tab_role = Search [@@deriving sexp_of, equal]
+
+type rendered_tab =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; role : tab_role option
+  }
+[@@deriving sexp_of, equal]
+
 type axis =
   | Vertical
   | Horizontal
@@ -35,12 +107,17 @@ type backend_kind =
   | Scroll_view
   | List
   | Navigation_stack
+  | Tab_view
   | Image
+  | List_row
   | Custom_view of string
 [@@deriving sexp_of, equal]
 
 type node =
-  | Text of string
+  | Text of
+      { text : string
+      ; attributes : text_attributes
+      }
   | Button_node of
       { title : string
       ; on_click : unit Effect.t
@@ -58,7 +135,13 @@ type node =
   | Scroll_view_node of node
   | List_node of keyed_node list
   | Navigation_stack_node of node list
+  | Tab_view_node of
+      { selected : string
+      ; on_select : string -> unit Effect.t
+      ; tabs : tab list
+      }
   | Image_node of string
+  | List_row_node of list_row
   | Custom_view_node of
       { key : string option
       ; kind : string
@@ -68,6 +151,14 @@ type node =
 and keyed_node =
   { key : string
   ; node : node
+  }
+
+and tab =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; role : tab_role option
+  ; content : node
   }
 
 and modifier =
@@ -98,7 +189,26 @@ type 'view rendered_modifier =
       ; on_dismiss : unit Effect.t option
       }
 
-let text value = Text value
+type rendered_row_leading_button =
+  { system_image : string
+  ; selected_system_image : string option
+  ; selected : bool
+  ; accessibility_label : string
+  ; on_click : unit -> unit
+  }
+
+type rendered_row_action =
+  { title : string
+  ; system_image : string option
+  ; style : row_action_style
+  ; on_click : unit -> unit
+  }
+
+let default_text_attributes = { style = Body; weight = Regular; color = Primary }
+
+let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
+  Text { text = value; attributes = { style; weight; color } }
+;;
 
 let button title ~on_click = Button_node { title; on_click }
 
@@ -121,7 +231,21 @@ let list rows ~key ~row =
 ;;
 
 let navigation_stack children = Navigation_stack_node children
+
+let tab ~id ~title ?system_image ?role content =
+  { id; title; system_image; role; content }
+;;
+
+let tab_view ~selected ~on_select tabs =
+  let seen = String.Hash_set.create () in
+  List.iter tabs ~f:(fun tab ->
+    if Hash_set.mem seen tab.id then failwithf "duplicate Bonsai Apple tab id: %s" tab.id ();
+    Hash_set.add seen tab.id);
+  Tab_view_node { selected; on_select; tabs }
+;;
+
 let image name = Image_node name
+let list_row row = List_row_node row
 let custom_view ?key ~kind () = Custom_view_node { key; kind }
 
 let default_insets = { top = 8.; leading = 8.; bottom = 8.; trailing = 8. }
@@ -151,7 +275,9 @@ let backend_kind = function
   | Scroll_view_node _ -> Scroll_view
   | List_node _ -> List
   | Navigation_stack_node _ -> Navigation_stack
+  | Tab_view_node _ -> Tab_view
   | Image_node _ -> Image
+  | List_row_node _ -> List_row
   | Custom_view_node { kind; _ } -> Custom_view kind
   | Modified_node _ -> assert false
 ;;
@@ -163,9 +289,25 @@ module Renderer = struct
     val create : backend_kind -> view
     val destroy : view -> unit
     val set_text : view -> string -> unit
+    val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
+    val set_tabs
+      :  view
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> rendered_tab list
+      -> unit
+    val set_list_row
+      :  view
+      -> title:string
+      -> subtitle:string option
+      -> trailing_text:string option
+      -> title_strikethrough:bool
+      -> leading_button:rendered_row_leading_button option
+      -> swipe_actions:rendered_row_action list
+      -> unit
     val set_on_click : view -> (unit -> unit) option -> unit
     val set_on_change : view -> (string -> unit) option -> unit
     val set_modifiers
@@ -231,8 +373,9 @@ module Renderer = struct
         ~schedule_event:t.schedule_event
         rendered_modifiers;
       (match node with
-       | Text text ->
+       | Text { text; attributes } ->
          Backend.set_text t.view text;
+         Backend.set_text_attributes t.view attributes;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
@@ -266,8 +409,44 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
+       | Tab_view_node { selected; on_select; tabs } ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_tabs t ~selected ~on_select tabs
        | Image_node name ->
          Backend.set_text t.view name;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | List_row_node
+           { title
+           ; subtitle
+           ; trailing_text
+           ; title_strikethrough
+           ; leading_button
+           ; swipe_actions
+           } ->
+         Backend.set_list_row
+           t.view
+           ~title
+           ~subtitle
+           ~trailing_text
+           ~title_strikethrough
+           ~leading_button:
+             (Option.map leading_button ~f:(fun leading_button ->
+                { system_image = leading_button.system_image
+                ; selected_system_image = leading_button.selected_system_image
+                ; selected = leading_button.selected
+                ; accessibility_label = leading_button.accessibility_label
+                ; on_click = (fun () -> t.schedule_event leading_button.on_click)
+                }))
+           ~swipe_actions:
+             (List.map swipe_actions ~f:(fun action ->
+                { title = action.title
+                ; system_image = action.system_image
+                ; style = action.style
+                ; on_click = (fun () -> t.schedule_event action.on_click)
+                }));
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
@@ -291,16 +470,17 @@ module Renderer = struct
         t.modifier_children <- replacement.modifier_children)
 
     and patch_child ~schedule_event existing node =
-      let node, modifiers = unwrap_modifiers node in
-      let new_kind = backend_kind node in
+      let original_node = node in
+      let base_node, modifiers = unwrap_modifiers node in
+      let new_kind = backend_kind base_node in
       match existing with
       | Some child when equal_backend_kind child.mounted.kind new_kind ->
-        patch_same_kind child.mounted node modifiers;
+        patch_same_kind child.mounted base_node modifiers;
         child.mounted
       | Some child ->
         destroy child.mounted;
-        mount ~schedule_event node
-      | None -> mount ~schedule_event node
+        mount ~schedule_event original_node
+      | None -> mount ~schedule_event original_node
 
     and reconcile_modifiers t modifiers =
       let old_by_index = Int.Table.create () in
@@ -377,6 +557,25 @@ module Renderer = struct
         t.view
         ~keyed:(List.map children ~f:(fun child -> child.key))
         (List.map children ~f:(fun child -> child.mounted.view))
+
+    and reconcile_tabs t ~selected ~on_select tabs =
+      let rows =
+        List.map tabs ~f:(fun tab -> { key = tab.id; node = tab.content })
+      in
+      let rendered_tabs =
+        List.map tabs ~f:(fun tab ->
+          { id = tab.id
+          ; title = tab.title
+          ; system_image = tab.system_image
+          ; role = tab.role
+          })
+      in
+      reconcile_keyed t rows;
+      Backend.set_tabs
+        t.view
+        ~selected
+        ~on_select:(Some (fun id -> t.schedule_event (on_select id)))
+        rendered_tabs
     ;;
   end
 end
@@ -429,10 +628,17 @@ module For_testing = struct
       { id : int
       ; kind : backend_kind
       ; mutable text : string option
+      ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable children : (string option * view) list
       ; mutable on_click : (unit -> unit) option
       ; mutable on_change : (string -> unit) option
+      ; mutable selected_tab : string option
+      ; mutable on_select_tab : (string -> unit) option
+      ; mutable tabs : rendered_tab list
+      ; mutable list_row : string option
+      ; mutable row_leading_button : rendered_row_leading_button option
+      ; mutable row_actions : rendered_row_action list
       ; mutable modifiers : view rendered_modifier list
       ; mutable schedule_event : (unit Effect.t -> unit) option
       }
@@ -461,10 +667,17 @@ module For_testing = struct
       { id = !next_id
       ; kind
       ; text = None
+      ; text_attributes = default_text_attributes
       ; placeholder = None
       ; children = []
       ; on_click = None
       ; on_change = None
+      ; selected_tab = None
+      ; on_select_tab = None
+      ; tabs = []
+      ; list_row = None
+      ; row_leading_button = None
+      ; row_actions = []
       ; modifiers = []
       ; schedule_event = None
       }
@@ -472,11 +685,61 @@ module For_testing = struct
 
     let destroy _ = Int.incr destroyed
     let set_text view text = view.text <- Some text
+    let set_text_attributes view attributes = view.text_attributes <- attributes
     let set_placeholder view placeholder = view.placeholder <- placeholder
     let set_spacing _view _spacing = ()
 
     let set_children view ~keyed children =
       view.children <- List.zip_exn keyed children
+    ;;
+
+    let set_tabs view ~selected ~on_select tabs =
+      view.selected_tab <- Some selected;
+      view.on_select_tab <- on_select;
+      view.tabs <- tabs
+    ;;
+
+    let set_list_row
+      view
+      ~title
+      ~subtitle
+      ~trailing_text
+      ~title_strikethrough
+      ~(leading_button : rendered_row_leading_button option)
+      ~(swipe_actions : rendered_row_action list)
+      =
+      let leading =
+        match leading_button with
+        | None -> "leading=none"
+        | Some leading ->
+          sprintf
+            "leading=%s:%s"
+            leading.system_image
+            (Bool.to_string leading.selected)
+      in
+      let actions =
+        swipe_actions
+        |> List.map ~f:(fun action ->
+          let style =
+            match action.style with
+            | Default -> "default"
+            | Destructive -> "destructive"
+          in
+          action.title ^ ":" ^ style)
+        |> String.concat ~sep:","
+      in
+      view.row_leading_button <- leading_button;
+      view.row_actions <- swipe_actions;
+      view.list_row
+      <- Some
+           (sprintf
+              " title=%s subtitle=%s trailing=%s strikethrough=%s %s actions=[%s]"
+              (Sexp.to_string_hum ([%sexp_of: string] title))
+              (Sexp.to_string_hum ([%sexp_of: string option] subtitle))
+              (Sexp.to_string_hum ([%sexp_of: string option] trailing_text))
+              (Bool.to_string title_strikethrough)
+              leading
+              actions)
     ;;
 
     let set_on_click view on_click = view.on_click <- on_click
@@ -495,7 +758,9 @@ module For_testing = struct
       | Scroll_view -> "scroll-view"
       | List -> "list"
       | Navigation_stack -> "navigation-stack"
+      | Tab_view -> "tab-view"
       | Image -> "image"
+      | List_row -> "list-row"
       | Custom_view kind -> "custom(" ^ kind ^ ")"
     ;;
 
@@ -519,6 +784,13 @@ module For_testing = struct
         | None -> ""
         | Some text -> " text=" ^ Sexp.to_string_hum ([%sexp_of: string] text)
       in
+      let text_attributes =
+        if equal_text_attributes view.text_attributes default_text_attributes
+        then ""
+        else (
+          let sexp = [%sexp_of: text_attributes] view.text_attributes in
+          " text_attributes=" ^ Sexp.to_string_hum sexp)
+      in
       let placeholder =
         match view.placeholder with
         | None -> ""
@@ -533,6 +805,31 @@ module For_testing = struct
           ^ String.concat ~sep:"," (List.map modifiers ~f:modifier_name)
           ^ "]"
       in
+      let selected =
+        match view.selected_tab with
+        | None -> ""
+        | Some selected -> " selected=" ^ selected
+      in
+      let tabs =
+        match view.tabs with
+        | [] -> ""
+        | tabs ->
+          let tab_name (tab : rendered_tab) =
+            let image =
+              match tab.system_image with
+              | None -> ""
+              | Some image -> ":" ^ image
+            in
+            let role =
+              match tab.role with
+              | None -> ""
+              | Some Search -> ":search"
+            in
+            tab.id ^ ":" ^ tab.title ^ image ^ role
+          in
+          " tabs=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
+      in
+      let list_row = Option.value view.list_row ~default:"" in
       let child_lines =
         List.concat_map view.children ~f:(fun (key, child) ->
           show_lines ?key child ~indent:(indent + 2))
@@ -549,7 +846,11 @@ module For_testing = struct
        ^ Int.to_string view.id
        ^ key
        ^ text
+       ^ text_attributes
        ^ placeholder
+       ^ selected
+       ^ tabs
+       ^ list_row
        ^ modifiers)
       :: child_lines
       @ sheet_lines
@@ -620,6 +921,26 @@ module For_testing = struct
       with
       | Some on_dismiss -> schedule_event_exn view on_dismiss
       | None -> failwith "View has no presented dismissible sheet"
+    ;;
+
+    let select_tab_exn view ~id =
+      match view.on_select_tab with
+      | Some f -> f id
+      | None -> failwith "View has no tab selection handler"
+    ;;
+
+    let click_row_leading_exn view ~path =
+      let view = find_exn view ~path in
+      match view.row_leading_button with
+      | Some leading -> leading.on_click ()
+      | None -> failwith "View has no row leading button"
+    ;;
+
+    let click_row_action_exn view ~path ~title =
+      let view = find_exn view ~path in
+      match List.find view.row_actions ~f:(fun action -> String.equal action.title title) with
+      | Some action -> action.on_click ()
+      | None -> failwithf "View has no row action with title %S" title ()
     ;;
 
     let find_text_exn view ~path =

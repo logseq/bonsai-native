@@ -20,6 +20,9 @@ type view =
   ; mutable change_handler_block : Obj.t option
   ; mutable search_controller : objc_object structure ptr option
   ; mutable search_delegate : objc_object structure ptr option
+  ; mutable tab_items : Apple.rendered_tab list
+  ; mutable tab_select_handler : (string -> unit) option
+  ; mutable tab_delegate : objc_object structure ptr option
   ; mutable toolbar_actions : objc_object structure ptr list
   ; mutable toolbar_handler_blocks : Obj.t list
   ; mutable presented_sheet : objc_object structure ptr option
@@ -140,9 +143,13 @@ let create kind =
     | Apple.List ->
       let native = init_table_view () in
       native, host_controller native
+    | Apple.Tab_view ->
+      let controller = UITabBarController.self |> alloc |> init in
+      UIViewController.view controller, controller
     | Apple.Image ->
       let native = init_image_view () in
       native, host_controller native
+    | Apple.List_row -> failwith "Apple.list_row is only supported by the SwiftUI backend"
     | Apple.Custom_view class_name ->
       let native = Objc.get_class class_name |> alloc |> init in
       native, host_controller native
@@ -165,6 +172,9 @@ let create kind =
   ; change_handler_block = None
   ; search_controller = None
   ; search_delegate = None
+  ; tab_items = []
+  ; tab_select_handler = None
+  ; tab_delegate = None
   ; toolbar_actions = []
   ; toolbar_handler_blocks = []
   ; presented_sheet = None
@@ -186,6 +196,8 @@ let set_text view text =
     UIImageView.setImage image view.native
   | _ -> ()
 ;;
+
+let set_text_attributes _view _attributes = ()
 
 let set_placeholder view placeholder =
   match view.kind, placeholder with
@@ -220,6 +232,8 @@ let set_children view ~keyed:_ children =
     state.rows <- children;
     view.children <- children;
     UITableView.reloadData view.native
+  | Apple.Tab_view, _ ->
+    view.children <- children
   | _ when List.equal phys_equal view.children children -> ()
   | _ ->
     List.iter view.children ~f:(remove_child view);
@@ -284,10 +298,96 @@ let set_on_change view handler =
     view.change_action <- Some action
 ;;
 
+let set_list_row
+  _view
+  ~title:_
+  ~subtitle:_
+  ~trailing_text:_
+  ~title_strikethrough:_
+  ~leading_button:_
+  ~swipe_actions:_
+  =
+  failwith "Apple.list_row is only supported by the SwiftUI backend"
+;;
+
 let nsarray values =
   let array = NSMutableArray.self |> NSMutableArrayClass.arrayWithCapacity (List.length values) in
   List.iter values ~f:(fun value -> NSMutableArray.addObject value array);
   array
+;;
+
+let install_tab_item (tab : Apple.rendered_tab) controller =
+  let title = nsstring tab.title in
+  let image =
+    Option.value_map tab.system_image ~default:nil ~f:(fun system_image ->
+      UIImage.self |> UIImageClass.systemImageNamed (nsstring system_image))
+  in
+  let item =
+    UITabBarItem.self |> alloc |> UITabBarItem.initWithTitle title ~image ~selectedImage:nil
+  in
+  UIViewController.setTitle title controller;
+  UIViewController.setTabBarItem item controller
+;;
+
+let tab_index_by_id tabs id =
+  List.findi tabs ~f:(fun _ (tab : Apple.rendered_tab) -> String.equal tab.id id)
+  |> Option.map ~f:fst
+;;
+
+let selected_tab_id view selected_controller =
+  List.find_mapi view.children ~f:(fun index child ->
+    if phys_equal child.controller selected_controller
+    then List.nth view.tab_items index |> Option.map ~f:(fun tab -> tab.Apple.id)
+    else None)
+;;
+
+let ensure_tab_delegate view =
+  match view.tab_delegate with
+  | Some delegate_ -> delegate_
+  | None ->
+    let class_name = "BonsaiNativeTabDelegate" ^ Int.to_string (Oo.id (object end)) in
+    let _ =
+      Class.define
+        class_name
+        ~superclass:NSObject.self
+        ~methods:
+          [ (Define.method_spec
+               ~cmd:(selector "tabBarController:didSelectViewController:")
+               ~typ:(id @-> id @-> returning void)
+               ~enc:"v32@0:8@16@24"
+             @@ fun _self _cmd _tab_controller selected_controller ->
+             selected_tab_id view selected_controller
+             |> Option.iter ~f:(fun id ->
+               Option.iter view.tab_select_handler ~f:(fun handler -> handler id)))
+          ]
+    in
+    let delegate_ = Objc.get_class class_name |> alloc |> init in
+    view.tab_delegate <- Some delegate_;
+    delegate_
+;;
+
+let apply_tabs view ~selected =
+  if (not (List.is_empty view.children))
+     && List.length view.tab_items = List.length view.children
+  then (
+    List.iter2_exn view.tab_items view.children ~f:(fun tab child ->
+      install_tab_item tab child.controller);
+    UITabBarController.setViewControllers
+      (nsarray (List.map view.children ~f:(fun child -> child.controller)))
+      view.controller;
+    tab_index_by_id view.tab_items selected
+    |> Option.iter ~f:(fun index -> UITabBarController.setSelectedIndex index view.controller))
+;;
+
+let set_tabs view ~selected ~on_select tabs =
+  view.tab_items <- tabs;
+  view.tab_select_handler <- on_select;
+  match view.kind with
+  | Apple.Tab_view ->
+    let delegate_ = ensure_tab_delegate view in
+    UITabBarController.setDelegate delegate_ view.controller;
+    apply_tabs view ~selected
+  | _ -> ()
 ;;
 
 let make_search_delegate ~schedule_event ~on_change =
@@ -327,7 +427,7 @@ let install_searchable view ~schedule_event ~text ~on_change =
 
 let install_toolbar view ~schedule_event items =
   let actions, buttons =
-    List.map items ~f:(fun item ->
+    List.map items ~f:(fun (item : Apple.toolbar_item) ->
       let action, handler_block =
         action_with_title item.Apple.title (fun () -> schedule_event item.Apple.on_click)
       in
@@ -403,9 +503,12 @@ module Backend = struct
   let create = create
   let destroy = destroy
   let set_text = set_text
+  let set_text_attributes = set_text_attributes
   let set_placeholder = set_placeholder
   let set_spacing = set_spacing
   let set_children = set_children
+  let set_tabs = set_tabs
+  let set_list_row = set_list_row
   let set_on_click = set_on_click
   let set_on_change = set_on_change
   let set_modifiers = set_modifiers

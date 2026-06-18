@@ -73,6 +73,60 @@ let%test_unit "button and text-field events are scheduled through Bonsai effects
   [%test_result: string list] !text_changes ~expect:[ "bonsai" ]
 ;;
 
+let%test_unit "text supports semantic Apple font attributes" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.text
+         ~style:Apple.Title2
+         ~weight:Apple.Semibold
+         ~color:Apple.Secondary
+         "Good morning")
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|label#1 text="Good morning" text_attributes=((style Title2) (weight Semibold) (color Secondary))|}
+;;
+
+let%test_unit "list row renders generic metadata and schedules actions" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.list_row
+         { title = "Reply to client email"
+         ; subtitle = Some "12:30 PM"
+         ; trailing_text = None
+         ; title_strikethrough = false
+         ; leading_button =
+             Some
+               { system_image = "circle"
+               ; selected_system_image = Some "checkmark.circle.fill"
+               ; selected = false
+               ; accessibility_label = "Mark complete"
+               ; on_click = noop
+               }
+         ; swipe_actions =
+             [ { title = "Delete"
+               ; system_image = Some "trash"
+               ; style = Destructive
+               ; on_click = noop
+               }
+             ]
+         })
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|list-row#1 title="Reply to client email" subtitle=("12:30 PM") trailing=() strikethrough=false leading=circle:false actions=[Delete:destructive]|};
+  Backend.click_row_leading_exn (Renderer.view mounted) ~path:[];
+  Backend.click_row_action_exn (Renderer.view mounted) ~path:[] ~title:"Delete";
+  [%test_result: int] !scheduled ~expect:2
+;;
+
 let%test_unit "keyed list update reuses rows, destroys removed rows, and creates only new keys" =
   Backend.reset ();
   let render rows =
@@ -202,4 +256,130 @@ let%test_unit "presented sheet content is mounted and diffed by the renderer" =
   let diff = Backend.diff_stats before (Backend.stats ()) in
   [%test_result: int] diff.created ~expect:0;
   [%test_result: int] diff.destroyed ~expect:1
+;;
+
+let%test_unit "tab view renders tab metadata and selected content" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.tab_view
+         ~selected:"today"
+         ~on_select:(fun _ -> noop)
+         [ Apple.tab
+             ~id:"today"
+             ~title:"Today"
+             ~system_image:"sun.max"
+             (Apple.text "Today tasks")
+         ; Apple.tab
+             ~id:"search"
+             ~title:"Search"
+             ~system_image:"magnifyingglass"
+             ~role:Apple.Search
+             (Apple.text "Search tasks")
+         ])
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|tab-view#1 selected=today tabs=[today:Today:sun.max,search:Search:magnifyingglass:search]
+  label#2 key=today text="Today tasks"
+  label#3 key=search text="Search tasks"|}
+;;
+
+let%test_unit "keyed children preserve modifiers on initial mount" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.tab_view
+         ~selected:"search"
+         ~on_select:(fun _ -> noop)
+         [ Apple.tab
+             ~id:"search"
+             ~title:"Search"
+             ~role:Apple.Search
+             (Apple.text "Search"
+              |> Apple.searchable ~text:"" ~on_change:(fun _ -> noop))
+         ])
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|tab-view#1 selected=search tabs=[search:Search:search]
+  label#2 key=search text=Search modifiers=[searchable]|}
+;;
+
+let%test_unit "tab selection is scheduled through Bonsai effects" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let selected = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.tab_view
+         ~selected:"today"
+         ~on_select:(fun id ->
+           selected := id :: !selected;
+           noop)
+         [ Apple.tab ~id:"today" ~title:"Today" (Apple.text "Today")
+         ; Apple.tab ~id:"upcoming" ~title:"Upcoming" (Apple.text "Upcoming")
+         ])
+  in
+  Backend.select_tab_exn (Renderer.view mounted) ~id:"upcoming";
+  [%test_result: int] !scheduled ~expect:1;
+  [%test_result: string list] !selected ~expect:[ "upcoming" ]
+;;
+
+let%test_unit "tab view reuses keyed tabs across reorder and text updates" =
+  Backend.reset ();
+  let render tabs =
+    Apple.tab_view
+      ~selected:"upcoming"
+      ~on_select:(fun _ -> noop)
+      (List.map tabs ~f:(fun (id, title, label) ->
+         Apple.tab ~id ~title (Apple.text label)))
+  in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (render
+         [ "today", "Today", "Today tasks"
+         ; "upcoming", "Upcoming", "Upcoming tasks"
+         ; "search", "Search", "Search tasks"
+         ])
+  in
+  let before = Backend.stats () in
+  Renderer.update
+    mounted
+    (render
+       [ "search", "Search", "Search tasks"
+       ; "upcoming", "Upcoming", "Updated upcoming"
+       ; "completed", "Completed", "Completed tasks"
+       ]);
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|tab-view#1 selected=upcoming tabs=[search:Search,upcoming:Upcoming,completed:Completed]
+  label#4 key=search text="Search tasks"
+  label#3 key=upcoming text="Updated upcoming"
+  label#5 key=completed text="Completed tasks"|}
+  ;
+  let diff = Backend.diff_stats before (Backend.stats ()) in
+  [%test_result: int] diff.created ~expect:1;
+  [%test_result: int] diff.destroyed ~expect:1
+;;
+
+let%test_unit "tab view rejects duplicate tab ids before mounting" =
+  require_raises_string
+    (fun () ->
+      ignore
+        (Apple.tab_view
+           ~selected:"today"
+           ~on_select:(fun _ -> noop)
+           [ Apple.tab ~id:"today" ~title:"Today" (Apple.text "Today")
+           ; Apple.tab ~id:"today" ~title:"Again" (Apple.text "Again")
+           ]
+         : Apple.node))
+    ~expect:"duplicate Bonsai Apple tab id: today"
 ;;
