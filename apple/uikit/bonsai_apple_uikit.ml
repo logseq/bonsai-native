@@ -23,6 +23,7 @@ type view =
   ; mutable toolbar_actions : objc_object structure ptr list
   ; mutable toolbar_handler_blocks : Obj.t list
   ; mutable presented_sheet : objc_object structure ptr option
+  ; mutable frame_constraints : objc_object structure ptr list
   }
 
 and table_state = { mutable rows : view list }
@@ -35,7 +36,9 @@ let init_label () = UILabel.self |> alloc |> UILabel.initWithFrame zero_rect
 let init_text_field () = UITextField.self |> alloc |> UITextField.initWithFrame zero_rect
 let init_scroll_view () = UIScrollView.self |> alloc |> UIScrollView.initWithFrame zero_rect
 let init_image_view () = UIImageView.self |> alloc |> UIImageView.initWithFrame zero_rect
-let init_table_view () = UITableView.self |> alloc |> UITableView.initWithFrame' zero_rect ~style:_UITableViewStylePlain
+let init_table_view () =
+  UITableView.self |> alloc |> UITableView.initWithFrame' zero_rect ~style:_UITableViewStyleInsetGrouped
+;;
 
 let host_controller native =
   let controller = UIViewController.self |> alloc |> init in
@@ -61,7 +64,11 @@ let init_stack axis =
      | Apple.Horizontal -> 0)
     stack;
   UIStackView.setDistribution _UIStackViewDistributionFill stack;
-  UIStackView.setAlignment _UIStackViewAlignmentFill stack;
+  UIStackView.setAlignment
+    (match axis with
+     | Apple.Vertical -> _UIStackViewAlignmentCenter
+     | Apple.Horizontal -> _UIStackViewAlignmentCenter)
+    stack;
   stack
 ;;
 
@@ -90,12 +97,12 @@ let make_table_data_source state =
            UIView.removeFromSuperview row_view.native;
            UIView.addSubview row_view.native content_view;
            UIView.setFrame
-             (CoreGraphics.CGRect.make ~x:16. ~y:0. ~width:320. ~height:44.)
+             (CoreGraphics.CGRect.make ~x:16. ~y:0. ~width:360. ~height:56.)
              row_view.native;
            UIView.setAutoresizingMask _UIViewAutoresizingFlexibleWidth row_view.native;
            cell)
         ; (UITableViewDelegate.tableView'heightForRowAtIndexPath'
-           @@ fun _self _cmd _table _index_path -> 44.)
+           @@ fun _self _cmd _table _index_path -> 56.)
         ]
   in
   Objc.get_class class_name |> alloc |> init
@@ -115,6 +122,9 @@ let create kind =
       native, host_controller native
     | Apple.Button ->
       let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      let configuration = UIButtonConfigurationClass.tintedButtonConfiguration UIButtonConfiguration.self in
+      UIButtonConfiguration.setCornerStyle _UIButtonConfigurationCornerStyleCapsule configuration;
+      UIButton.setConfiguration configuration native;
       native, host_controller native
     | Apple.Text_field ->
       let field = init_text_field () in
@@ -158,6 +168,7 @@ let create kind =
   ; toolbar_actions = []
   ; toolbar_handler_blocks = []
   ; presented_sheet = None
+  ; frame_constraints = []
   }
 ;;
 
@@ -342,16 +353,22 @@ let apply_padding view insets =
 ;;
 
 let apply_frame view frame =
-  match frame.Apple.width, frame.height with
-  | None, None -> ()
-  | width, height ->
-    UIView.setFrame
-      (CoreGraphics.CGRect.make
-         ~x:0.
-         ~y:0.
-         ~width:(Option.value width ~default:0.)
-         ~height:(Option.value height ~default:0.))
-      view.native
+  if not (List.is_empty view.frame_constraints)
+  then NSLayoutConstraintClass.deactivateConstraints (nsarray view.frame_constraints) NSLayoutConstraint.self;
+  view.frame_constraints <- [];
+  let constraints =
+    [ Option.map frame.Apple.width ~f:(fun width ->
+        NSLayoutDimension.constraintEqualToConstant width (UIView.widthAnchor view.native))
+    ; Option.map frame.height ~f:(fun height ->
+        NSLayoutDimension.constraintEqualToConstant height (UIView.heightAnchor view.native))
+    ]
+    |> List.filter_opt
+  in
+  if not (List.is_empty constraints)
+  then (
+    UIView.setTranslatesAutoresizingMaskIntoConstraints false view.native;
+    NSLayoutConstraintClass.activateConstraints (nsarray constraints) NSLayoutConstraint.self;
+    view.frame_constraints <- constraints)
 ;;
 
 let install_sheet view ~is_presented ~content =
@@ -398,3 +415,4 @@ module Renderer = Apple.Renderer.Make (Backend)
 module App = Apple.App.Make (Backend)
 
 let native view = view.native
+let controller view = view.controller

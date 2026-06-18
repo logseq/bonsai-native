@@ -11,6 +11,7 @@
  (libraries
   bonsai_apple
   core
+  camlkit-base.CoreAutoLayout
   camlkit-base.Foundation
   camlkit-base.CoreGraphics
   camlkit-gui.UIKit)
