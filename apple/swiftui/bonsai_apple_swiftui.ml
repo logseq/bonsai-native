@@ -19,6 +19,8 @@ external run_application
   -> unit
   = "bonsai_apple_swiftui_run_application"
 
+external run_on_main : (unit -> unit) -> unit = "bonsai_apple_swiftui_run_on_main"
+
 external create_node : int -> native = "bonsai_apple_swiftui_create_node"
 external release_node : native -> unit = "bonsai_apple_swiftui_release_node"
 external set_native_text : native -> string -> unit = "bonsai_apple_swiftui_set_text"
@@ -30,6 +32,12 @@ external set_native_text_attributes
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_text_attributes"
+
+external set_native_enabled
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_enabled"
 
 external set_native_placeholder
   :  native
@@ -98,6 +106,48 @@ external set_native_list_row_leading_event
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_list_row_leading_event"
+
+external set_native_section
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_section"
+
+external clear_native_picker
+  :  native
+  -> string
+  -> string
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_clear_picker"
+
+external append_native_picker_option
+  :  native
+  -> string
+  -> string
+  -> unit
+  = "bonsai_apple_swiftui_append_picker_option"
+
+external set_native_file_exporter
+  :  native
+  -> string
+  -> string
+  -> string
+  -> unit
+  = "bonsai_apple_swiftui_set_file_exporter"
+
+external set_native_file_importer
+  :  native
+  -> string array
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_file_importer"
+
+external set_native_image_payload_mode
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_image_payload_mode"
 
 external clear_native_list_row_actions
   :  native
@@ -180,6 +230,38 @@ external release_controller : controller -> unit = "bonsai_apple_swiftui_release
 external make_native_window : native -> window = "bonsai_apple_swiftui_make_window"
 external release_window : window -> unit = "bonsai_apple_swiftui_release_window"
 
+external http_send_json_native
+  :  string
+  -> string
+  -> string option
+  -> string
+  -> float
+  -> (bool -> string -> unit)
+  -> unit
+  = "bonsai_apple_swiftui_http_send_json_bytecode" "bonsai_apple_swiftui_http_send_json"
+
+module Http = struct
+  type request =
+    { method_ : string
+    ; url : string
+    ; authorization : string option
+    ; body : string
+    ; timeout_seconds : float
+    }
+
+  let send_json request =
+    Bonsai.Effect.Expert.of_fun ~f:(fun ~callback ~on_exn:_ ->
+      http_send_json_native
+        request.method_
+        request.url
+        request.authorization
+        request.body
+        request.timeout_seconds
+        (fun success response ->
+          callback (if success then Ok response else Error response)))
+  ;;
+end
+
 let no_event = -1
 
 type event_handler =
@@ -215,15 +297,24 @@ let node_kind_id = function
   | Apple.Label -> 0
   | Apple.Button -> 1
   | Apple.Text_field -> 2
-  | Apple.Stack Apple.Vertical -> 3
-  | Apple.Stack Apple.Horizontal -> 4
-  | Apple.Scroll_view -> 5
-  | Apple.List -> 6
-  | Apple.Navigation_stack -> 7
-  | Apple.Tab_view -> 8
-  | Apple.Image -> 9
-  | Apple.List_row -> 10
-  | Apple.Custom_view _ -> 11
+  | Apple.Text_editor -> 3
+  | Apple.Stack Apple.Vertical -> 4
+  | Apple.Stack Apple.Horizontal -> 5
+  | Apple.Scroll_view -> 6
+  | Apple.List -> 7
+  | Apple.Navigation_stack -> 8
+  | Apple.Navigation_split -> 20
+  | Apple.Tab_view -> 9
+  | Apple.Sidebar_split -> 16
+  | Apple.Image -> 10
+  | Apple.List_row -> 11
+  | Apple.Section -> 12
+  | Apple.Picker -> 13
+  | Apple.Custom_view _ -> 14
+  | Apple.Photo_picker -> 15
+  | Apple.File_exporter -> 17
+  | Apple.File_importer -> 18
+  | Apple.Camera_capture -> 19
 ;;
 
 module Backend = struct
@@ -234,6 +325,7 @@ module Backend = struct
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
     ; mutable sheet_dismiss_event_id : int option
+    ; mutable picker_select_event_id : int option
     ; mutable row_event_ids : int list
     ; mutable controller : controller option
     }
@@ -249,6 +341,7 @@ module Backend = struct
     ; search_event_id = None
     ; tab_select_event_id = None
     ; sheet_dismiss_event_id = None
+    ; picker_select_event_id = None
     ; row_event_ids = []
     ; controller = None
     }
@@ -260,6 +353,7 @@ module Backend = struct
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
     clear_handler view.sheet_dismiss_event_id;
+    clear_handler view.picker_select_event_id;
     List.iter view.row_event_ids ~f:(Hashtbl.remove event_handlers);
     Option.iter view.controller ~f:release_controller;
     view.controller <- None;
@@ -267,6 +361,7 @@ module Backend = struct
   ;;
 
   let set_text view text = set_native_text view.native text
+  let set_enabled view is_enabled = set_native_enabled view.native is_enabled
 
   let text_style_id = function
     | Apple.Large_title -> 0
@@ -309,7 +404,7 @@ module Backend = struct
     set_native_children view.native (Array.of_list (List.map children ~f:(fun child -> child.native)))
   ;;
 
-  let set_tabs view ~selected ~on_select tabs =
+  let set_tabs view ~selected ~on_select (tabs : Apple.rendered_tab list) =
     let event_id =
       match on_select with
       | None ->
@@ -333,6 +428,65 @@ module Backend = struct
         (match tab.role with
          | None -> 0
          | Some Apple.Search -> 1))
+  ;;
+
+  let set_section view ~title = set_native_section view.native title
+
+  let set_picker
+    view
+    ~title
+    ~selected
+    ~on_select
+    (options : Apple.rendered_picker_option list)
+    =
+    let event_id =
+      match on_select with
+      | None ->
+        clear_handler view.picker_select_event_id;
+        view.picker_select_event_id <- None;
+        no_event
+      | Some on_select ->
+        let event_id =
+          install_handler view.picker_select_event_id (Change (fun id -> on_select id))
+        in
+        view.picker_select_event_id <- Some event_id;
+        event_id
+    in
+    clear_native_picker view.native title selected event_id;
+    List.iter options ~f:(fun option ->
+      append_native_picker_option view.native option.Apple.id option.title)
+  ;;
+
+  let set_file_exporter view (export : Apple.file_export) =
+    set_native_file_exporter
+      view.native
+      export.filename
+      export.content_type
+      export.content
+  ;;
+
+  let set_file_importer view ~allowed_content_types ~on_select =
+    let event_id =
+      match on_select with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_select ->
+        let event_id =
+          install_handler view.change_event_id (Change (fun content -> on_select content))
+        in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_file_importer
+      view.native
+      (Array.of_list allowed_content_types)
+      event_id
+  ;;
+
+  let set_image_payload_mode view wants_payload =
+    set_native_image_payload_mode view.native wants_payload
   ;;
 
   let set_on_click view handler =

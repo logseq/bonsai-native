@@ -37,6 +37,7 @@ let nsstring value = new_string value
 let init_view cls = cls |> alloc |> UIView.initWithFrame zero_rect
 let init_label () = UILabel.self |> alloc |> UILabel.initWithFrame zero_rect
 let init_text_field () = UITextField.self |> alloc |> UITextField.initWithFrame zero_rect
+let init_text_view () = UITextView.self |> alloc |> UITextView.initWithFrame zero_rect
 let init_scroll_view () = UIScrollView.self |> alloc |> UIScrollView.initWithFrame zero_rect
 let init_image_view () = UIImageView.self |> alloc |> UIImageView.initWithFrame zero_rect
 let init_table_view () =
@@ -120,6 +121,9 @@ let create kind =
   let native, controller =
     match kind with
     | Apple.Navigation_stack -> navigation_controller ()
+    | Apple.Navigation_split ->
+      let native = init_stack Apple.Vertical in
+      native, host_controller native
     | Apple.Label ->
       let native = init_label () in
       native, host_controller native
@@ -134,6 +138,9 @@ let create kind =
       UITextField.setBorderStyle _UITextBorderStyleRoundedRect field;
       UITextField.setClearButtonMode _UITextFieldViewModeWhileEditing field;
       field, host_controller field
+    | Apple.Text_editor ->
+      let view = init_text_view () in
+      view, host_controller view
     | Apple.Stack axis ->
       let native = init_stack axis in
       native, host_controller native
@@ -146,10 +153,31 @@ let create kind =
     | Apple.Tab_view ->
       let controller = UITabBarController.self |> alloc |> init in
       UIViewController.view controller, controller
+    | Apple.Sidebar_split ->
+      let controller = UITabBarController.self |> alloc |> init in
+      UIViewController.view controller, controller
     | Apple.Image ->
       let native = init_image_view () in
       native, host_controller native
     | Apple.List_row -> failwith "Apple.list_row is only supported by the SwiftUI backend"
+    | Apple.Section ->
+      let native = init_stack Apple.Vertical in
+      native, host_controller native
+    | Apple.Picker ->
+      let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      native, host_controller native
+    | Apple.Photo_picker ->
+      let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      native, host_controller native
+    | Apple.File_exporter ->
+      let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      native, host_controller native
+    | Apple.File_importer ->
+      let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      native, host_controller native
+    | Apple.Camera_capture ->
+      let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      native, host_controller native
     | Apple.Custom_view class_name ->
       let native = Objc.get_class class_name |> alloc |> init in
       native, host_controller native
@@ -191,18 +219,29 @@ let set_text view text =
   | Apple.Text_field ->
     let current = UITextField.text view.native |> NSString._UTF8String in
     if not (String.equal current text) then UITextField.setText (nsstring text) view.native
+  | Apple.Text_editor ->
+    let current = UITextView.text view.native |> NSString._UTF8String in
+    if not (String.equal current text) then UITextView.setText (nsstring text) view.native
   | Apple.Image ->
     UIImageClass.imageNamed (nsstring text) UIImage.self |> fun image ->
     UIImageView.setImage image view.native
+  | Apple.Picker -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
+  | Apple.Photo_picker -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
+  | Apple.File_exporter -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
+  | Apple.File_importer -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
+  | Apple.Camera_capture -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
   | _ -> ()
 ;;
 
 let set_text_attributes _view _attributes = ()
+let set_enabled _view _is_enabled = ()
+let set_image_payload_mode _view _wants_payload = ()
 
 let set_placeholder view placeholder =
   match view.kind, placeholder with
   | Apple.Text_field, Some placeholder -> UITextField.setPlaceholder (nsstring placeholder) view.native
   | Apple.Text_field, None -> UITextField.setPlaceholder nil view.native
+  | Apple.Text_editor, _ -> ()
   | _ -> ()
 ;;
 
@@ -233,6 +272,8 @@ let set_children view ~keyed:_ children =
     view.children <- children;
     UITableView.reloadData view.native
   | Apple.Tab_view, _ ->
+    view.children <- children
+  | Apple.Sidebar_split, _ ->
     view.children <- children
   | _ when List.equal phys_equal view.children children -> ()
   | _ ->
@@ -281,13 +322,14 @@ let set_on_click view handler =
 
 let set_on_change view handler =
   view.change_handler <- handler;
-  match handler, view.change_action with
-  | None, Some action ->
+  match view.kind, handler, view.change_action with
+  | Apple.Text_editor, _, _ -> ()
+  | _, None, Some action ->
     UIControl.removeAction action ~forControlEvents:_UIControlEventEditingChanged view.native;
     view.change_action <- None;
     view.change_handler_block <- None
-  | None, None | Some _, Some _ -> ()
-  | Some _, None ->
+  | _, None, None | _, Some _, Some _ -> ()
+  | _, Some _, None ->
     let action, handler_block =
       action_with_handler (fun () ->
         let text = UITextField.text view.native |> NSString._UTF8String in
@@ -383,12 +425,37 @@ let set_tabs view ~selected ~on_select tabs =
   view.tab_items <- tabs;
   view.tab_select_handler <- on_select;
   match view.kind with
-  | Apple.Tab_view ->
+  | Apple.Tab_view | Apple.Sidebar_split ->
     let delegate_ = ensure_tab_delegate view in
     UITabBarController.setDelegate delegate_ view.controller;
     apply_tabs view ~selected
   | _ -> ()
 ;;
+
+let set_section _view ~title:_ = ()
+
+let set_picker
+  view
+  ~title
+  ~selected
+  ~on_select:_
+  (options : Apple.rendered_picker_option list)
+  =
+  let selected_title =
+    options
+    |> List.find ~f:(fun option -> String.equal option.Apple.id selected)
+    |> Option.map ~f:(fun option -> option.Apple.title)
+    |> Option.value ~default:selected
+  in
+  UIButton.setTitle1
+    (nsstring (title ^ ": " ^ selected_title))
+    ~forState:_UIControlStateNormal
+    view.native
+;;
+
+let set_file_exporter _view _export = ()
+
+let set_file_importer _view ~allowed_content_types:_ ~on_select:_ = ()
 
 let make_search_delegate ~schedule_event ~on_change =
   let class_name = "BonsaiNativeSearchDelegate" ^ Int.to_string (Oo.id (object end)) in
@@ -452,7 +519,7 @@ let apply_padding view insets =
   UIView.setLayoutMargins insets view.native
 ;;
 
-let apply_frame view frame =
+let apply_frame view (frame : Apple.frame) =
   if not (List.is_empty view.frame_constraints)
   then NSLayoutConstraintClass.deactivateConstraints (nsarray view.frame_constraints) NSLayoutConstraint.self;
   view.frame_constraints <- [];
@@ -504,11 +571,17 @@ module Backend = struct
   let destroy = destroy
   let set_text = set_text
   let set_text_attributes = set_text_attributes
+  let set_enabled = set_enabled
   let set_placeholder = set_placeholder
   let set_spacing = set_spacing
   let set_children = set_children
   let set_tabs = set_tabs
   let set_list_row = set_list_row
+  let set_section = set_section
+  let set_picker = set_picker
+  let set_file_exporter = set_file_exporter
+  let set_file_importer = set_file_importer
+  let set_image_payload_mode = set_image_payload_mode
   let set_on_click = set_on_click
   let set_on_change = set_on_change
   let set_modifiers = set_modifiers

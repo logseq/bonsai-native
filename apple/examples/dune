@@ -1,6 +1,14 @@
 (executables
- (names counter todo searchable_list navigation)
- (modules counter todo searchable_list navigation)
+ (names
+  counter
+  todo
+  searchable_list
+  navigation)
+ (modules
+  counter
+  todo
+  searchable_list
+  navigation)
  (enabled_if
   (not
    (or
@@ -45,6 +53,8 @@
   bonsai_apple
   bonsai_apple_uikit
   core
+  core_kernel.caml_threads
+  threads.posix
   camlkit-base.CoreGraphics
   camlkit-base.Foundation
   camlkit-gui.UIKit)

@@ -75,11 +75,35 @@ type row_action =
   ; on_click : unit Effect.t
   }
 
+type picker_option =
+  { id : string
+  ; title : string
+  }
+
+type file_export =
+  { filename : string
+  ; content_type : string
+  ; content : string
+  }
+
+type image_payload =
+  { id : string
+  ; local_path : string
+  ; mime_type : string
+  ; byte_size : int
+  ; sha256 : string
+  ; width : int
+  ; height : int
+  ; recognized_text : string option
+  }
+[@@deriving compare, sexp_of, equal]
+
 type list_row =
   { title : string
   ; subtitle : string option
   ; trailing_text : string option
   ; title_strikethrough : bool
+  ; on_click : unit Effect.t option
   ; leading_button : row_leading_button option
   ; swipe_actions : row_action list
   }
@@ -105,8 +129,14 @@ val text
   -> string
   -> node
 
-val button : string -> on_click:unit Effect.t -> node
+val button : ?is_enabled:bool -> string -> on_click:unit Effect.t -> node
 val text_field
+  :  ?placeholder:string
+  -> text:string
+  -> on_change:(string -> unit Effect.t)
+  -> unit
+  -> node
+val text_editor
   :  ?placeholder:string
   -> text:string
   -> on_change:(string -> unit Effect.t)
@@ -117,10 +147,61 @@ val vstack : ?spacing:float -> node list -> node
 val hstack : ?spacing:float -> node list -> node
 val scroll_view : node -> node
 val list : 'a list -> key:('a -> string) -> row:('a -> node) -> node
+val section : key:string -> ?title:string -> node list -> node
+val section_key : node -> string
+val picker_option : id:string -> title:string -> picker_option
+val picker
+  :  title:string
+  -> selected:string
+  -> on_select:(string -> unit Effect.t)
+  -> picker_option list
+  -> node
 val navigation_stack : node list -> node
+val navigation_split : sidebar:node -> content:node -> detail:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
 val tab_view : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
+val sidebar_split : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
 val image : string -> node
+val photo_picker
+  :  ?is_enabled:bool
+  -> title:string
+  -> ?selected:string
+  -> on_select:(string -> unit Effect.t)
+  -> unit
+  -> node
+val photo_picker_payload
+  :  ?is_enabled:bool
+  -> title:string
+  -> ?selected:string
+  -> on_select:(image_payload -> unit Effect.t)
+  -> unit
+  -> node
+val file_exporter
+  :  ?is_enabled:bool
+  -> title:string
+  -> filename:string
+  -> content_type:string
+  -> content:string
+  -> unit
+  -> node
+val file_importer
+  :  title:string
+  -> allowed_content_types:string list
+  -> on_select:(string -> unit Effect.t)
+  -> unit
+  -> node
+val camera_capture
+  :  title:string
+  -> ?captured:string
+  -> on_capture:(string -> unit Effect.t)
+  -> unit
+  -> node
+val camera_capture_payload
+  :  title:string
+  -> ?captured:string
+  -> on_capture:(image_payload -> unit Effect.t)
+  -> unit
+  -> node
 val list_row : list_row -> node
 val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
@@ -144,13 +225,22 @@ type backend_kind =
   | Label
   | Button
   | Text_field
+  | Text_editor
   | Stack of axis
   | Scroll_view
   | List
   | Navigation_stack
+  | Navigation_split
   | Tab_view
+  | Sidebar_split
   | Image
   | List_row
+  | Section
+  | Picker
+  | Photo_picker
+  | File_exporter
+  | File_importer
+  | Camera_capture
   | Custom_view of string
 [@@deriving sexp_of]
 
@@ -197,6 +287,11 @@ type rendered_row_action =
   ; on_click : unit -> unit
   }
 
+type rendered_picker_option =
+  { id : string
+  ; title : string
+  }
+
 module Renderer : sig
   module type Backend = sig
     type view
@@ -223,8 +318,24 @@ module Renderer : sig
       -> leading_button:rendered_row_leading_button option
       -> swipe_actions:rendered_row_action list
       -> unit
+    val set_section : view -> title:string option -> unit
+    val set_picker
+      :  view
+      -> title:string
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> rendered_picker_option list
+      -> unit
+    val set_file_exporter : view -> file_export -> unit
+    val set_file_importer
+      :  view
+      -> allowed_content_types:string list
+      -> on_select:(string -> unit) option
+      -> unit
+    val set_image_payload_mode : view -> bool -> unit
     val set_on_click : view -> (unit -> unit) option -> unit
     val set_on_change : view -> (string -> unit) option -> unit
+    val set_enabled : view -> bool -> unit
     val set_modifiers
       :  view
       -> schedule_event:(unit Effect.t -> unit)
@@ -264,6 +375,7 @@ module For_testing : sig
       type t =
         { created : int
         ; destroyed : int
+        ; mutations : int
         }
       [@@deriving sexp_of]
     end
@@ -274,10 +386,56 @@ module For_testing : sig
     val show : view -> string
     val click_exn : view -> path:int list -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
+    val select_photo_exn : view -> path:int list -> image_id:string -> unit
+    val capture_camera_exn : view -> path:int list -> image_id:string -> unit
+    val select_photo_payload_exn
+      :  view
+      -> path:int list
+      -> payload:image_payload
+      -> unit
+    val capture_camera_payload_exn
+      :  view
+      -> path:int list
+      -> payload:image_payload
+      -> unit
+    val import_file_exn : view -> path:int list -> content:string -> unit
+    val click_sheet_exn : view -> path:int list -> sheet_path:int list -> unit
+    val change_sheet_text_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> text:string
+      -> unit
+    val select_sheet_photo_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> image_id:string
+      -> unit
+    val capture_sheet_camera_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> image_id:string
+      -> unit
+    val select_sheet_photo_payload_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> payload:image_payload
+      -> unit
+    val capture_sheet_camera_payload_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> payload:image_payload
+      -> unit
     val change_search_exn : view -> path:int list -> text:string -> unit
     val click_toolbar_item_exn : view -> path:int list -> id:string -> unit
     val dismiss_sheet_exn : view -> path:int list -> unit
     val select_tab_exn : view -> id:string -> unit
+    val select_sidebar_route_exn : view -> id:string -> unit
+    val select_picker_exn : view -> path:int list -> id:string -> unit
     val click_row_leading_exn : view -> path:int list -> unit
     val click_row_action_exn : view -> path:int list -> title:string -> unit
     val find_text_exn : view -> path:int list -> string

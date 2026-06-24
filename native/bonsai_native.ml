@@ -26,6 +26,7 @@ type node =
   | Text of string
   | Button of
       { title : string
+      ; is_enabled : bool
       ; on_click : unit Effect.t
       }
   | Text_field of
@@ -68,7 +69,7 @@ and modifier =
       }
 
 let text value = Text value
-let button title ~on_click = Button { title; on_click }
+let button ?(is_enabled = true) title ~on_click = Button { title; is_enabled; on_click }
 
 let text_field ?placeholder ~text ~on_change () =
   Text_field { text; placeholder; on_change }
@@ -167,12 +168,13 @@ module Bridge = struct
       match node with
       | Text value ->
         object_ [ field "type" (string "text"); field "text" (string value); modifier_field ]
-      | Button { title; on_click } ->
-        let event_id = register (Click on_click) in
+      | Button { title; is_enabled; on_click } ->
+        let event_id = if is_enabled then Some (register (Click on_click)) else None in
         object_
           [ field "type" (string "button")
           ; field "text" (string title)
-          ; field "eventId" (Int.to_string event_id)
+          ; field "enabled" (bool is_enabled)
+          ; field "eventId" (Option.value_map event_id ~default:"null" ~f:Int.to_string)
           ; modifier_field
           ]
       | Text_field { text; placeholder; on_change } ->

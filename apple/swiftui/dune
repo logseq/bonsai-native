@@ -3,6 +3,7 @@
  (public_name bonsai_apple.swiftui)
  (enabled_if
   (or
+   (= %{context_name} simulator)
    (= %{context_name} device.ios)
    (= %{context_name} simulator.ios)
    (= %{context_name} simulator-arm.ios)
@@ -11,7 +12,7 @@
   (language c)
   (names bonsai_apple_swiftui_stubs))
  (c_library_flags
-  (:standard -framework UIKit -framework SwiftUI))
+  (:standard -framework Foundation -framework SwiftUI))
  (libraries bonsai_apple core)
  (preprocess
   (pps ppx_jane)))

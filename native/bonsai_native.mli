@@ -25,7 +25,7 @@ type toolbar_item =
 type node
 
 val text : string -> node
-val button : string -> on_click:unit Effect.t -> node
+val button : ?is_enabled:bool -> string -> on_click:unit Effect.t -> node
 val text_field
   :  ?placeholder:string
   -> text:string

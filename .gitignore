@@ -1,5 +1,25 @@
 _build/
 *.install
+.DS_Store
+
+# Local Apple build/signing artifacts.
+build-signing/
+*.app/
+*.dSYM/
+
+# Local database files created while verifying examples.
+*.sqlite
+*.sqlite3
+*.db
+*.db-shm
+*.db-wal
+
+# Screenshots and clipboard images captured during manual verification.
+Screenshot*.png
+screenshot*.png
+codex-clipboard-*.png
+*.screenshot.png
+
 android/.gradle/
 android/build/
 android/app/build/

@@ -8,8 +8,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
+#include <dispatch/dispatch.h>
 
 typedef void (*bonsai_native_event_callback)(int32_t event_id, const char *text);
+typedef void (*bonsai_native_http_callback)(
+  void *context,
+  bool success,
+  const char *response);
 typedef bool (*bonsai_native_launch_callback)(
   void *delegate,
   void *application,
@@ -24,6 +29,7 @@ extern void bonsai_native_swiftui_set_text_attributes(
   int32_t style,
   int32_t weight,
   int32_t color);
+extern void bonsai_native_swiftui_set_enabled(void *node, bool is_enabled);
 extern void bonsai_native_swiftui_set_placeholder(void *node, const char *text);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
@@ -75,6 +81,27 @@ extern void bonsai_native_swiftui_append_tab(
   const char *title,
   const char *system_image,
   int32_t role);
+extern void bonsai_native_swiftui_set_section(void *node, const char *title);
+extern void bonsai_native_swiftui_clear_picker(
+  void *node,
+  const char *title,
+  const char *selected,
+  int32_t event_id);
+extern void bonsai_native_swiftui_append_picker_option(
+  void *node,
+  const char *id,
+  const char *title);
+extern void bonsai_native_swiftui_set_file_exporter(
+  void *node,
+  const char *filename,
+  const char *content_type,
+  const char *content);
+extern void bonsai_native_swiftui_set_file_importer(
+  void *node,
+  const char **allowed_types,
+  int32_t count,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_image_payload_mode(void *node, bool wants_payload);
 extern void *bonsai_native_swiftui_make_controller(
   void *root,
   bonsai_native_event_callback callback);
@@ -84,11 +111,50 @@ extern void *bonsai_native_swiftui_make_window(
   void *root,
   bonsai_native_event_callback callback);
 extern void bonsai_native_swiftui_release_window(void *window);
+extern void bonsai_native_swiftui_http_send_json(
+  const char *method,
+  const char *url,
+  const char *authorization,
+  const char *body,
+  double timeout_seconds,
+  void *context,
+  bonsai_native_http_callback callback);
 
 static value *event_callback = NULL;
 static value *launch_callback = NULL;
 
+struct bonsai_main_callback {
+  value callback;
+};
+
+struct bonsai_http_context {
+  value *callback;
+};
+
 static value value_of_pointer(void *pointer);
+
+static void run_ocaml_callback_on_main(void *context)
+{
+  struct bonsai_main_callback *main_callback = context;
+  caml_acquire_runtime_system();
+  caml_callback(main_callback->callback, Val_unit);
+  caml_remove_generational_global_root(&main_callback->callback);
+  caml_release_runtime_system();
+  free(main_callback);
+}
+
+CAMLprim value bonsai_apple_swiftui_run_on_main(value callback)
+{
+  CAMLparam1(callback);
+  struct bonsai_main_callback *main_callback = malloc(sizeof(struct bonsai_main_callback));
+  if (main_callback == NULL) {
+    caml_failwith("Unable to allocate main-thread callback");
+  }
+  main_callback->callback = callback;
+  caml_register_generational_global_root(&main_callback->callback);
+  dispatch_async_f(dispatch_get_main_queue(), main_callback, run_ocaml_callback_on_main);
+  CAMLreturn(Val_unit);
+}
 
 static void swiftui_event_callback(int32_t event_id, const char *text)
 {
@@ -96,12 +162,14 @@ static void swiftui_event_callback(int32_t event_id, const char *text)
     return;
   }
 
+  caml_acquire_runtime_system();
   CAMLparam0();
   CAMLlocal2(text_value, result);
   text_value = text == NULL ? Val_none : caml_alloc_some(caml_copy_string(text));
   result = caml_callback2_exn(*event_callback, Val_int(event_id), text_value);
   (void)result;
-  CAMLreturn0;
+  CAMLdrop;
+  caml_release_runtime_system();
 }
 
 static bool swiftui_launch_callback(void *delegate, void *application, void *launch_options)
@@ -110,6 +178,8 @@ static bool swiftui_launch_callback(void *delegate, void *application, void *lau
     return true;
   }
 
+  bool should_finish_launching = false;
+  caml_acquire_runtime_system();
   CAMLparam0();
   CAMLlocal4(delegate_value, application_value, launch_options_value, result);
   delegate_value = value_of_pointer(delegate);
@@ -117,10 +187,32 @@ static bool swiftui_launch_callback(void *delegate, void *application, void *lau
   launch_options_value = value_of_pointer(launch_options);
   result =
     caml_callback3_exn(*launch_callback, delegate_value, application_value, launch_options_value);
-  if (Is_exception_result(result)) {
-    CAMLreturnT(bool, false);
+  if (!Is_exception_result(result)) {
+    should_finish_launching = Bool_val(result);
   }
-  CAMLreturnT(bool, Bool_val(result));
+  CAMLdrop;
+  caml_release_runtime_system();
+  return should_finish_launching;
+}
+
+static void swiftui_http_callback(void *raw_context, bool success, const char *response)
+{
+  if (raw_context == NULL) {
+    return;
+  }
+
+  struct bonsai_http_context *context = raw_context;
+  caml_acquire_runtime_system();
+  CAMLparam0();
+  CAMLlocal2(response_value, result);
+  response_value = caml_copy_string(response == NULL ? "" : response);
+  result = caml_callback2_exn(*context->callback, Val_bool(success), response_value);
+  (void)result;
+  caml_remove_generational_global_root(context->callback);
+  caml_stat_free(context->callback);
+  caml_stat_free(context);
+  CAMLdrop;
+  caml_release_runtime_system();
 }
 
 static void *pointer_val(value raw_value)
@@ -156,8 +248,47 @@ CAMLprim value bonsai_apple_swiftui_run_application(value callback)
   } else {
     caml_modify_generational_global_root(launch_callback, callback);
   }
+  caml_release_runtime_system();
   bonsai_native_swiftui_run_application(swiftui_launch_callback);
+  caml_acquire_runtime_system();
   CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_http_send_json(
+  value method,
+  value url,
+  value authorization,
+  value body,
+  value timeout_seconds,
+  value callback)
+{
+  CAMLparam5(method, url, authorization, body, timeout_seconds);
+  CAMLxparam1(callback);
+  struct bonsai_http_context *context = caml_stat_alloc(sizeof(struct bonsai_http_context));
+  context->callback = caml_stat_alloc(sizeof(value));
+  *context->callback = callback;
+  caml_register_generational_global_root(context->callback);
+  bonsai_native_swiftui_http_send_json(
+    String_val(method),
+    String_val(url),
+    Is_none(authorization) ? NULL : String_val(Some_val(authorization)),
+    String_val(body),
+    Double_val(timeout_seconds),
+    context,
+    swiftui_http_callback);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_http_send_json_bytecode(value *argv, int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_http_send_json(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5]);
 }
 
 CAMLprim value bonsai_apple_swiftui_create_node(value raw_kind)
@@ -192,6 +323,13 @@ CAMLprim value bonsai_apple_swiftui_set_text_attributes(
     Int_val(style),
     Int_val(weight),
     Int_val(color));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_enabled(value node, value is_enabled)
+{
+  CAMLparam2(node, is_enabled);
+  bonsai_native_swiftui_set_enabled(pointer_val(node), Bool_val(is_enabled));
   CAMLreturn(Val_unit);
 }
 
@@ -404,6 +542,82 @@ CAMLprim value bonsai_apple_swiftui_append_tab(
     String_val(title),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
     Int_val(role));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_section(value node, value title)
+{
+  CAMLparam2(node, title);
+  bonsai_native_swiftui_set_section(
+    pointer_val(node),
+    Is_none(title) ? NULL : String_val(Some_val(title)));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_picker(
+  value node,
+  value title,
+  value selected,
+  value event_id)
+{
+  CAMLparam4(node, title, selected, event_id);
+  bonsai_native_swiftui_clear_picker(
+    pointer_val(node),
+    String_val(title),
+    String_val(selected),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_picker_option(value node, value id, value title)
+{
+  CAMLparam3(node, id, title);
+  bonsai_native_swiftui_append_picker_option(pointer_val(node), String_val(id), String_val(title));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_file_exporter(
+  value node,
+  value filename,
+  value content_type,
+  value content)
+{
+  CAMLparam4(node, filename, content_type, content);
+  bonsai_native_swiftui_set_file_exporter(
+    pointer_val(node),
+    String_val(filename),
+    String_val(content_type),
+    String_val(content));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_file_importer(
+  value node,
+  value allowed_types,
+  value event_id)
+{
+  CAMLparam3(node, allowed_types, event_id);
+  mlsize_t count = Wosize_val(allowed_types);
+  const char **types = calloc(count, sizeof(char *));
+  if (types == NULL) {
+    caml_failwith("failed to allocate file importer type array");
+  }
+  for (mlsize_t index = 0; index < count; index++) {
+    types[index] = String_val(Field(allowed_types, index));
+  }
+  bonsai_native_swiftui_set_file_importer(
+    pointer_val(node),
+    types,
+    (int32_t)count,
+    Int_val(event_id));
+  free(types);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_image_payload_mode(value node, value wants_payload)
+{
+  CAMLparam2(node, wants_payload);
+  bonsai_native_swiftui_set_image_payload_mode(pointer_val(node), Bool_val(wants_payload));
   CAMLreturn(Val_unit);
 }
 

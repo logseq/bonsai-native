@@ -75,11 +75,37 @@ type row_action =
   ; on_click : unit Effect.t
   }
 
+type picker_option =
+  { id : string
+  ; title : string
+  }
+[@@deriving sexp_of, equal]
+
+type file_export =
+  { filename : string
+  ; content_type : string
+  ; content : string
+  }
+[@@deriving sexp_of, equal]
+
+type image_payload =
+  { id : string
+  ; local_path : string
+  ; mime_type : string
+  ; byte_size : int
+  ; sha256 : string
+  ; width : int
+  ; height : int
+  ; recognized_text : string option
+  }
+[@@deriving compare, sexp_of, equal]
+
 type list_row =
   { title : string
   ; subtitle : string option
   ; trailing_text : string option
   ; title_strikethrough : bool
+  ; on_click : unit Effect.t option
   ; leading_button : row_leading_button option
   ; swipe_actions : row_action list
   }
@@ -103,13 +129,22 @@ type backend_kind =
   | Label
   | Button
   | Text_field
+  | Text_editor
   | Stack of axis
   | Scroll_view
   | List
   | Navigation_stack
+  | Navigation_split
   | Tab_view
+  | Sidebar_split
   | Image
   | List_row
+  | Section
+  | Picker
+  | Photo_picker
+  | File_exporter
+  | File_importer
+  | Camera_capture
   | Custom_view of string
 [@@deriving sexp_of, equal]
 
@@ -120,9 +155,15 @@ type node =
       }
   | Button_node of
       { title : string
+      ; is_enabled : bool
       ; on_click : unit Effect.t
       }
   | Text_field_node of
+      { text : string
+      ; placeholder : string option
+      ; on_change : string -> unit Effect.t
+      }
+  | Text_editor_node of
       { text : string
       ; placeholder : string option
       ; on_change : string -> unit Effect.t
@@ -135,13 +176,57 @@ type node =
   | Scroll_view_node of node
   | List_node of keyed_node list
   | Navigation_stack_node of node list
+  | Navigation_split_node of
+      { sidebar : node
+      ; content : node
+      ; detail : node
+      }
   | Tab_view_node of
+      { selected : string
+      ; on_select : string -> unit Effect.t
+      ; tabs : tab list
+      }
+  | Sidebar_split_node of
       { selected : string
       ; on_select : string -> unit Effect.t
       ; tabs : tab list
       }
   | Image_node of string
   | List_row_node of list_row
+  | Section_node of
+      { key : string
+      ; title : string option
+      ; children : node list
+      }
+  | Picker_node of
+      { title : string
+      ; selected : string
+      ; on_select : string -> unit Effect.t
+      ; options : picker_option list
+      }
+  | Photo_picker_node of
+      { title : string
+      ; is_enabled : bool
+      ; wants_payload : bool
+      ; selected : string option
+      ; on_select : string -> unit Effect.t
+      }
+  | File_exporter_node of
+      { title : string
+      ; is_enabled : bool
+      ; export : file_export
+      }
+  | File_importer_node of
+      { title : string
+      ; allowed_content_types : string list
+      ; on_select : string -> unit Effect.t
+      }
+  | Camera_capture_node of
+      { title : string
+      ; wants_payload : bool
+      ; captured : string option
+      ; on_capture : string -> unit Effect.t
+      }
   | Custom_view_node of
       { key : string option
       ; kind : string
@@ -204,16 +289,26 @@ type rendered_row_action =
   ; on_click : unit -> unit
   }
 
+type rendered_picker_option = picker_option =
+  { id : string
+  ; title : string
+  }
+[@@deriving sexp_of, equal]
+
 let default_text_attributes = { style = Body; weight = Regular; color = Primary }
 
 let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
   Text { text = value; attributes = { style; weight; color } }
 ;;
 
-let button title ~on_click = Button_node { title; on_click }
+let button ?(is_enabled = true) title ~on_click = Button_node { title; is_enabled; on_click }
 
 let text_field ?placeholder ~text ~on_change () =
   Text_field_node { text; placeholder; on_change }
+;;
+
+let text_editor ?placeholder ~text ~on_change () =
+  Text_editor_node { text; placeholder; on_change }
 ;;
 
 let vstack ?spacing children = Stack_node { axis = Vertical; spacing; children }
@@ -230,13 +325,35 @@ let list rows ~key ~row =
        { key; node = row value }))
 ;;
 
+let section ~key ?title children = Section_node { key; title; children }
+
+let section_key = function
+  | Section_node { key; _ } -> key
+  | _ -> failwith "Apple.section_key expects a section node"
+;;
+
+let picker_option ~id ~title = { id; title }
+
+let picker ~title ~selected ~on_select (options : picker_option list) =
+  let seen = String.Hash_set.create () in
+  List.iter options ~f:(fun option ->
+    if Hash_set.mem seen option.id
+    then failwithf "duplicate Bonsai Apple picker option id: %s" option.id ();
+    Hash_set.add seen option.id);
+  Picker_node { title; selected; on_select; options }
+;;
+
 let navigation_stack children = Navigation_stack_node children
+
+let navigation_split ~sidebar ~content ~detail =
+  Navigation_split_node { sidebar; content; detail }
+;;
 
 let tab ~id ~title ?system_image ?role content =
   { id; title; system_image; role; content }
 ;;
 
-let tab_view ~selected ~on_select tabs =
+let tab_view ~selected ~on_select (tabs : tab list) =
   let seen = String.Hash_set.create () in
   List.iter tabs ~f:(fun tab ->
     if Hash_set.mem seen tab.id then failwithf "duplicate Bonsai Apple tab id: %s" tab.id ();
@@ -244,7 +361,169 @@ let tab_view ~selected ~on_select tabs =
   Tab_view_node { selected; on_select; tabs }
 ;;
 
+let sidebar_split ~selected ~on_select (tabs : tab list) =
+  let seen = String.Hash_set.create () in
+  List.iter tabs ~f:(fun tab ->
+    if Hash_set.mem seen tab.id
+    then failwithf "duplicate Bonsai Apple sidebar route id: %s" tab.id ();
+    Hash_set.add seen tab.id);
+  Sidebar_split_node { selected; on_select; tabs }
+;;
+
 let image name = Image_node name
+
+let image_payload_header = "bonsai-image-payload"
+
+let is_unreserved_payload_byte = function
+  | 'A' .. 'Z' | 'a' .. 'z' | '0' .. '9' | '-' | '_' | '.' | '~' -> true
+  | _ -> false
+;;
+
+let escape_payload_field value =
+  String.concat_map value ~f:(fun char ->
+    if is_unreserved_payload_byte char
+    then String.of_char char
+    else sprintf "%%%02X" (Char.to_int char))
+;;
+
+let hex_value = function
+  | '0' .. '9' as char -> Some (Char.to_int char - Char.to_int '0')
+  | 'a' .. 'f' as char -> Some (10 + Char.to_int char - Char.to_int 'a')
+  | 'A' .. 'F' as char -> Some (10 + Char.to_int char - Char.to_int 'A')
+  | _ -> None
+;;
+
+let unescape_payload_field value =
+  let buffer = Buffer.create (String.length value) in
+  let rec loop index =
+    if index >= String.length value
+    then Buffer.contents buffer
+    else if Char.equal value.[index] '%'
+            && index + 2 < String.length value
+    then (
+      match hex_value value.[index + 1], hex_value value.[index + 2] with
+      | Some high, Some low ->
+        Buffer.add_char buffer (Char.of_int_exn ((high * 16) + low));
+        loop (index + 3)
+      | _ ->
+        Buffer.add_char buffer value.[index];
+        loop (index + 1))
+    else (
+      Buffer.add_char buffer value.[index];
+      loop (index + 1))
+  in
+  loop 0
+;;
+
+let image_payload_to_event_text (payload : image_payload) =
+  String.concat
+    ~sep:"\n"
+    ([ image_payload_header
+     ; "id=" ^ payload.id
+     ; "local_path=" ^ payload.local_path
+     ; "mime_type=" ^ payload.mime_type
+     ; "byte_size=" ^ Int.to_string payload.byte_size
+     ; "sha256=" ^ payload.sha256
+     ; "width=" ^ Int.to_string payload.width
+     ; "height=" ^ Int.to_string payload.height
+     ]
+     @
+     match payload.recognized_text with
+     | None -> []
+     | Some text -> [ "recognized_text=" ^ escape_payload_field text ])
+;;
+
+let image_payload_of_event_text text =
+  match String.split_lines text with
+  | header :: fields when String.equal header image_payload_header ->
+    let values =
+      fields
+      |> List.filter_map ~f:(fun line -> String.lsplit2 line ~on:'=')
+      |> String.Map.of_alist_reduce ~f:(fun _ latest -> latest)
+    in
+    let value key = Map.find values key in
+    let int_value key = Option.bind (value key) ~f:Int.of_string_opt in
+    (match
+       value "id"
+       , value "local_path"
+       , value "mime_type"
+       , int_value "byte_size"
+       , value "sha256"
+       , int_value "width"
+       , int_value "height"
+     with
+     | Some id, Some local_path, Some mime_type, Some byte_size, Some sha256, Some width, Some height ->
+       Some
+         { id
+         ; local_path
+         ; mime_type
+         ; byte_size
+         ; sha256
+         ; width
+         ; height
+         ; recognized_text = Option.map (value "recognized_text") ~f:unescape_payload_field
+         }
+     | _ -> None)
+  | _ -> None
+;;
+
+let photo_picker ?(is_enabled = true) ~title ?selected ~on_select () =
+  Photo_picker_node { title; is_enabled; wants_payload = false; selected; on_select }
+;;
+
+let legacy_image_payload image_id =
+  { id = image_id
+  ; local_path = ""
+  ; mime_type = ""
+  ; byte_size = 0
+  ; sha256 = ""
+  ; width = 0
+  ; height = 0
+  ; recognized_text = None
+  }
+;;
+
+let photo_picker_payload ?(is_enabled = true) ~title ?selected ~on_select () =
+  Photo_picker_node
+    { title
+    ; is_enabled
+    ; wants_payload = true
+    ; selected
+    ; on_select =
+        (fun text ->
+          let payload =
+            image_payload_of_event_text text |> Option.value ~default:(legacy_image_payload text)
+          in
+          on_select payload)
+    }
+;;
+
+let file_exporter ?(is_enabled = true) ~title ~filename ~content_type ~content () =
+  File_exporter_node { title; is_enabled; export = { filename; content_type; content } }
+;;
+
+let file_importer ~title ~allowed_content_types ~on_select () =
+  File_importer_node { title; allowed_content_types; on_select }
+;;
+
+let camera_capture ~title ?captured ~on_capture () =
+  Camera_capture_node { title; wants_payload = false; captured; on_capture }
+;;
+
+let camera_capture_payload ~title ?captured ~on_capture () =
+  Camera_capture_node
+    { title
+    ; wants_payload = true
+    ; captured
+    ; on_capture =
+        (fun text ->
+          let payload =
+            image_payload_of_event_text text |> Option.value ~default:(legacy_image_payload text)
+          in
+          on_capture payload)
+    }
+;;
+
 let list_row row = List_row_node row
 let custom_view ?key ~kind () = Custom_view_node { key; kind }
 
@@ -271,13 +550,22 @@ let backend_kind = function
   | Text _ -> Label
   | Button_node _ -> Button
   | Text_field_node _ -> Text_field
+  | Text_editor_node _ -> Text_editor
   | Stack_node { axis; _ } -> Stack axis
   | Scroll_view_node _ -> Scroll_view
   | List_node _ -> List
   | Navigation_stack_node _ -> Navigation_stack
+  | Navigation_split_node _ -> Navigation_split
   | Tab_view_node _ -> Tab_view
+  | Sidebar_split_node _ -> Sidebar_split
   | Image_node _ -> Image
   | List_row_node _ -> List_row
+  | Section_node _ -> Section
+  | Picker_node _ -> Picker
+  | Photo_picker_node _ -> Photo_picker
+  | File_exporter_node _ -> File_exporter
+  | File_importer_node _ -> File_importer
+  | Camera_capture_node _ -> Camera_capture
   | Custom_view_node { kind; _ } -> Custom_view kind
   | Modified_node _ -> assert false
 ;;
@@ -308,8 +596,24 @@ module Renderer = struct
       -> leading_button:rendered_row_leading_button option
       -> swipe_actions:rendered_row_action list
       -> unit
+    val set_section : view -> title:string option -> unit
+    val set_picker
+      :  view
+      -> title:string
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> rendered_picker_option list
+      -> unit
+    val set_file_exporter : view -> file_export -> unit
+    val set_file_importer
+      :  view
+      -> allowed_content_types:string list
+      -> on_select:(string -> unit) option
+      -> unit
+    val set_image_payload_mode : view -> bool -> unit
     val set_on_click : view -> (unit -> unit) option -> unit
     val set_on_change : view -> (string -> unit) option -> unit
+    val set_enabled : view -> bool -> unit
     val set_modifiers
       :  view
       -> schedule_event:(unit Effect.t -> unit)
@@ -331,6 +635,7 @@ module Renderer = struct
     and t =
       { mutable kind : backend_kind
       ; mutable view : Backend.view
+      ; mutable fingerprint : string
       ; schedule_event : unit Effect.t -> unit
       ; mutable children : child list
       ; mutable modifier_children : modifier_child list
@@ -344,12 +649,121 @@ module Renderer = struct
       Backend.destroy t.view
     ;;
 
+    let rec fingerprint node =
+      let node, modifiers = unwrap_modifiers node in
+      fingerprint_parts node modifiers
+
+    and fingerprint_parts node modifiers =
+      let modifiers =
+        List.map modifiers ~f:(function
+          | Padding insets -> [%sexp "padding", (insets : edge_insets)]
+          | Frame frame -> [%sexp "frame", (frame : frame)]
+          | Searchable { text; on_change = _ } -> [%sexp "searchable", (text : string)]
+          | Toolbar items ->
+            [%sexp
+              ( "toolbar"
+              , (List.map items ~f:(fun item -> item.id, item.title)
+                 : (string * string) list) )]
+          | Sheet { is_presented; content; on_dismiss = _ } ->
+            [%sexp "sheet", (is_presented : bool), (fingerprint content : string)])
+      in
+      let shape =
+        match node with
+        | Text { text; attributes } ->
+          [%sexp "text", (text : string), (attributes : text_attributes)]
+        | Button_node { title; is_enabled; on_click = _ } ->
+          [%sexp "button", (title : string), (is_enabled : bool)]
+        | Text_field_node { text; placeholder; on_change = _ } ->
+          [%sexp "text-field", (text : string), (placeholder : string option)]
+        | Text_editor_node { text; placeholder; on_change = _ } ->
+          [%sexp "text-editor", (text : string), (placeholder : string option)]
+        | Stack_node { axis; spacing; children } ->
+          [%sexp
+            "stack"
+          , (axis : axis)
+          , (spacing : float option)
+          , (List.map children ~f:fingerprint : string list)]
+        | Scroll_view_node child -> [%sexp "scroll-view", (fingerprint child : string)]
+        | List_node rows ->
+          [%sexp
+            ( "list"
+            , (List.map rows ~f:(fun row -> row.key, fingerprint row.node)
+               : (string * string) list) )]
+        | Navigation_stack_node children ->
+          [%sexp "navigation-stack", (List.map children ~f:fingerprint : string list)]
+        | Navigation_split_node { sidebar; content; detail } ->
+          [%sexp
+            "navigation-split"
+          , (fingerprint sidebar : string)
+          , (fingerprint content : string)
+          , (fingerprint detail : string)]
+        | List_row_node row ->
+          let leading =
+            Option.map row.leading_button ~f:(fun leading ->
+              ( leading.system_image
+              , leading.selected_system_image
+              , leading.selected
+              , leading.accessibility_label ))
+          in
+          let actions =
+            List.map row.swipe_actions ~f:(fun action ->
+              action.title, action.system_image, action.style)
+          in
+          [%sexp
+            "list-row"
+          , (row.title : string)
+          , (row.subtitle : string option)
+          , (row.trailing_text : string option)
+          , (row.title_strikethrough : bool)
+          , (leading : (string * string option * bool * string) option)
+          , (actions : (string * string option * row_action_style) list)]
+        | Section_node { key; title; children } ->
+          [%sexp
+            "section"
+          , (key : string)
+          , (title : string option)
+          , (List.map children ~f:fingerprint : string list)]
+        | Tab_view_node { selected; tabs; on_select = _ }
+        | Sidebar_split_node { selected; tabs; on_select = _ } ->
+          [%sexp
+            ( "tabs"
+            , (selected : string)
+            , (List.map tabs ~f:(fun tab -> tab.id, tab.title, tab.system_image, tab.role, fingerprint tab.content)
+               : (string * string * string option * tab_role option * string) list) )]
+        | Image_node name -> [%sexp "image", (name : string)]
+        | Picker_node { title; selected; options; on_select = _ } ->
+          [%sexp "picker", (title : string), (selected : string), (options : picker_option list)]
+        | Photo_picker_node { title; is_enabled; wants_payload; selected; on_select = _ } ->
+          [%sexp
+            "photo-picker"
+          , (title : string)
+          , (is_enabled : bool)
+          , (wants_payload : bool)
+          , (selected : string option)]
+        | File_exporter_node { title; is_enabled; export } ->
+          [%sexp "file-exporter", (title : string), (is_enabled : bool), (export : file_export)]
+        | File_importer_node { title; allowed_content_types; on_select = _ } ->
+          [%sexp "file-importer", (title : string), (allowed_content_types : string list)]
+        | Camera_capture_node { title; wants_payload; captured; on_capture = _ } ->
+          [%sexp
+            "camera-capture"
+          , (title : string)
+          , (wants_payload : bool)
+          , (captured : string option)]
+        | Custom_view_node { key; kind } ->
+          [%sexp "custom-view", (key : string option), (kind : string)]
+        | Modified_node _ -> assert false
+      in
+      Sexp.to_string ([%sexp (shape : Sexp.t), (modifiers : Sexp.t list)])
+    ;;
+
     let rec mount ~schedule_event node =
       let node, modifiers = unwrap_modifiers node in
       let kind = backend_kind node in
       let t =
         { kind
         ; view = Backend.create kind
+        ; fingerprint = fingerprint_parts node modifiers
         ; schedule_event
         ; children = []
         ; modifier_children = []
@@ -358,7 +772,30 @@ module Renderer = struct
       patch_same_kind t node modifiers;
       t
 
+    (* Skipping a patch also skips callback refresh. Only nodes whose callbacks are
+       represented in their fingerprint can safely use this path. *)
+    and can_skip_patch_when_unchanged = function
+      | Text _ | Image_node _ | List_row_node _ | Custom_view_node _ -> true
+      | Button_node _
+      | Text_field_node _
+      | Text_editor_node _
+      | Stack_node _
+      | Scroll_view_node _
+      | List_node _
+      | Navigation_stack_node _
+      | Navigation_split_node _
+      | Section_node _
+      | Tab_view_node _
+      | Sidebar_split_node _
+      | Picker_node _
+      | Photo_picker_node _
+      | File_exporter_node _
+      | File_importer_node _
+      | Camera_capture_node _
+      | Modified_node _ -> false
+
     and patch_same_kind t node modifiers =
+      t.fingerprint <- fingerprint_parts node modifiers;
       let replace_children children =
         List.iter t.children ~f:(fun child -> destroy child.mounted);
         t.children <- children;
@@ -378,13 +815,25 @@ module Renderer = struct
          Backend.set_text_attributes t.view attributes;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
+         Backend.set_enabled t.view true;
          replace_children []
-       | Button_node { title; on_click } ->
+       | Button_node { title; is_enabled; on_click } ->
          Backend.set_text t.view title;
-         Backend.set_on_click t.view (Some (fun () -> t.schedule_event on_click));
+         Backend.set_enabled t.view is_enabled;
+         Backend.set_on_click
+           t.view
+           (if is_enabled then Some (fun () -> t.schedule_event on_click) else None);
          Backend.set_on_change t.view None;
          replace_children []
        | Text_field_node { text; placeholder; on_change } ->
+         Backend.set_text t.view text;
+         Backend.set_placeholder t.view placeholder;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change
+           t.view
+           (Some (fun text -> t.schedule_event (on_change text)));
+         replace_children []
+       | Text_editor_node { text; placeholder; on_change } ->
          Backend.set_text t.view text;
          Backend.set_placeholder t.view placeholder;
          Backend.set_on_click t.view None;
@@ -409,7 +858,15 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
+       | Navigation_split_node { sidebar; content; detail } ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t [ sidebar; content; detail ]
        | Tab_view_node { selected; on_select; tabs } ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_tabs t ~selected ~on_select tabs
+       | Sidebar_split_node { selected; on_select; tabs } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_tabs t ~selected ~on_select tabs
@@ -423,6 +880,7 @@ module Renderer = struct
            ; subtitle
            ; trailing_text
            ; title_strikethrough
+           ; on_click
            ; leading_button
            ; swipe_actions
            } ->
@@ -447,8 +905,61 @@ module Renderer = struct
                 ; style = action.style
                 ; on_click = (fun () -> t.schedule_event action.on_click)
                 }));
+         Backend.set_on_click
+           t.view
+           (Option.map on_click ~f:(fun on_click -> fun () -> t.schedule_event on_click));
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Section_node { key = _; title; children } ->
+         Backend.set_section t.view ~title;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
+         reconcile_positional t children
+       | Picker_node { title; selected; on_select; options } ->
+         Backend.set_picker
+           t.view
+           ~title
+           ~selected
+           ~on_select:(Some (fun id -> t.schedule_event (on_select id)))
+           options;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Photo_picker_node { title; is_enabled; wants_payload; selected; on_select } ->
+         Backend.set_text t.view title;
+         Backend.set_enabled t.view is_enabled;
+         Backend.set_image_payload_mode t.view wants_payload;
+         Backend.set_placeholder t.view selected;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change
+           t.view
+           (if is_enabled
+            then Some (fun image_id -> t.schedule_event (on_select image_id))
+            else None);
+         replace_children []
+       | File_exporter_node { title; is_enabled; export } ->
+         Backend.set_text t.view title;
+         Backend.set_enabled t.view is_enabled;
+         Backend.set_file_exporter t.view export;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | File_importer_node { title; allowed_content_types; on_select } ->
+         Backend.set_text t.view title;
+         Backend.set_file_importer
+           t.view
+           ~allowed_content_types
+           ~on_select:(Some (fun content -> t.schedule_event (on_select content)));
+         Backend.set_on_click t.view None;
+         replace_children []
+       | Camera_capture_node { title; wants_payload; captured; on_capture } ->
+         Backend.set_text t.view title;
+         Backend.set_image_payload_mode t.view wants_payload;
+         Backend.set_placeholder t.view captured;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change
+           t.view
+           (Some (fun image_id -> t.schedule_event (on_capture image_id)));
          replace_children []
        | Custom_view_node _ ->
          Backend.set_on_click t.view None;
@@ -466,6 +977,7 @@ module Renderer = struct
         let replacement = mount ~schedule_event:t.schedule_event node in
         t.kind <- replacement.kind;
         t.view <- replacement.view;
+        t.fingerprint <- replacement.fingerprint;
         t.children <- replacement.children;
         t.modifier_children <- replacement.modifier_children)
 
@@ -473,7 +985,13 @@ module Renderer = struct
       let original_node = node in
       let base_node, modifiers = unwrap_modifiers node in
       let new_kind = backend_kind base_node in
+      let next_fingerprint = fingerprint_parts base_node modifiers in
       match existing with
+      | Some child
+        when equal_backend_kind child.mounted.kind new_kind
+             && can_skip_patch_when_unchanged base_node
+             && String.equal child.mounted.fingerprint next_fingerprint ->
+        child.mounted
       | Some child when equal_backend_kind child.mounted.kind new_kind ->
         patch_same_kind child.mounted base_node modifiers;
         child.mounted
@@ -595,19 +1113,26 @@ module App = struct
       { driver; mounted = None }
     ;;
 
-    let rec flush_and_render t =
-      Bonsai_driver.flush t.driver;
+    let rec render_current_result t =
       let node = Bonsai_driver.result t.driver in
       (match t.mounted with
        | None ->
          t.mounted
          <- Some (R.mount ~schedule_event:(schedule_event_and_render t) node)
-       | Some mounted -> R.update mounted node);
-      Bonsai_driver.trigger_lifecycles t.driver
+       | Some mounted -> R.update mounted node)
+
+    and flush_and_render t =
+      Bonsai_driver.flush t.driver;
+      render_current_result t;
+      Bonsai_driver.trigger_lifecycles t.driver;
+      Bonsai_driver.flush t.driver;
+      render_current_result t
 
     and schedule_event_and_render t event =
-      Bonsai_driver.schedule_event t.driver event;
-      flush_and_render t
+      Effect.Expert.eval
+        event
+        ~on_exn:(fun exn -> Exn.reraise exn "Unhandled exception raised in effect")
+        ~f:(fun () -> flush_and_render t)
     ;;
 
     let view t = Option.map t.mounted ~f:R.view
@@ -620,6 +1145,7 @@ module For_testing = struct
       type t =
         { created : int
         ; destroyed : int
+        ; mutations : int
         }
       [@@deriving sexp_of]
     end
@@ -631,11 +1157,21 @@ module For_testing = struct
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable children : (string option * view) list
+      ; mutable is_enabled : bool
       ; mutable on_click : (unit -> unit) option
       ; mutable on_change : (string -> unit) option
       ; mutable selected_tab : string option
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
+      ; mutable section_title : string option
+      ; mutable picker_title : string option
+      ; mutable picker_selected : string option
+      ; mutable on_select_picker : (string -> unit) option
+      ; mutable picker_options : rendered_picker_option list
+      ; mutable file_export : file_export option
+      ; mutable allowed_content_types : string list
+      ; mutable on_import_file : (string -> unit) option
+      ; mutable wants_image_payload : bool
       ; mutable list_row : string option
       ; mutable row_leading_button : rendered_row_leading_button option
       ; mutable row_actions : rendered_row_action list
@@ -646,20 +1182,27 @@ module For_testing = struct
     let next_id = ref 0
     let created = ref 0
     let destroyed = ref 0
+    let mutations = ref 0
 
     let reset () =
       next_id := 0;
       created := 0;
-      destroyed := 0
+      destroyed := 0;
+      mutations := 0
     ;;
 
-    let stats () : Stats.t = { created = !created; destroyed = !destroyed }
+    let stats () : Stats.t =
+      { created = !created; destroyed = !destroyed; mutations = !mutations }
+    ;;
 
     let diff_stats (before : Stats.t) (after : Stats.t) : Stats.t =
       { created = after.created - before.created
       ; destroyed = after.destroyed - before.destroyed
+      ; mutations = after.mutations - before.mutations
       }
     ;;
+
+    let mutate () = Int.incr mutations
 
     let create kind =
       Int.incr next_id;
@@ -670,11 +1213,21 @@ module For_testing = struct
       ; text_attributes = default_text_attributes
       ; placeholder = None
       ; children = []
+      ; is_enabled = true
       ; on_click = None
       ; on_change = None
       ; selected_tab = None
       ; on_select_tab = None
       ; tabs = []
+      ; section_title = None
+      ; picker_title = None
+      ; picker_selected = None
+      ; on_select_picker = None
+      ; picker_options = []
+      ; file_export = None
+      ; allowed_content_types = []
+      ; on_import_file = None
+      ; wants_image_payload = false
       ; list_row = None
       ; row_leading_button = None
       ; row_actions = []
@@ -684,16 +1237,36 @@ module For_testing = struct
     ;;
 
     let destroy _ = Int.incr destroyed
-    let set_text view text = view.text <- Some text
-    let set_text_attributes view attributes = view.text_attributes <- attributes
-    let set_placeholder view placeholder = view.placeholder <- placeholder
-    let set_spacing _view _spacing = ()
+
+    let set_text view text =
+      mutate ();
+      view.text <- Some text
+    ;;
+
+    let set_text_attributes view attributes =
+      mutate ();
+      view.text_attributes <- attributes
+    ;;
+
+    let set_placeholder view placeholder =
+      mutate ();
+      view.placeholder <- placeholder
+    ;;
+
+    let set_spacing _view _spacing = mutate ()
+
+    let set_enabled view is_enabled =
+      mutate ();
+      view.is_enabled <- is_enabled
+    ;;
 
     let set_children view ~keyed children =
+      mutate ();
       view.children <- List.zip_exn keyed children
     ;;
 
     let set_tabs view ~selected ~on_select tabs =
+      mutate ();
       view.selected_tab <- Some selected;
       view.on_select_tab <- on_select;
       view.tabs <- tabs
@@ -708,6 +1281,7 @@ module For_testing = struct
       ~(leading_button : rendered_row_leading_button option)
       ~(swipe_actions : rendered_row_action list)
       =
+      mutate ();
       let leading =
         match leading_button with
         | None -> "leading=none"
@@ -742,9 +1316,47 @@ module For_testing = struct
               actions)
     ;;
 
-    let set_on_click view on_click = view.on_click <- on_click
-    let set_on_change view on_change = view.on_change <- on_change
+    let set_section view ~title =
+      mutate ();
+      view.section_title <- title
+    ;;
+
+    let set_picker view ~title ~selected ~on_select options =
+      mutate ();
+      view.picker_title <- Some title;
+      view.picker_selected <- Some selected;
+      view.on_select_picker <- on_select;
+      view.picker_options <- options
+    ;;
+
+    let set_file_exporter view export =
+      mutate ();
+      view.file_export <- Some export
+    ;;
+
+    let set_file_importer view ~allowed_content_types ~on_select =
+      mutate ();
+      view.allowed_content_types <- allowed_content_types;
+      view.on_import_file <- on_select
+    ;;
+
+    let set_image_payload_mode view wants_payload =
+      mutate ();
+      view.wants_image_payload <- wants_payload
+    ;;
+
+    let set_on_click view on_click =
+      mutate ();
+      view.on_click <- on_click
+    ;;
+
+    let set_on_change view on_change =
+      mutate ();
+      view.on_change <- on_change
+    ;;
+
     let set_modifiers view ~schedule_event modifiers =
+      mutate ();
       view.modifiers <- modifiers;
       view.schedule_event <- Some schedule_event
     ;;
@@ -753,14 +1365,23 @@ module For_testing = struct
       | Label -> "label"
       | Button -> "button"
       | Text_field -> "text-field"
+      | Text_editor -> "text-editor"
       | Stack Vertical -> "stack(vertical)"
       | Stack Horizontal -> "stack(horizontal)"
       | Scroll_view -> "scroll-view"
       | List -> "list"
       | Navigation_stack -> "navigation-stack"
+      | Navigation_split -> "navigation-split"
       | Tab_view -> "tab-view"
+      | Sidebar_split -> "sidebar-split"
       | Image -> "image"
       | List_row -> "list-row"
+      | Section -> "section"
+      | Picker -> "picker"
+      | Photo_picker -> "photo-picker"
+      | File_exporter -> "file-exporter"
+      | File_importer -> "file-importer"
+      | Camera_capture -> "camera-capture"
       | Custom_view kind -> "custom(" ^ kind ^ ")"
     ;;
 
@@ -784,6 +1405,7 @@ module For_testing = struct
         | None -> ""
         | Some text -> " text=" ^ Sexp.to_string_hum ([%sexp_of: string] text)
       in
+      let enabled = if view.is_enabled then "" else " disabled" in
       let text_attributes =
         if equal_text_attributes view.text_attributes default_text_attributes
         then ""
@@ -792,11 +1414,42 @@ module For_testing = struct
           " text_attributes=" ^ Sexp.to_string_hum sexp)
       in
       let placeholder =
-        match view.placeholder with
-        | None -> ""
-        | Some placeholder ->
+        match view.kind, view.placeholder with
+        | Photo_picker, _ -> ""
+        | _, None -> ""
+        | _, Some placeholder ->
           " placeholder=" ^ Sexp.to_string_hum ([%sexp_of: string] placeholder)
       in
+      let photo_picker =
+        match view.kind with
+        | Photo_picker ->
+          " selected=" ^ Sexp.to_string_hum ([%sexp_of: string option] view.placeholder)
+        | _ -> ""
+      in
+      let camera_capture =
+        match view.kind with
+        | Camera_capture ->
+          " captured=" ^ Sexp.to_string_hum ([%sexp_of: string option] view.placeholder)
+        | _ -> ""
+      in
+      let file_exporter =
+        match view.kind, view.file_export with
+        | File_exporter, Some export ->
+          sprintf
+            " filename=%s content_type=%s"
+            export.filename
+            export.content_type
+        | _ -> ""
+      in
+      let file_importer =
+        match view.kind with
+        | File_importer ->
+          " allowed_content_types=["
+          ^ String.concat ~sep:"," view.allowed_content_types
+          ^ "]"
+        | _ -> ""
+      in
+      let payload = if view.wants_image_payload then " payload" else "" in
       let modifiers =
         match view.modifiers with
         | [] -> ""
@@ -810,24 +1463,44 @@ module For_testing = struct
         | None -> ""
         | Some selected -> " selected=" ^ selected
       in
+      let tab_name (tab : rendered_tab) =
+        let image =
+          match tab.system_image with
+          | None -> ""
+          | Some image -> ":" ^ image
+        in
+        let role =
+          match tab.role with
+          | None -> ""
+          | Some Search -> ":search"
+        in
+        tab.id ^ ":" ^ tab.title ^ image ^ role
+      in
       let tabs =
-        match view.tabs with
-        | [] -> ""
-        | tabs ->
-          let tab_name (tab : rendered_tab) =
-            let image =
-              match tab.system_image with
-              | None -> ""
-              | Some image -> ":" ^ image
-            in
-            let role =
-              match tab.role with
-              | None -> ""
-              | Some Search -> ":search"
-            in
-            tab.id ^ ":" ^ tab.title ^ image ^ role
-          in
+        match view.kind, view.tabs with
+        | _, [] -> ""
+        | Sidebar_split, tabs ->
+          " routes=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
+        | _, tabs ->
           " tabs=[" ^ String.concat ~sep:"," (List.map tabs ~f:tab_name) ^ "]"
+      in
+      let section =
+        match view.section_title with
+        | None -> ""
+        | Some title -> " title=" ^ Sexp.to_string_hum ([%sexp_of: string] title)
+      in
+      let picker =
+        match view.picker_title, view.picker_selected with
+        | Some title, Some selected ->
+          let option_name (option : rendered_picker_option) =
+            option.id ^ ":" ^ option.title
+          in
+          sprintf
+            " title=%s selected=%s options=[%s]"
+            (Sexp.to_string_hum ([%sexp_of: string] title))
+            selected
+            (String.concat ~sep:"," (List.map view.picker_options ~f:option_name))
+        | _ -> ""
       in
       let list_row = Option.value view.list_row ~default:"" in
       let child_lines =
@@ -848,8 +1521,16 @@ module For_testing = struct
        ^ text
        ^ text_attributes
        ^ placeholder
+       ^ photo_picker
+       ^ camera_capture
+       ^ file_exporter
+       ^ file_importer
+       ^ payload
+       ^ enabled
        ^ selected
        ^ tabs
+       ^ section
+       ^ picker
        ^ list_row
        ^ modifiers)
       :: child_lines
@@ -880,6 +1561,86 @@ module For_testing = struct
       match view.on_change with
       | Some f -> f text
       | None -> failwith "View has no text-change handler"
+    ;;
+
+    let select_photo_exn view ~path ~image_id =
+      let view = find_exn view ~path in
+      view.placeholder <- Some image_id;
+      match view.on_change with
+      | Some f -> f image_id
+      | None -> failwith "View has no photo-selection handler"
+    ;;
+
+    let select_photo_payload_exn view ~path ~(payload : image_payload) =
+      let view = find_exn view ~path in
+      view.placeholder <- Some payload.id;
+      match view.on_change with
+      | Some f -> f (image_payload_to_event_text payload)
+      | None -> failwith "View has no photo-selection handler"
+    ;;
+
+    let capture_camera_exn view ~path ~image_id =
+      let view = find_exn view ~path in
+      view.placeholder <- Some image_id;
+      match view.on_change with
+      | Some f -> f image_id
+      | None -> failwith "View has no camera-capture handler"
+    ;;
+
+    let capture_camera_payload_exn view ~path ~(payload : image_payload) =
+      let view = find_exn view ~path in
+      view.placeholder <- Some payload.id;
+      match view.on_change with
+      | Some f -> f (image_payload_to_event_text payload)
+      | None -> failwith "View has no camera-capture handler"
+    ;;
+
+    let import_file_exn view ~path ~content =
+      let view = find_exn view ~path in
+      match view.on_import_file with
+      | Some f -> f content
+      | None -> failwith "View has no file-import handler"
+    ;;
+
+    let presented_sheet_content_exn view =
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_sheet { is_presented = true; content = Some content; _ } ->
+            Some content
+          | _ -> None)
+      with
+      | Some content -> content
+      | None -> failwith "View has no presented sheet content"
+    ;;
+
+    let click_sheet_exn view ~path ~sheet_path =
+      let view = find_exn view ~path in
+      click_exn (presented_sheet_content_exn view) ~path:sheet_path
+    ;;
+
+    let change_sheet_text_exn view ~path ~sheet_path ~text =
+      let view = find_exn view ~path in
+      change_text_exn (presented_sheet_content_exn view) ~path:sheet_path ~text
+    ;;
+
+    let select_sheet_photo_exn view ~path ~sheet_path ~image_id =
+      let view = find_exn view ~path in
+      select_photo_exn (presented_sheet_content_exn view) ~path:sheet_path ~image_id
+    ;;
+
+    let select_sheet_photo_payload_exn view ~path ~sheet_path ~payload =
+      let view = find_exn view ~path in
+      select_photo_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
+    ;;
+
+    let capture_sheet_camera_exn view ~path ~sheet_path ~image_id =
+      let view = find_exn view ~path in
+      capture_camera_exn (presented_sheet_content_exn view) ~path:sheet_path ~image_id
+    ;;
+
+    let capture_sheet_camera_payload_exn view ~path ~sheet_path ~payload =
+      let view = find_exn view ~path in
+      capture_camera_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
     ;;
 
     let schedule_event_exn view effect =
@@ -927,6 +1688,19 @@ module For_testing = struct
       match view.on_select_tab with
       | Some f -> f id
       | None -> failwith "View has no tab selection handler"
+    ;;
+
+    let select_sidebar_route_exn view ~id =
+      match view.on_select_tab with
+      | Some f -> f id
+      | None -> failwith "View has no sidebar route selection handler"
+    ;;
+
+    let select_picker_exn view ~path ~id =
+      let view = find_exn view ~path in
+      match view.on_select_picker with
+      | Some f -> f id
+      | None -> failwith "View has no picker selection handler"
     ;;
 
     let click_row_leading_exn view ~path =
