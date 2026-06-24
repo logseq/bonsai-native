@@ -50,6 +50,7 @@ private enum NodeKind: Int32 {
   case fileImporter = 18
   case cameraCapture = 19
   case navigationSplit = 20
+  case adaptiveLayout = 21
 }
 
 private struct BonsaiNativeRowAction: Identifiable {
@@ -340,6 +341,7 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
 }
 
 private struct BonsaiNativeNodeView: View {
+  @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
 
@@ -435,6 +437,9 @@ private struct BonsaiNativeNodeView: View {
 
     case .navigationSplit:
       navigationSplitView
+
+    case .adaptiveLayout:
+      adaptiveLayoutView
 
     case .tabView:
       tabView
@@ -710,6 +715,16 @@ private struct BonsaiNativeNodeView: View {
       } else {
         EmptyView()
       }
+    }
+  }
+
+  @ViewBuilder
+  private var adaptiveLayoutView: some View {
+    let index = horizontalSizeClass == .compact ? 0 : 1
+    if node.children.indices.contains(index) {
+      BonsaiNativeNodeView(node: node.children[index], model: model)
+    } else {
+      EmptyView()
     }
   }
 

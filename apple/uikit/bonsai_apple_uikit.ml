@@ -124,6 +124,9 @@ let create kind =
     | Apple.Navigation_split ->
       let native = init_stack Apple.Vertical in
       native, host_controller native
+    | Apple.Adaptive_layout ->
+      let native = init_stack Apple.Vertical in
+      native, host_controller native
     | Apple.Label ->
       let native = init_label () in
       native, host_controller native

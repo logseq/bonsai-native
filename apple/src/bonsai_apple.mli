@@ -158,6 +158,7 @@ val picker
   -> node
 val navigation_stack : node list -> node
 val navigation_split : sidebar:node -> content:node -> detail:node -> node
+val adaptive_layout : compact:node -> regular:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
 val tab_view : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
 val sidebar_split : selected:string -> on_select:(string -> unit Effect.t) -> tab list -> node
@@ -231,6 +232,7 @@ type backend_kind =
   | List
   | Navigation_stack
   | Navigation_split
+  | Adaptive_layout
   | Tab_view
   | Sidebar_split
   | Image

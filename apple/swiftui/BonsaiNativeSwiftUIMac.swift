@@ -31,6 +31,7 @@ private enum NodeKind: Int32 {
   case fileImporter = 18
   case cameraCapture = 19
   case navigationSplit = 20
+  case adaptiveLayout = 21
 }
 
 private struct BonsaiNativeRowAction: Identifiable {
@@ -222,6 +223,8 @@ private struct BonsaiNativeNodeView: View {
       } detail: {
         child(at: 2)
       }
+    case .adaptiveLayout:
+      child(at: 1)
     case .tabView:
       TabView(selection: tabSelection) {
         ForEach(Array(node.children.enumerated()), id: \.element.id) { index, child in

@@ -135,6 +135,7 @@ type backend_kind =
   | List
   | Navigation_stack
   | Navigation_split
+  | Adaptive_layout
   | Tab_view
   | Sidebar_split
   | Image
@@ -180,6 +181,10 @@ type node =
       { sidebar : node
       ; content : node
       ; detail : node
+      }
+  | Adaptive_layout_node of
+      { compact : node
+      ; regular : node
       }
   | Tab_view_node of
       { selected : string
@@ -348,6 +353,8 @@ let navigation_stack children = Navigation_stack_node children
 let navigation_split ~sidebar ~content ~detail =
   Navigation_split_node { sidebar; content; detail }
 ;;
+
+let adaptive_layout ~compact ~regular = Adaptive_layout_node { compact; regular }
 
 let tab ~id ~title ?system_image ?role content =
   { id; title; system_image; role; content }
@@ -556,6 +563,7 @@ let backend_kind = function
   | List_node _ -> List
   | Navigation_stack_node _ -> Navigation_stack
   | Navigation_split_node _ -> Navigation_split
+  | Adaptive_layout_node _ -> Adaptive_layout
   | Tab_view_node _ -> Tab_view
   | Sidebar_split_node _ -> Sidebar_split
   | Image_node _ -> Image
@@ -697,6 +705,9 @@ module Renderer = struct
           , (fingerprint sidebar : string)
           , (fingerprint content : string)
           , (fingerprint detail : string)]
+        | Adaptive_layout_node { compact; regular } ->
+          [%sexp
+            "adaptive-layout", (fingerprint compact : string), (fingerprint regular : string)]
         | List_row_node row ->
           let leading =
             Option.map row.leading_button ~f:(fun leading ->
@@ -784,6 +795,7 @@ module Renderer = struct
       | List_node _
       | Navigation_stack_node _
       | Navigation_split_node _
+      | Adaptive_layout_node _
       | Section_node _
       | Tab_view_node _
       | Sidebar_split_node _
@@ -862,6 +874,10 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t [ sidebar; content; detail ]
+       | Adaptive_layout_node { compact; regular } ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t [ compact; regular ]
        | Tab_view_node { selected; on_select; tabs } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
@@ -1372,6 +1388,7 @@ module For_testing = struct
       | List -> "list"
       | Navigation_stack -> "navigation-stack"
       | Navigation_split -> "navigation-split"
+      | Adaptive_layout -> "adaptive-layout"
       | Tab_view -> "tab-view"
       | Sidebar_split -> "sidebar-split"
       | Image -> "image"

@@ -680,6 +680,23 @@ let%test_unit "tab view renders tab metadata and selected content" =
   label#3 key=search text="Search tasks"|}
 ;;
 
+let%test_unit "adaptive layout renders compact and regular branches" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.adaptive_layout
+         ~compact:(Apple.text "Phone tabs")
+         ~regular:(Apple.text "Three columns"))
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|adaptive-layout#1
+  label#3 text="Phone tabs"
+  label#2 text="Three columns"|}
+;;
+
 let%test_unit "keyed children preserve modifiers on initial mount" =
   Backend.reset ();
   let mounted =

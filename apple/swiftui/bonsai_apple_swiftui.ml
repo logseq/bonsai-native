@@ -304,6 +304,7 @@ let node_kind_id = function
   | Apple.List -> 7
   | Apple.Navigation_stack -> 8
   | Apple.Navigation_split -> 20
+  | Apple.Adaptive_layout -> 21
   | Apple.Tab_view -> 9
   | Apple.Sidebar_split -> 16
   | Apple.Image -> 10
