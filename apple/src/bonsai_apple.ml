@@ -72,6 +72,7 @@ type toolbar_item =
   { id : string
   ; title : string
   ; system_image : string option
+  ; is_title_visible : bool
   ; is_enabled : bool
   ; on_click : unit Effect.t
   ; menu_actions : toolbar_menu_action list
@@ -744,10 +745,18 @@ let regular_material_panel ?(corner_radius = 8.) node =
 let frame ?width ?height node = Modified_node (Frame { width; height }, node)
 let navigation_title title node = Modified_node (Navigation_title title, node)
 let searchable ~text ~on_change node = Modified_node (Searchable { text; on_change }, node)
-let toolbar_item ?system_image ?(is_enabled = true) ?(menu_actions = []) ~id ~title ~on_click ()
+let toolbar_item
+  ?system_image
+  ?(is_title_visible = true)
+  ?(is_enabled = true)
+  ?(menu_actions = [])
+  ~id
+  ~title
+  ~on_click
+  ()
   : toolbar_item
   =
-  { id; title; system_image; is_enabled; on_click; menu_actions }
+  { id; title; system_image; is_title_visible; is_enabled; on_click; menu_actions }
 ;;
 let toolbar items node = Modified_node (Toolbar items, node)
 let alert_action ?(role = Alert_default) ?(is_enabled = true) ~id ~title ~on_click () =
@@ -2209,11 +2218,12 @@ module For_testing = struct
                   ":menu=[" ^ action_text ^ "]"
               in
               sprintf
-                "%s:%s:%s%s%s"
+                "%s:%s:%s%s%s%s"
                 item.id
                 item.title
                 (if item.is_enabled then "enabled" else "disabled")
                 system_image
+                (if item.is_title_visible then "" else ":title-hidden")
                 menu)
             |> String.concat ~sep:","
           in

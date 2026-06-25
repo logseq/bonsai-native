@@ -110,6 +110,7 @@ private struct BonsaiNativeToolbarItem: Identifiable {
   let id: String
   let title: String
   let systemImage: String?
+  let isTitleVisible: Bool
   let eventId: Int32?
   let isEnabled: Bool
   var menuActions: [BonsaiNativeRowAction]
@@ -1140,6 +1141,7 @@ private struct BonsaiNativeNodeView: View {
       if let systemImage = item.systemImage {
         Image(systemName: systemImage)
           .font(.system(size: 16, weight: .semibold))
+          .accessibilityLabel(item.title)
           .modifier(BonsaiHeaderIconChrome())
       } else {
         Text(item.title)
@@ -2449,6 +2451,7 @@ public func bonsai_native_swiftui_append_toolbar_item(
   _ idPointer: UnsafePointer<CChar>?,
   _ titlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isTitleVisible: Bool,
   _ isEnabled: Bool,
   _ eventId: Int32
 ) {
@@ -2460,6 +2463,7 @@ public func bonsai_native_swiftui_append_toolbar_item(
       id: String(cString: idPointer),
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
+      isTitleVisible: isTitleVisible,
       eventId: eventId < 0 ? nil : eventId,
       isEnabled: isEnabled,
       menuActions: []

@@ -64,6 +64,7 @@ type toolbar_item =
   { id : string
   ; title : string
   ; system_image : string option
+  ; is_title_visible : bool
   ; is_enabled : bool
   ; on_click : unit Effect.t
   ; menu_actions : toolbar_menu_action list
@@ -313,6 +314,7 @@ val navigation_title : string -> node -> node
 val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
 val toolbar_item
   :  ?system_image:string
+  -> ?is_title_visible:bool
   -> ?is_enabled:bool
   -> ?menu_actions:toolbar_menu_action list
   -> id:string

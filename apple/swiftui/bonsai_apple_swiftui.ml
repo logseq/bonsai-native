@@ -332,6 +332,7 @@ external append_native_toolbar_item
   -> string
   -> string option
   -> bool
+  -> bool
   -> int
   -> unit
   = "bonsai_apple_swiftui_append_toolbar_item_bytecode"
@@ -1065,6 +1066,7 @@ module Backend = struct
         item.id
         item.title
         item.system_image
+        item.is_title_visible
         item.is_enabled
         event_id;
       List.iter item.menu_actions ~f:(fun action ->

@@ -117,6 +117,7 @@ extern void bonsai_native_swiftui_append_toolbar_item(
   const char *id,
   const char *title,
   const char *system_image,
+  bool is_title_visible,
   bool is_enabled,
   int32_t event_id);
 extern void bonsai_native_swiftui_append_toolbar_menu_action(
@@ -805,16 +806,18 @@ CAMLprim value bonsai_apple_swiftui_append_toolbar_item(
   value id,
   value title,
   value system_image,
+  value is_title_visible,
   value is_enabled,
   value event_id)
 {
-  CAMLparam5(node, id, title, system_image, is_enabled);
-  CAMLxparam1(event_id);
+  CAMLparam5(node, id, title, system_image, is_title_visible);
+  CAMLxparam2(is_enabled, event_id);
   bonsai_native_swiftui_append_toolbar_item(
     pointer_val(node),
     String_val(id),
     String_val(title),
     option_string_val(system_image),
+    Bool_val(is_title_visible),
     Bool_val(is_enabled),
     Int_val(event_id));
   CAMLreturn(Val_unit);
@@ -829,7 +832,8 @@ CAMLprim value bonsai_apple_swiftui_append_toolbar_item_bytecode(value *argv, in
     argv[2],
     argv[3],
     argv[4],
-    argv[5]);
+    argv[5],
+    argv[6]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_toolbar_menu_action(
