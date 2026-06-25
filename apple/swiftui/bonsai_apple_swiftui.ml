@@ -25,6 +25,12 @@ external create_node : int -> native = "bonsai_apple_swiftui_create_node"
 external release_node : native -> unit = "bonsai_apple_swiftui_release_node"
 external set_native_text : native -> string -> unit = "bonsai_apple_swiftui_set_text"
 
+external set_native_image_source
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_image_source"
+
 external set_native_text_attributes
   :  native
   -> int
@@ -508,6 +514,15 @@ module Backend = struct
 
   let set_text view text = set_native_text view.native text
   let set_enabled view is_enabled = set_native_enabled view.native is_enabled
+
+  let image_source_id = function
+    | Apple.System_image -> 0
+    | Apple.File_image -> 1
+  ;;
+
+  let set_image_source view source =
+    set_native_image_source view.native (image_source_id source)
+  ;;
 
   let text_style_id = function
     | Apple.Large_title -> 0

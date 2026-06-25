@@ -154,6 +154,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var isTextFieldSecure = false
   @Published var isToggleOn = false
   @Published var isEnabled = true
+  @Published var imageSource: Int32 = 0
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
@@ -235,6 +236,20 @@ private final class BonsaiNativeHostModel: ObservableObject {
       text.withCString { pointer in
         callback?(eventId, pointer)
       }
+    }
+  }
+}
+
+private struct BonsaiNativeImageView: View {
+  @ObservedObject var node: BonsaiNativeNode
+
+  var body: some View {
+    if node.imageSource == 1, let image = UIImage(contentsOfFile: node.text) {
+      Image(uiImage: image)
+        .resizable()
+        .scaledToFit()
+    } else {
+      Image(systemName: node.text)
     }
   }
 }
@@ -633,7 +648,7 @@ private struct BonsaiNativeNodeView: View {
       sidebarSplitView
 
     case .image:
-      Image(systemName: node.text)
+      BonsaiNativeImageView(node: node)
 
     case .listRow:
       BonsaiNativeListRowView(node: node, model: model)
@@ -1818,6 +1833,15 @@ public func bonsai_native_swiftui_set_text(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.text = textPointer.map(String.init(cString:)) ?? ""
+}
+
+@_cdecl("bonsai_native_swiftui_set_image_source")
+public func bonsai_native_swiftui_set_image_source(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ source: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.imageSource = source
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_attributes")

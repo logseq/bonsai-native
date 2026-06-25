@@ -35,6 +35,17 @@ type share_link =
   }
 [@@deriving sexp_of, equal]
 
+type image_source =
+  | System_image
+  | File_image
+[@@deriving sexp_of, equal]
+
+type image =
+  { name : string
+  ; source : image_source
+  }
+[@@deriving sexp_of, equal]
+
 type toolbar_menu_action =
   { title : string
   ; system_image : string option
@@ -265,7 +276,7 @@ type node =
       ; bottom_search_on_change : (string -> unit Effect.t) option
       ; bottom_action : sidebar_action option
       }
-  | Image_node of string
+  | Image_node of image
   | List_row_node of list_row
   | Section_node of
       { key : string
@@ -484,7 +495,8 @@ let sidebar_split
     }
 ;;
 
-let image name = Image_node name
+let image name = Image_node { name; source = System_image }
+let image_file path = Image_node { name = path; source = File_image }
 
 let image_payload_header = "bonsai-image-payload"
 
@@ -767,6 +779,7 @@ module Renderer = struct
       -> on_select:(string -> unit) option
       -> unit
     val set_image_payload_mode : view -> bool -> unit
+    val set_image_source : view -> image_source -> unit
     val set_on_click : view -> (unit -> unit) option -> unit
     val set_on_change : view -> (string -> unit) option -> unit
     val set_enabled : view -> bool -> unit
@@ -931,7 +944,7 @@ module Renderer = struct
             , (bottom_search_text : string)
             , (Option.map bottom_action ~f:(fun action -> action.id, action.title, action.system_image)
                : (string * string * string option) option) )]
-        | Image_node name -> [%sexp "image", (name : string)]
+        | Image_node image -> [%sexp "image", (image : image)]
         | Picker_node { title; selected; options; on_select = _ } ->
           [%sexp "picker", (title : string), (selected : string), (options : picker_option list)]
         | Photo_picker_node { title; is_enabled; wants_payload; selected; on_select = _ } ->
@@ -1117,8 +1130,9 @@ module Renderer = struct
              (Option.map bottom_search_on_change ~f:(fun on_change ->
                 fun text -> t.schedule_event (on_change text)))
            ~bottom_action:(Option.map bottom_action ~f:render_action)
-       | Image_node name ->
+       | Image_node { name; source } ->
          Backend.set_text t.view name;
+         Backend.set_image_source t.view source;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
@@ -1503,6 +1517,7 @@ module For_testing = struct
       ; mutable allowed_content_types : string list
       ; mutable on_import_file : (string -> unit) option
       ; mutable wants_image_payload : bool
+      ; mutable image_source : image_source
       ; mutable list_row : string option
       ; mutable row_leading_button : rendered_row_leading_button option
       ; mutable row_actions : rendered_row_action list
@@ -1571,6 +1586,7 @@ module For_testing = struct
       ; allowed_content_types = []
       ; on_import_file = None
       ; wants_image_payload = false
+      ; image_source = System_image
       ; list_row = None
       ; row_leading_button = None
       ; row_actions = []
@@ -1764,6 +1780,11 @@ module For_testing = struct
       view.wants_image_payload <- wants_payload
     ;;
 
+    let set_image_source view source =
+      mutate ();
+      view.image_source <- source
+    ;;
+
     let set_on_click view on_click =
       mutate ();
       view.on_click <- on_click
@@ -1894,6 +1915,11 @@ module For_testing = struct
         | _ -> ""
       in
       let payload = if view.wants_image_payload then " payload" else "" in
+      let image_source =
+        match view.kind, view.image_source with
+        | Image, File_image -> " source=file"
+        | _ -> ""
+      in
       let modifiers =
         match view.modifiers with
         | [] -> ""
@@ -2067,6 +2093,7 @@ module For_testing = struct
        ^ file_exporter
        ^ file_importer
        ^ payload
+       ^ image_source
        ^ enabled
        ^ selected
        ^ tabs

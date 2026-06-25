@@ -33,6 +33,11 @@ type share_link =
   ; is_enabled : bool
   }
 
+type image_source =
+  | System_image
+  | File_image
+[@@deriving sexp_of]
+
 type toolbar_menu_action =
   { title : string
   ; system_image : string option
@@ -230,6 +235,7 @@ val sidebar_split
   -> tab list
   -> node
 val image : string -> node
+val image_file : string -> node
 val photo_picker
   :  ?is_enabled:bool
   -> title:string
@@ -441,6 +447,7 @@ module Renderer : sig
       -> on_select:(string -> unit) option
       -> unit
     val set_image_payload_mode : view -> bool -> unit
+    val set_image_source : view -> image_source -> unit
     val set_on_click : view -> (unit -> unit) option -> unit
     val set_on_change : view -> (string -> unit) option -> unit
     val set_enabled : view -> bool -> unit

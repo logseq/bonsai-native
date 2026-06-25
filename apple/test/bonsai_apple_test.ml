@@ -162,6 +162,18 @@ let%test_unit "share link renders URL metadata" =
     ~expect:{|share-link#1 text="Share URL" url=https://api.test/share/token|}
 ;;
 
+let%test_unit "file image renders path metadata" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.image_file "/AppSandbox/Documents/SourceImages/image-cell.jpg")
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:{|image#1 text=/AppSandbox/Documents/SourceImages/image-cell.jpg source=file|}
+;;
+
 let%test_unit "disabled file exporter renders disabled metadata" =
   Backend.reset ();
   let mounted =
