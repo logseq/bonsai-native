@@ -1334,6 +1334,22 @@ let%test_unit "sidebar split reuses keyed routes across reorder and text updates
   [%test_result: int] diff.destroyed ~expect:1
 ;;
 
+let%test_unit "sidebar split can hide compact top bar for pushed route chrome" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.sidebar_split
+         ~compact_top_bar_visible:false
+         ~selected:"decks"
+         ~on_select:(fun _ -> noop)
+         [ Apple.tab ~id:"decks" ~title:"Biology" (Apple.text "Deck detail") ])
+  in
+  require_string_contains (show mounted) {|compact-top-bar=hidden|};
+  if String.is_substring (show mounted) ~substring:{|compact-top-bar=chatgpt-like-menu|}
+  then raise_s [%sexp "pushed route should not render the outer sidebar top bar"]
+;;
+
 let%test_unit "sidebar split rejects duplicate route ids before mounting" =
   require_raises_string
     (fun () ->

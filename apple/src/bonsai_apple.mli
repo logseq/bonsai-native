@@ -249,6 +249,7 @@ val sidebar_action
   -> sidebar_action
 val sidebar_split
   :  ?title:string
+  -> ?compact_top_bar_visible:bool
   -> ?header_action:sidebar_action
   -> ?actions:sidebar_action list
   -> ?bottom_search_placeholder:string
@@ -486,6 +487,7 @@ module Renderer : sig
     val set_sidebar_shell
       :  view
       -> title:string option
+      -> compact_top_bar_visible:bool
       -> header_action:rendered_sidebar_action option
       -> actions:rendered_sidebar_action list
       -> bottom_search_placeholder:string option

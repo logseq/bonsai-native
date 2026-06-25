@@ -292,6 +292,7 @@ type node =
       }
   | Sidebar_split_node of
       { title : string option
+      ; compact_top_bar_visible : bool
       ; selected : string
       ; on_select : string -> unit Effect.t
       ; tabs : tab list
@@ -527,6 +528,7 @@ let tab_view ~selected ~on_select (tabs : tab list) =
 
 let sidebar_split
   ?title
+  ?(compact_top_bar_visible = true)
   ?(header_action : sidebar_action option)
   ?(actions = ([] : sidebar_action list))
   ?bottom_search_placeholder
@@ -549,6 +551,7 @@ let sidebar_split
     Hash_set.add seen_actions action.id);
   Sidebar_split_node
     { title
+    ; compact_top_bar_visible
     ; selected
     ; on_select
     ; tabs
@@ -869,6 +872,7 @@ module Renderer = struct
     val set_sidebar_shell
       :  view
       -> title:string option
+      -> compact_top_bar_visible:bool
       -> header_action:rendered_sidebar_action option
       -> actions:rendered_sidebar_action list
       -> bottom_search_placeholder:string option
@@ -1093,6 +1097,7 @@ module Renderer = struct
                : (string * string * string option * tab_role option * string) list) )]
         | Sidebar_split_node
             { title
+            ; compact_top_bar_visible
             ; selected
             ; tabs
             ; on_select = _
@@ -1106,6 +1111,7 @@ module Renderer = struct
           [%sexp
             ( "sidebar-tabs"
             , (title : string option)
+            , (compact_top_bar_visible : bool)
             , (selected : string)
             , (List.map tabs ~f:(fun tab -> tab.id, tab.title, tab.system_image, tab.role, fingerprint tab.content)
                : (string * string * string option * tab_role option * string) list)
@@ -1294,6 +1300,7 @@ module Renderer = struct
          reconcile_tabs t ~selected ~on_select tabs
        | Sidebar_split_node
            { title
+           ; compact_top_bar_visible
            ; selected
            ; on_select
            ; tabs
@@ -1317,6 +1324,7 @@ module Renderer = struct
          Backend.set_sidebar_shell
            t.view
            ~title
+           ~compact_top_bar_visible
            ~header_action:(Option.map header_action ~f:render_action)
            ~actions:(List.map actions ~f:render_action)
            ~bottom_search_placeholder
@@ -1713,6 +1721,7 @@ module For_testing = struct
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
       ; mutable sidebar_title : string option
+      ; mutable sidebar_compact_top_bar_visible : bool
       ; mutable sidebar_header_action : rendered_sidebar_action option
       ; mutable sidebar_actions : rendered_sidebar_action list
       ; mutable sidebar_bottom_search_placeholder : string option
@@ -1787,6 +1796,7 @@ module For_testing = struct
       ; on_select_tab = None
       ; tabs = []
       ; sidebar_title = None
+      ; sidebar_compact_top_bar_visible = true
       ; sidebar_header_action = None
       ; sidebar_actions = []
       ; sidebar_bottom_search_placeholder = None
@@ -1888,6 +1898,7 @@ module For_testing = struct
     let set_sidebar_shell
       view
       ~title
+      ~compact_top_bar_visible
       ~header_action
       ~actions
       ~bottom_search_placeholder
@@ -1897,6 +1908,7 @@ module For_testing = struct
       =
       mutate ();
       view.sidebar_title <- title;
+      view.sidebar_compact_top_bar_visible <- compact_top_bar_visible;
       view.sidebar_header_action <- header_action;
       view.sidebar_actions <- actions;
       view.sidebar_bottom_search_placeholder <- bottom_search_placeholder;
@@ -2336,13 +2348,14 @@ module For_testing = struct
       in
       let compact_top_bar =
         match view.kind with
-        | Sidebar_split ->
+        | Sidebar_split when view.sidebar_compact_top_bar_visible ->
           let title = Option.value view.sidebar_title ~default:"Menu" in
           " sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title="
           ^ title
           ^ " sidebar-primary-row-height=52 sidebar-selected-corner-radius=12"
           ^ " sidebar-search-style=liquid-glass compact-top-bar=chatgpt-like-menu"
           ^ " header-button-chrome=liquid-glass"
+        | Sidebar_split -> " compact-top-bar=hidden"
         | _ -> ""
       in
       let sidebar_action_name (action : rendered_sidebar_action) =

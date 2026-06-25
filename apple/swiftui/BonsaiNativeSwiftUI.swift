@@ -221,6 +221,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
   @Published var sidebarTitle: String?
+  @Published var sidebarCompactTopBarVisible = true
   @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
   @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
   @Published var sidebarBottomSearchPlaceholder: String?
@@ -999,12 +1000,17 @@ private struct BonsaiNativeNodeView: View {
           .opacity(progress)
 
         ZStack(alignment: .top) {
-          selectedRouteDetail
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .padding(.top, 48)
+          if node.sidebarCompactTopBarVisible {
+            selectedRouteDetail
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+              .padding(.top, 48)
 
-          compactSidebarTopBar
-            .offset(y: -12)
+            compactSidebarTopBar
+              .offset(y: -12)
+          } else {
+            selectedRouteDetail
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
+          }
         }
         .frame(width: proxy.size.width, height: proxy.size.height)
         .background(bonsaiHomeBodyBackground)
@@ -2614,12 +2620,14 @@ public func bonsai_native_swiftui_append_tab(
 public func bonsai_native_swiftui_clear_sidebar_shell(
   _ pointer: UnsafeMutableRawPointer?,
   _ titlePointer: UnsafePointer<CChar>?,
+  _ compactTopBarVisible: Bool,
   _ bottomSearchPlaceholderPointer: UnsafePointer<CChar>?,
   _ bottomSearchTextPointer: UnsafePointer<CChar>?,
   _ bottomSearchEventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.sidebarTitle = titlePointer.map(String.init(cString:))
+  node.sidebarCompactTopBarVisible = compactTopBarVisible
   node.sidebarHeaderAction = nil
   node.sidebarActions = []
   node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))

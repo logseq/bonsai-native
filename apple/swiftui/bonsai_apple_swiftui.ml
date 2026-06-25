@@ -393,11 +393,12 @@ external append_native_tab
 external clear_native_sidebar_shell
   :  native
   -> string option
+  -> bool
   -> string option
   -> string
   -> int
   -> unit
-  = "bonsai_apple_swiftui_clear_sidebar_shell"
+  = "bonsai_apple_swiftui_clear_sidebar_shell_bytecode" "bonsai_apple_swiftui_clear_sidebar_shell"
 
 external set_native_sidebar_header_action
   :  native
@@ -702,6 +703,7 @@ module Backend = struct
   let set_sidebar_shell
     view
     ~title
+    ~compact_top_bar_visible
     ~(header_action : Apple.rendered_sidebar_action option)
     ~(actions : Apple.rendered_sidebar_action list)
     ~bottom_search_placeholder
@@ -732,6 +734,7 @@ module Backend = struct
     clear_native_sidebar_shell
       view.native
       title
+      compact_top_bar_visible
       bottom_search_placeholder
       bottom_search_text
       bottom_search_event_id;

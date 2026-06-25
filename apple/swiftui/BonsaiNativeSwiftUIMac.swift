@@ -122,6 +122,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
   @Published var sidebarTitle: String?
+  @Published var sidebarCompactTopBarVisible = true
   @Published var sidebarHeaderAction: BonsaiNativeSidebarAction?
   @Published var sidebarActions: [BonsaiNativeSidebarAction] = []
   @Published var sidebarBottomSearchPlaceholder: String?
@@ -1130,12 +1131,14 @@ public func bonsai_native_swiftui_append_tab(
 public func bonsai_native_swiftui_clear_sidebar_shell(
   _ pointer: UnsafeMutableRawPointer?,
   _ titlePointer: UnsafePointer<CChar>?,
+  _ compactTopBarVisible: Bool,
   _ bottomSearchPlaceholderPointer: UnsafePointer<CChar>?,
   _ bottomSearchTextPointer: UnsafePointer<CChar>?,
   _ bottomSearchEventId: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.sidebarTitle = titlePointer.map(String.init(cString:))
+  node.sidebarCompactTopBarVisible = compactTopBarVisible
   node.sidebarHeaderAction = nil
   node.sidebarActions = []
   node.sidebarBottomSearchPlaceholder = bottomSearchPlaceholderPointer.map(String.init(cString:))
