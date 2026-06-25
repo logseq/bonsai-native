@@ -31,6 +31,12 @@ external set_native_system_image
   -> unit
   = "bonsai_apple_swiftui_set_system_image"
 
+external set_native_title_visible
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_title_visible"
+
 external set_native_image_source
   :  native
   -> int
@@ -557,6 +563,7 @@ module Backend = struct
 
   let set_text view text = set_native_text view.native text
   let set_system_image view system_image = set_native_system_image view.native system_image
+  let set_title_visible view is_visible = set_native_title_visible view.native is_visible
   let set_enabled view is_enabled = set_native_enabled view.native is_enabled
 
   let image_source_id = function

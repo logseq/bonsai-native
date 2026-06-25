@@ -312,6 +312,7 @@ type node =
   | Photo_picker_node of
       { title : string
       ; system_image : string option
+      ; is_title_visible : bool
       ; is_enabled : bool
       ; wants_payload : bool
       ; selected : string option
@@ -638,8 +639,17 @@ let image_payload_of_event_text text =
   | _ -> None
 ;;
 
-let photo_picker ?(is_enabled = true) ?system_image ~title ?selected ~on_select () =
-  Photo_picker_node { title; system_image; is_enabled; wants_payload = false; selected; on_select }
+let photo_picker
+  ?(is_enabled = true)
+  ?system_image
+  ?(is_title_visible = true)
+  ~title
+  ?selected
+  ~on_select
+  ()
+  =
+  Photo_picker_node
+    { title; system_image; is_title_visible; is_enabled; wants_payload = false; selected; on_select }
 ;;
 
 let legacy_image_payload image_id =
@@ -654,10 +664,19 @@ let legacy_image_payload image_id =
   }
 ;;
 
-let photo_picker_payload ?(is_enabled = true) ?system_image ~title ?selected ~on_select () =
+let photo_picker_payload
+  ?(is_enabled = true)
+  ?system_image
+  ?(is_title_visible = true)
+  ~title
+  ?selected
+  ~on_select
+  ()
+  =
   Photo_picker_node
     { title
     ; system_image
+    ; is_title_visible
     ; is_enabled
     ; wants_payload = true
     ; selected
@@ -798,6 +817,7 @@ module Renderer = struct
     val destroy : view -> unit
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
+    val set_title_visible : view -> bool -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
@@ -1052,11 +1072,19 @@ module Renderer = struct
         | Picker_node { title; selected; options; on_select = _ } ->
           [%sexp "picker", (title : string), (selected : string), (options : picker_option list)]
         | Photo_picker_node
-            { title; system_image; is_enabled; wants_payload; selected; on_select = _ } ->
+            { title
+            ; system_image
+            ; is_title_visible
+            ; is_enabled
+            ; wants_payload
+            ; selected
+            ; on_select = _
+            } ->
           [%sexp
             "photo-picker"
           , (title : string)
           , (system_image : string option)
+          , (is_title_visible : bool)
           , (is_enabled : bool)
           , (wants_payload : bool)
           , (selected : string option)]
@@ -1314,9 +1342,11 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
-       | Photo_picker_node { title; system_image; is_enabled; wants_payload; selected; on_select } ->
+       | Photo_picker_node
+           { title; system_image; is_title_visible; is_enabled; wants_payload; selected; on_select } ->
          Backend.set_text t.view title;
          Backend.set_system_image t.view system_image;
+         Backend.set_title_visible t.view is_title_visible;
          Backend.set_enabled t.view is_enabled;
          Backend.set_image_payload_mode t.view wants_payload;
          Backend.set_placeholder t.view selected;
@@ -1622,6 +1652,7 @@ module For_testing = struct
       ; kind : backend_kind
       ; mutable text : string option
       ; mutable system_image : string option
+      ; mutable is_title_visible : bool
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable text_field_style : text_field_style
@@ -1692,6 +1723,7 @@ module For_testing = struct
       ; kind
       ; text = None
       ; system_image = None
+      ; is_title_visible = true
       ; text_attributes = default_text_attributes
       ; placeholder = None
       ; text_field_style = Rounded_border
@@ -1741,6 +1773,11 @@ module For_testing = struct
     let set_system_image view system_image =
       mutate ();
       view.system_image <- system_image
+    ;;
+
+    let set_title_visible view is_visible =
+      mutate ();
+      view.is_title_visible <- is_visible
     ;;
 
     let set_text_attributes view attributes =
@@ -1997,6 +2034,7 @@ module For_testing = struct
         | None -> ""
         | Some system_image -> " image=" ^ system_image
       in
+      let title_visibility = if view.is_title_visible then "" else " title-hidden" in
       let text_attributes =
         if equal_text_attributes view.text_attributes default_text_attributes
         then ""
@@ -2292,6 +2330,7 @@ module For_testing = struct
        ^ payload
        ^ image_source
        ^ system_image
+       ^ title_visibility
        ^ enabled
        ^ selected
        ^ tabs

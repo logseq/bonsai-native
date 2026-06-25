@@ -81,6 +81,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
 
   @Published var text = ""
   @Published var systemImage: String?
+  @Published var isTitleVisible = true
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
@@ -385,7 +386,14 @@ private struct BonsaiNativeNodeView: View {
         }
       }
     case .photoPicker:
-      Label(node.text, systemImage: node.systemImage ?? "photo")
+      Group {
+        if node.isTitleVisible {
+          Label(node.text, systemImage: node.systemImage ?? "photo")
+        } else {
+          Image(systemName: node.systemImage ?? "photo")
+            .accessibilityLabel(node.text)
+        }
+      }
         .foregroundStyle(.secondary)
     case .fileExporter:
       Label(node.text, systemImage: "square.and.arrow.up")
@@ -724,6 +732,11 @@ public func bonsai_native_swiftui_set_text(_ pointer: UnsafeMutableRawPointer?, 
 @_cdecl("bonsai_native_swiftui_set_system_image")
 public func bonsai_native_swiftui_set_system_image(_ pointer: UnsafeMutableRawPointer?, _ systemImagePointer: UnsafePointer<CChar>?) {
   nativeNode(from: pointer)?.systemImage = systemImagePointer.map(String.init(cString:))
+}
+
+@_cdecl("bonsai_native_swiftui_set_title_visible")
+public func bonsai_native_swiftui_set_title_visible(_ pointer: UnsafeMutableRawPointer?, _ isVisible: Bool) {
+  nativeNode(from: pointer)?.isTitleVisible = isVisible
 }
 
 @_cdecl("bonsai_native_swiftui_set_image_source")

@@ -254,6 +254,7 @@ val image_file : string -> node
 val photo_picker
   :  ?is_enabled:bool
   -> ?system_image:string
+  -> ?is_title_visible:bool
   -> title:string
   -> ?selected:string
   -> on_select:(string -> unit Effect.t)
@@ -262,6 +263,7 @@ val photo_picker
 val photo_picker_payload
   :  ?is_enabled:bool
   -> ?system_image:string
+  -> ?is_title_visible:bool
   -> title:string
   -> ?selected:string
   -> on_select:(image_payload -> unit Effect.t)
@@ -447,6 +449,7 @@ module Renderer : sig
     val destroy : view -> unit
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
+    val set_title_visible : view -> bool -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit

@@ -157,6 +157,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
 
   @Published var text = ""
   @Published var systemImage: String?
+  @Published var isTitleVisible = true
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
@@ -1592,7 +1593,12 @@ private struct BonsaiNativePhotoPickerView: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 6) {
       PhotosPicker(selection: $selectedItem, matching: .images) {
-        Label(node.text, systemImage: node.systemImage ?? "photo")
+        if node.isTitleVisible {
+          Label(node.text, systemImage: node.systemImage ?? "photo")
+        } else {
+          Image(systemName: node.systemImage ?? "photo")
+            .accessibilityLabel(node.text)
+        }
       }
       if let selected = node.placeholder, !selected.isEmpty {
         Label("Image attached", systemImage: "checkmark.circle.fill")
@@ -1930,6 +1936,11 @@ public func bonsai_native_swiftui_set_system_image(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.systemImage = systemImagePointer.map(String.init(cString:))
+}
+
+@_cdecl("bonsai_native_swiftui_set_title_visible")
+public func bonsai_native_swiftui_set_title_visible(_ pointer: UnsafeMutableRawPointer?, _ isVisible: Bool) {
+  nativeNode(from: pointer)?.isTitleVisible = isVisible
 }
 
 @_cdecl("bonsai_native_swiftui_set_image_source")

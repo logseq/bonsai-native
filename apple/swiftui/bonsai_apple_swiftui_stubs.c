@@ -25,6 +25,7 @@ extern void *bonsai_native_swiftui_create_node(int32_t raw_kind);
 extern void bonsai_native_swiftui_release_node(void *node);
 extern void bonsai_native_swiftui_set_text(void *node, const char *text);
 extern void bonsai_native_swiftui_set_system_image(void *node, const char *system_image);
+extern void bonsai_native_swiftui_set_title_visible(void *node, bool is_visible);
 extern void bonsai_native_swiftui_set_image_source(void *node, int32_t source);
 extern void bonsai_native_swiftui_set_text_attributes(
   void *node,
@@ -406,6 +407,13 @@ CAMLprim value bonsai_apple_swiftui_set_system_image(value node, value system_im
 {
   CAMLparam2(node, system_image);
   bonsai_native_swiftui_set_system_image(pointer_val(node), option_string_val(system_image));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_title_visible(value node, value is_visible)
+{
+  CAMLparam2(node, is_visible);
+  bonsai_native_swiftui_set_title_visible(pointer_val(node), Bool_val(is_visible));
   CAMLreturn(Val_unit);
 }
 

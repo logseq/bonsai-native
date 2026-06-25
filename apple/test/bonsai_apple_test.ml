@@ -531,6 +531,23 @@ let%test_unit "photo picker renders and schedules selected image identifiers" =
   [%test_result: string list] !selections ~expect:[ "photo://new" ]
 ;;
 
+let%test_unit "photo picker can hide its visible title while preserving its label" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.photo_picker
+         ~title:"Attach image"
+         ~system_image:"plus"
+         ~is_title_visible:false
+         ~on_select:(fun _ -> noop)
+         ())
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:{|photo-picker#1 text="Attach image" selected=() image=plus title-hidden|}
+;;
+
 let%test_unit "disabled photo picker renders disabled and does not schedule selections" =
   Backend.reset ();
   let scheduled = ref 0 in

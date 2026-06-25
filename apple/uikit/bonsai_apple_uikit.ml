@@ -244,6 +244,12 @@ let set_text view text =
 ;;
 
 let set_text_attributes _view _attributes = ()
+let set_title_visible view is_visible =
+  match view.kind, is_visible with
+  | Apple.Photo_picker, false -> UIButton.setTitle1 (nsstring "") ~forState:_UIControlStateNormal view.native
+  | _ -> ()
+;;
+
 let set_enabled _view _is_enabled = ()
 let set_image_payload_mode _view _wants_payload = ()
 let set_image_source _view _source = ()
