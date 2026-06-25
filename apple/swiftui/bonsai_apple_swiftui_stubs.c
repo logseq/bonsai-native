@@ -25,6 +25,7 @@ extern void *bonsai_native_swiftui_create_node(int32_t raw_kind);
 extern void bonsai_native_swiftui_release_node(void *node);
 extern void bonsai_native_swiftui_set_text(void *node, const char *text);
 extern void bonsai_native_swiftui_set_system_image(void *node, const char *system_image);
+extern void bonsai_native_swiftui_set_button_subtitle(void *node, const char *subtitle);
 extern void bonsai_native_swiftui_set_title_visible(void *node, bool is_visible);
 extern void bonsai_native_swiftui_set_image_source(void *node, int32_t source);
 extern void bonsai_native_swiftui_set_text_attributes(
@@ -37,6 +38,7 @@ extern void bonsai_native_swiftui_set_placeholder(void *node, const char *text);
 extern void bonsai_native_swiftui_set_text_field_style(void *node, int32_t style);
 extern void bonsai_native_swiftui_set_text_field_secure(void *node, bool is_secure);
 extern void bonsai_native_swiftui_set_toggle(void *node, bool is_on, int32_t event_id);
+extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
 extern void bonsai_native_swiftui_set_on_click(void *node, int32_t event_id);
@@ -410,6 +412,13 @@ CAMLprim value bonsai_apple_swiftui_set_system_image(value node, value system_im
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_button_subtitle(value node, value subtitle)
+{
+  CAMLparam2(node, subtitle);
+  bonsai_native_swiftui_set_button_subtitle(pointer_val(node), option_string_val(subtitle));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_title_visible(value node, value is_visible)
 {
   CAMLparam2(node, is_visible);
@@ -476,6 +485,13 @@ CAMLprim value bonsai_apple_swiftui_set_toggle(
 {
   CAMLparam3(node, is_on, event_id);
   bonsai_native_swiftui_set_toggle(pointer_val(node), Bool_val(is_on), Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_progress(value node, value progress)
+{
+  CAMLparam2(node, progress);
+  bonsai_native_swiftui_set_progress(pointer_val(node), Double_val(progress));
   CAMLreturn(Val_unit);
 }
 

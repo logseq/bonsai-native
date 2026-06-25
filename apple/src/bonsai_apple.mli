@@ -197,6 +197,7 @@ val text
 val button
   :  ?is_enabled:bool
   -> ?system_image:string
+  -> ?subtitle:string
   -> ?is_title_visible:bool
   -> string
   -> on_click:unit Effect.t
@@ -217,6 +218,7 @@ val text_editor
   -> on_change:(string -> unit Effect.t)
   -> unit
   -> node
+val progress_view : value:float -> node
 
 val vstack : ?spacing:float -> node list -> node
 val hstack : ?spacing:float -> node list -> node
@@ -374,6 +376,7 @@ type backend_kind =
   | File_exporter
   | File_importer
   | Camera_capture
+  | Progress_view
   | Custom_view of string
 [@@deriving sexp_of]
 
@@ -455,12 +458,14 @@ module Renderer : sig
     val destroy : view -> unit
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
+    val set_button_subtitle : view -> string option -> unit
     val set_title_visible : view -> bool -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
     val set_text_field_secure : view -> bool -> unit
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
+    val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
     val set_tabs

@@ -54,6 +54,7 @@ private enum NodeKind: Int32 {
   case toggle = 22
   case shareLink = 23
   case navigationLink = 24
+  case progressView = 25
 }
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
@@ -157,6 +158,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
 
   @Published var text = ""
   @Published var systemImage: String?
+  @Published var buttonSubtitle: String?
   @Published var isTitleVisible = true
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
@@ -164,6 +166,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textFieldStyle: Int32 = 0
   @Published var isTextFieldSecure = false
   @Published var isToggleOn = false
+  @Published var progressValue: Double = 0
   @Published var isEnabled = true
   @Published var imageSource: Int32 = 0
   @Published var placeholder: String?
@@ -624,7 +627,21 @@ private struct BonsaiNativeNodeView: View {
       Button {
         model.sendClick(node.clickEventId)
       } label: {
-        if let systemImage = node.systemImage {
+        if let subtitle = node.buttonSubtitle {
+          VStack(spacing: 4) {
+            if let systemImage = node.systemImage {
+              Label(node.text, systemImage: systemImage)
+            } else {
+              Text(node.text)
+            }
+            Text(subtitle)
+              .font(.caption2)
+              .lineLimit(1)
+              .minimumScaleFactor(0.75)
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, minHeight: 58)
+        } else if let systemImage = node.systemImage {
           if node.text.isEmpty || !node.isTitleVisible {
             Image(systemName: systemImage)
               .accessibilityLabel(node.text)
@@ -676,6 +693,10 @@ private struct BonsaiNativeNodeView: View {
       .padding(.horizontal, 8)
       .padding(.vertical, 4)
       .background(Color(uiColor: .secondarySystemGroupedBackground), in: .rect(cornerRadius: 8))
+
+    case .progressView:
+      ProgressView(value: node.progressValue)
+        .tint(.green)
 
     case .verticalStack:
       VStack(alignment: .leading, spacing: node.spacing) {
@@ -1939,6 +1960,15 @@ public func bonsai_native_swiftui_set_system_image(
   node.systemImage = systemImagePointer.map(String.init(cString:))
 }
 
+@_cdecl("bonsai_native_swiftui_set_button_subtitle")
+public func bonsai_native_swiftui_set_button_subtitle(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ subtitlePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.buttonSubtitle = subtitlePointer.map(String.init(cString:))
+}
+
 @_cdecl("bonsai_native_swiftui_set_title_visible")
 public func bonsai_native_swiftui_set_title_visible(_ pointer: UnsafeMutableRawPointer?, _ isVisible: Bool) {
   nativeNode(from: pointer)?.isTitleVisible = isVisible
@@ -1973,6 +2003,15 @@ public func bonsai_native_swiftui_set_enabled(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.isEnabled = isEnabled
+}
+
+@_cdecl("bonsai_native_swiftui_set_progress")
+public func bonsai_native_swiftui_set_progress(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ value: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.progressValue = min(max(value, 0), 1)
 }
 
 @_cdecl("bonsai_native_swiftui_set_image_payload_mode")

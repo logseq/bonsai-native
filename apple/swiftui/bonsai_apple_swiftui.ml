@@ -31,6 +31,12 @@ external set_native_system_image
   -> unit
   = "bonsai_apple_swiftui_set_system_image"
 
+external set_native_button_subtitle
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_button_subtitle"
+
 external set_native_title_visible
   :  native
   -> bool
@@ -81,6 +87,12 @@ external set_native_toggle
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_toggle"
+
+external set_native_progress
+  :  native
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_progress"
 
 external set_native_spacing
   :  native
@@ -504,6 +516,7 @@ let node_kind_id = function
   | Apple.File_exporter -> 17
   | Apple.File_importer -> 18
   | Apple.Camera_capture -> 19
+  | Apple.Progress_view -> 25
 ;;
 
 module Backend = struct
@@ -563,6 +576,7 @@ module Backend = struct
 
   let set_text view text = set_native_text view.native text
   let set_system_image view system_image = set_native_system_image view.native system_image
+  let set_button_subtitle view subtitle = set_native_button_subtitle view.native subtitle
   let set_title_visible view is_visible = set_native_title_visible view.native is_visible
   let set_enabled view is_enabled = set_native_enabled view.native is_enabled
 
@@ -633,6 +647,8 @@ module Backend = struct
     view.change_event_id <- Some event_id;
     set_native_toggle view.native is_on event_id
   ;;
+
+  let set_progress view ~value = set_native_progress view.native value
 
   let set_spacing view spacing = set_native_spacing view.native spacing
 

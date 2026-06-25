@@ -227,6 +227,7 @@ type backend_kind =
   | File_exporter
   | File_importer
   | Camera_capture
+  | Progress_view
   | Custom_view of string
 [@@deriving sexp_of, equal]
 
@@ -238,6 +239,7 @@ type node =
   | Button_node of
       { title : string
       ; system_image : string option
+      ; subtitle : string option
       ; is_title_visible : bool
       ; is_enabled : bool
       ; on_click : unit Effect.t
@@ -260,6 +262,7 @@ type node =
       ; placeholder : string option
       ; on_change : string -> unit Effect.t
       }
+  | Progress_view_node of { value : float }
   | Stack_node of
       { axis : axis
       ; spacing : float option
@@ -432,8 +435,15 @@ let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
   Text { text = value; attributes = { style; weight; color } }
 ;;
 
-let button ?(is_enabled = true) ?system_image ?(is_title_visible = true) title ~on_click =
-  Button_node { title; system_image; is_title_visible; is_enabled; on_click }
+let button
+  ?(is_enabled = true)
+  ?system_image
+  ?subtitle
+  ?(is_title_visible = true)
+  title
+  ~on_click
+  =
+  Button_node { title; system_image; subtitle; is_title_visible; is_enabled; on_click }
 ;;
 
 let text_field
@@ -454,6 +464,7 @@ let text_editor ?placeholder ~text ~on_change () =
   Text_editor_node { text; placeholder; on_change }
 ;;
 
+let progress_view ~value = Progress_view_node { value }
 let vstack ?spacing children = Stack_node { axis = Vertical; spacing; children }
 let hstack ?spacing children = Stack_node { axis = Horizontal; spacing; children }
 let scroll_view child = Scroll_view_node child
@@ -788,6 +799,7 @@ let backend_kind = function
   | Text_field_node _ -> Text_field
   | Toggle_node _ -> Toggle
   | Text_editor_node _ -> Text_editor
+  | Progress_view_node _ -> Progress_view
   | Stack_node { axis; _ } -> Stack axis
   | Scroll_view_node _ -> Scroll_view
   | List_node _ -> List
@@ -818,12 +830,14 @@ module Renderer = struct
     val destroy : view -> unit
     val set_text : view -> string -> unit
     val set_system_image : view -> string option -> unit
+    val set_button_subtitle : view -> string option -> unit
     val set_title_visible : view -> bool -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
     val set_text_field_secure : view -> bool -> unit
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
+    val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
     val set_tabs
@@ -966,11 +980,13 @@ module Renderer = struct
         match node with
         | Text { text; attributes } ->
           [%sexp "text", (text : string), (attributes : text_attributes)]
-        | Button_node { title; system_image; is_title_visible; is_enabled; on_click = _ } ->
+        | Button_node
+            { title; system_image; subtitle; is_title_visible; is_enabled; on_click = _ } ->
           [%sexp
             "button"
           , (title : string)
           , (system_image : string option)
+          , (subtitle : string option)
           , (is_title_visible : bool)
           , (is_enabled : bool)]
         | Text_field_node { text; placeholder; style; is_secure; on_change = _; on_submit = _ } ->
@@ -984,6 +1000,7 @@ module Renderer = struct
           [%sexp "toggle", (title : string), (is_on : bool)]
         | Text_editor_node { text; placeholder; on_change = _ } ->
           [%sexp "text-editor", (text : string), (placeholder : string option)]
+        | Progress_view_node { value } -> [%sexp "progress-view", (value : float)]
         | Stack_node { axis; spacing; children } ->
           [%sexp
             "stack"
@@ -1131,7 +1148,7 @@ module Renderer = struct
     (* Skipping a patch also skips callback refresh. Only nodes whose callbacks are
        represented in their fingerprint can safely use this path. *)
     and can_skip_patch_when_unchanged = function
-      | Text _ | Image_node _ | List_row_node _ | Custom_view_node _ -> true
+      | Text _ | Image_node _ | List_row_node _ | Progress_view_node _ | Custom_view_node _ -> true
       | Button_node _
       | Text_field_node _
       | Toggle_node _
@@ -1177,9 +1194,10 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_enabled t.view true;
          replace_children []
-       | Button_node { title; system_image; is_title_visible; is_enabled; on_click } ->
+       | Button_node { title; system_image; subtitle; is_title_visible; is_enabled; on_click } ->
          Backend.set_text t.view title;
          Backend.set_system_image t.view system_image;
+         Backend.set_button_subtitle t.view subtitle;
          Backend.set_title_visible t.view is_title_visible;
          Backend.set_enabled t.view is_enabled;
          Backend.set_on_click
@@ -1212,6 +1230,12 @@ module Renderer = struct
          Backend.set_on_change
            t.view
            (Some (fun text -> t.schedule_event (on_change text)));
+         replace_children []
+       | Progress_view_node { value } ->
+         Backend.set_progress t.view ~value;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         Backend.set_enabled t.view true;
          replace_children []
        | Stack_node { spacing; children; _ } ->
          Backend.set_spacing t.view spacing;
@@ -1641,12 +1665,14 @@ module For_testing = struct
       ; kind : backend_kind
       ; mutable text : string option
       ; mutable system_image : string option
+      ; mutable button_subtitle : string option
       ; mutable is_title_visible : bool
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable text_field_style : text_field_style
       ; mutable text_field_secure : bool
       ; mutable toggle_is_on : bool
+      ; mutable progress_value : float option
       ; mutable children : (string option * view) list
       ; mutable is_enabled : bool
       ; mutable on_click : (unit -> unit) option
@@ -1712,12 +1738,14 @@ module For_testing = struct
       ; kind
       ; text = None
       ; system_image = None
+      ; button_subtitle = None
       ; is_title_visible = true
       ; text_attributes = default_text_attributes
       ; placeholder = None
       ; text_field_style = Rounded_border
       ; text_field_secure = false
       ; toggle_is_on = false
+      ; progress_value = None
       ; children = []
       ; is_enabled = true
       ; on_click = None
@@ -1764,6 +1792,11 @@ module For_testing = struct
       view.system_image <- system_image
     ;;
 
+    let set_button_subtitle view subtitle =
+      mutate ();
+      view.button_subtitle <- subtitle
+    ;;
+
     let set_title_visible view is_visible =
       mutate ();
       view.is_title_visible <- is_visible
@@ -1793,6 +1826,11 @@ module For_testing = struct
       mutate ();
       view.toggle_is_on <- is_on;
       view.on_toggle <- Some on_change
+    ;;
+
+    let set_progress view ~value =
+      mutate ();
+      view.progress_value <- Some value
     ;;
 
     let set_spacing _view _spacing = mutate ()
@@ -1992,6 +2030,7 @@ module For_testing = struct
       | File_exporter -> "file-exporter"
       | File_importer -> "file-importer"
       | Camera_capture -> "camera-capture"
+      | Progress_view -> "progress-view"
       | Custom_view kind -> "custom(" ^ kind ^ ")"
     ;;
 
@@ -2023,6 +2062,12 @@ module For_testing = struct
         | None -> ""
         | Some system_image -> " image=" ^ system_image
       in
+      let button_subtitle =
+        match view.kind, view.button_subtitle with
+        | Button, Some subtitle ->
+          " subtitle=" ^ Sexp.to_string_hum ([%sexp_of: string option] (Some subtitle))
+        | _ -> ""
+      in
       let title_visibility = if view.is_title_visible then "" else " title-hidden" in
       let text_attributes =
         if equal_text_attributes view.text_attributes default_text_attributes
@@ -2052,6 +2097,11 @@ module For_testing = struct
       let toggle_selected =
         match view.kind with
         | Toggle -> " selected=" ^ Bool.to_string view.toggle_is_on
+        | _ -> ""
+      in
+      let progress =
+        match view.kind, view.progress_value with
+        | Progress_view, Some value -> " progress=" ^ Float.to_string value
         | _ -> ""
       in
       let photo_picker =
@@ -2311,6 +2361,7 @@ module For_testing = struct
        ^ text_field_style
        ^ text_field_secure
        ^ toggle_selected
+       ^ progress
        ^ photo_picker
        ^ camera_capture
        ^ share_link
@@ -2319,6 +2370,7 @@ module For_testing = struct
        ^ payload
        ^ image_source
        ^ system_image
+       ^ button_subtitle
        ^ title_visibility
        ^ enabled
        ^ selected
