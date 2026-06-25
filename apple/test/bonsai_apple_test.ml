@@ -132,6 +132,22 @@ let%test_unit "disabled buttons render disabled and do not schedule events" =
   [%test_result: int] !scheduled ~expect:0
 ;;
 
+let%test_unit "button can hide its visible title while preserving its label" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.button
+         ~system_image:"arrow.up"
+         ~is_title_visible:false
+         "Send"
+         ~on_click:noop)
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:{|button#1 text=Send image=arrow.up title-hidden|}
+;;
+
 let%test_unit "file exporter renders export metadata" =
   Backend.reset ();
   let mounted =

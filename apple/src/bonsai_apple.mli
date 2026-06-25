@@ -194,7 +194,13 @@ val text
   -> string
   -> node
 
-val button : ?is_enabled:bool -> ?system_image:string -> string -> on_click:unit Effect.t -> node
+val button
+  :  ?is_enabled:bool
+  -> ?system_image:string
+  -> ?is_title_visible:bool
+  -> string
+  -> on_click:unit Effect.t
+  -> node
 val text_field
   :  ?placeholder:string
   -> ?style:text_field_style

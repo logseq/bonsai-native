@@ -238,6 +238,7 @@ type node =
   | Button_node of
       { title : string
       ; system_image : string option
+      ; is_title_visible : bool
       ; is_enabled : bool
       ; on_click : unit Effect.t
       }
@@ -431,8 +432,8 @@ let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
   Text { text = value; attributes = { style; weight; color } }
 ;;
 
-let button ?(is_enabled = true) ?system_image title ~on_click =
-  Button_node { title; system_image; is_enabled; on_click }
+let button ?(is_enabled = true) ?system_image ?(is_title_visible = true) title ~on_click =
+  Button_node { title; system_image; is_title_visible; is_enabled; on_click }
 ;;
 
 let text_field
@@ -965,8 +966,13 @@ module Renderer = struct
         match node with
         | Text { text; attributes } ->
           [%sexp "text", (text : string), (attributes : text_attributes)]
-        | Button_node { title; system_image; is_enabled; on_click = _ } ->
-          [%sexp "button", (title : string), (system_image : string option), (is_enabled : bool)]
+        | Button_node { title; system_image; is_title_visible; is_enabled; on_click = _ } ->
+          [%sexp
+            "button"
+          , (title : string)
+          , (system_image : string option)
+          , (is_title_visible : bool)
+          , (is_enabled : bool)]
         | Text_field_node { text; placeholder; style; is_secure; on_change = _; on_submit = _ } ->
           [%sexp
             "text-field"
@@ -1171,9 +1177,10 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_enabled t.view true;
          replace_children []
-       | Button_node { title; system_image; is_enabled; on_click } ->
+       | Button_node { title; system_image; is_title_visible; is_enabled; on_click } ->
          Backend.set_text t.view title;
          Backend.set_system_image t.view system_image;
+         Backend.set_title_visible t.view is_title_visible;
          Backend.set_enabled t.view is_enabled;
          Backend.set_on_click
            t.view

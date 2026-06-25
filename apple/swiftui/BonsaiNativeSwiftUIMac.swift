@@ -256,8 +256,9 @@ private struct BonsaiNativeNodeView: View {
         model.sendClick(node.clickEventId)
       } label: {
         if let systemImage = node.systemImage {
-          if node.text.isEmpty {
+          if node.text.isEmpty || !node.isTitleVisible {
             Image(systemName: systemImage)
+              .accessibilityLabel(node.text)
           } else {
             Label(node.text, systemImage: systemImage)
           }

@@ -246,7 +246,8 @@ let set_text view text =
 let set_text_attributes _view _attributes = ()
 let set_title_visible view is_visible =
   match view.kind, is_visible with
-  | Apple.Photo_picker, false -> UIButton.setTitle1 (nsstring "") ~forState:_UIControlStateNormal view.native
+  | (Apple.Button | Apple.Photo_picker), false ->
+    UIButton.setTitle1 (nsstring "") ~forState:_UIControlStateNormal view.native
   | _ -> ()
 ;;
 
