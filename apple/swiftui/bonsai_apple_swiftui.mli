@@ -1,5 +1,3 @@
-open! Core
-
 module Apple = Bonsai_apple
 
 type application_delegate = nativeint

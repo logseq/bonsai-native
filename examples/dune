@@ -2,9 +2,7 @@
  (name bonsai_android_examples)
  (wrapped false)
  (modules android_demo_components counter_component)
- (libraries bonsai_android core)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ (libraries bonsai_android))
 
 (executables
  (names
@@ -17,15 +15,13 @@
   export_counter_json
   counter_interaction_smoke
   shared_surface_smoke)
- (libraries bonsai_android core bonsai_android_examples)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ (libraries bonsai_android bonsai_android_examples))
 
 (executable
  (name android_counter_entry)
  (modules android_counter_entry)
  (modes exe shared_object)
- (libraries bonsai_android core bonsai_android_examples)
+ (libraries bonsai_android bonsai_android_examples)
  (foreign_stubs
   (language c)
   (names bonsai_android_jni_wrapper)

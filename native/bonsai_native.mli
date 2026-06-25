@@ -1,6 +1,32 @@
-open! Core
+module Effect : sig
+  type t = unit -> unit
 
-module Effect = Bonsai.Effect
+  val ignore : t
+  val of_thunk : (unit -> unit) -> t
+  val many : t list -> t
+end
+
+type graph
+
+module Component : sig
+  val state
+    :  ?equal:('a -> 'a -> bool)
+    -> graph
+    -> key:string
+    -> 'a
+    -> 'a * ('a -> Effect.t)
+
+  val scope : graph -> key:string -> (graph -> 'a) -> 'a
+end
+
+val state
+  :  ?equal:('a -> 'a -> bool)
+  -> graph
+  -> key:string
+  -> 'a
+  -> 'a * ('a -> Effect.t)
+
+val scope : graph -> key:string -> (graph -> 'a) -> 'a
 
 type edge_insets =
   { top : float
@@ -8,28 +34,27 @@ type edge_insets =
   ; bottom : float
   ; end_ : float
   }
-[@@deriving sexp_of]
 
 type frame =
   { width : float option
   ; height : float option
   }
-[@@deriving sexp_of]
 
 type toolbar_item =
   { id : string
   ; title : string
-  ; on_click : unit Effect.t
+  ; on_click : Effect.t
   }
 
 type node
 
 val text : string -> node
-val button : ?is_enabled:bool -> string -> on_click:unit Effect.t -> node
+val button : ?is_enabled:bool -> string -> on_click:Effect.t -> node
+
 val text_field
   :  ?placeholder:string
   -> text:string
-  -> on_change:(string -> unit Effect.t)
+  -> on_change:(string -> Effect.t)
   -> unit
   -> node
 
@@ -42,20 +67,21 @@ val image : string -> node
 val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
 val frame : ?width:float -> ?height:float -> node -> node
-val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
-val toolbar_item : id:string -> title:string -> on_click:unit Effect.t -> toolbar_item
+val searchable : text:string -> on_change:(string -> Effect.t) -> node -> node
+val toolbar_item : id:string -> title:string -> on_click:Effect.t -> toolbar_item
 val toolbar : toolbar_item list -> node -> node
+
 val sheet
   :  is_presented:bool
   -> content:node
-  -> ?on_dismiss:unit Effect.t
+  -> ?on_dismiss:Effect.t
   -> node
   -> node
 
 module Bridge : sig
   type t
 
-  val render : schedule_event:(unit Effect.t -> unit) -> node -> t
+  val render : schedule_event:(Effect.t -> unit) -> node -> t
   val json : t -> string
   val dispatch_click : t -> int -> unit
   val dispatch_change : t -> int -> text:string -> unit
@@ -65,30 +91,23 @@ module App_driver : sig
   type ('result, 'rendered) t
 
   val create
-    :  ?optimize:bool
-    -> time_source:Bonsai.Time_source.t
-    -> (Bonsai.graph -> 'result Bonsai.t)
-    -> render:(schedule_event:(unit Effect.t -> unit) -> 'result -> 'rendered)
+    :  (graph -> 'result)
+    -> render:(schedule_event:(Effect.t -> unit) -> 'result -> 'rendered)
     -> update:
-         ('rendered -> schedule_event:(unit Effect.t -> unit) -> 'result -> 'rendered)
+         ('rendered -> schedule_event:(Effect.t -> unit) -> 'result -> 'rendered)
     -> ('result, 'rendered) t
 
   val flush : ('result, 'rendered) t -> unit
   val flush_and_render : ('result, 'rendered) t -> unit
-  val schedule_event : ('result, 'rendered) t -> unit Effect.t -> unit
-  val schedule_event_and_render : ('result, 'rendered) t -> unit Effect.t -> unit
+  val schedule_event : ('result, 'rendered) t -> Effect.t -> unit
+  val schedule_event_and_render : ('result, 'rendered) t -> Effect.t -> unit
   val rendered : ('result, 'rendered) t -> 'rendered option
 end
 
 module App : sig
   type t
 
-  val create
-    :  ?optimize:bool
-    -> time_source:Bonsai.Time_source.t
-    -> (Bonsai.graph -> node Bonsai.t)
-    -> t
-
+  val create : (graph -> node) -> t
   val render_json : t -> string
   val dispatch_click : t -> int -> unit
   val dispatch_change : t -> int -> text:string -> unit

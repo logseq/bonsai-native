@@ -1,5 +1,3 @@
-open! Core
-
 module Apple = Bonsai_apple
 
 type todo =
@@ -8,13 +6,11 @@ type todo =
   }
 
 let component graph =
-  let open Bonsai.Let_syntax in
-  let input, set_input = Bonsai.state "" graph in
-  let todos, set_todos = Bonsai.state [] graph in
-  let%arr input and set_input and todos and set_todos in
+  let input, set_input = Apple.state graph ~key:"input" "" in
+  let todos, set_todos = Apple.state graph ~key:"todos" [] in
   let add =
-    if String.is_empty input
-    then Bonsai.Effect.Ignore
+    if input = ""
+    then Apple.Effect.ignore
     else set_todos ({ id = input; title = input } :: todos)
   in
   Apple.vstack

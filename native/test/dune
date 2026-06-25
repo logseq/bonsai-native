@@ -1,6 +1,9 @@
-(library
- (name bonsai_native_test)
- (libraries bonsai_native core)
- (inline_tests)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+(executable
+ (name bonsai_native_app_driver_test)
+ (libraries bonsai_native))
+
+(rule
+ (alias runtest)
+ (deps bonsai_native_app_driver_test.exe)
+ (action
+  (run ./bonsai_native_app_driver_test.exe)))

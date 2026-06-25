@@ -1,6 +1,21 @@
-open! Core
+module Effect : sig
+  type 'a t = unit -> 'a
 
-module Effect = Bonsai.Effect
+  val ignore : unit t
+  val of_thunk : (unit -> 'a) -> 'a t
+  val many : unit t list -> unit t
+end
+
+type graph = Bonsai_native.graph
+
+val state
+  :  ?equal:('a -> 'a -> bool)
+  -> graph
+  -> key:string
+  -> 'a
+  -> 'a * ('a -> unit Effect.t)
+
+val scope : graph -> key:string -> (graph -> 'a) -> 'a
 
 type edge_insets =
   { top : float
@@ -8,24 +23,20 @@ type edge_insets =
   ; bottom : float
   ; trailing : float
   }
-[@@deriving sexp_of]
 
 type frame =
   { width : float option
   ; height : float option
   }
-[@@deriving sexp_of]
 
 type row_action_style =
   | Default
   | Destructive
-[@@deriving sexp_of]
 
 type alert_action_role =
   | Alert_default
   | Alert_cancel
   | Alert_destructive
-[@@deriving sexp_of]
 
 type alert_action =
   { id : string
@@ -40,7 +51,6 @@ type presentation_detent =
   | Large
   | Fraction of float
   | Height of float
-[@@deriving sexp_of]
 
 type menu_action =
   { id : string
@@ -66,7 +76,6 @@ type share_link =
 type image_source =
   | System_image
   | File_image
-[@@deriving sexp_of]
 
 type toolbar_menu_action =
   { title : string
@@ -98,31 +107,26 @@ type text_style =
   | Footnote
   | Caption
   | Caption2
-[@@deriving sexp_of]
 
 type text_weight =
   | Regular
   | Semibold
   | Bold
-[@@deriving sexp_of]
 
 type text_color =
   | Primary
   | Secondary
   | Tertiary
-[@@deriving sexp_of]
 
 type text_field_style =
   | Rounded_border
   | Pill
-[@@deriving sexp_of]
 
 type text_attributes =
   { style : text_style
   ; weight : text_weight
   ; color : text_color
   }
-[@@deriving sexp_of]
 
 type row_leading_button =
   { system_image : string
@@ -143,12 +147,10 @@ type list_row_content_style =
   | Standard
   | Deck_preview
   | Card_preview
-[@@deriving sexp_of, equal]
 
 type list_row_accessory =
   | No_accessory
   | Disclosure_indicator
-[@@deriving sexp_of, equal]
 
 type picker_option =
   { id : string
@@ -165,7 +167,6 @@ type image_payload =
   ; height : int
   ; recognized_text : string option
   }
-[@@deriving compare, sexp_of, equal]
 
 type list_row =
   { title : string
@@ -182,7 +183,7 @@ type list_row =
   ; menu_actions : row_action list
   }
 
-type tab_role = Search [@@deriving sexp_of]
+type tab_role = Search
 
 type tab
 type sidebar_action
@@ -193,7 +194,6 @@ type rendered_tab =
   ; system_image : string option
   ; role : tab_role option
   }
-[@@deriving sexp_of]
 
 type node
 
@@ -447,7 +447,6 @@ val confirmation_dialog
 type axis =
   | Vertical
   | Horizontal
-[@@deriving sexp_of]
 
 type backend_kind =
   | Label
@@ -486,7 +485,6 @@ type backend_kind =
   | Camera_capture
   | Progress_view
   | Custom_view of string
-[@@deriving sexp_of]
 
 type modifier =
   | Padding of edge_insets
@@ -754,12 +752,7 @@ module App : sig
   module Make (Backend : Renderer.Backend) : sig
     type t
 
-    val create
-      :  ?optimize:bool
-      -> time_source:Bonsai.Time_source.t
-      -> (Bonsai.graph -> node Bonsai.t)
-      -> t
-
+    val create : (graph -> node) -> t
     val flush_and_render : t -> unit
     val view : t -> Backend.view option
   end
@@ -775,7 +768,7 @@ module For_testing : sig
         ; destroyed : int
         ; mutations : int
         }
-      [@@deriving sexp_of]
+
     end
 
     val reset : unit -> unit

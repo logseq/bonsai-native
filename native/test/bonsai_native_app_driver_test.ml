@@ -1,86 +1,75 @@
-open! Core
+module Native = Bonsai_native
 
-module Driver = Bonsai_native.App_driver
-
-type view =
-  { mutable text : string
-  ; mutable click : unit -> unit
-  }
-
-let time_source () = Bonsai.Time_source.create ~start:Time_ns.epoch
-
-let counter_component graph =
-  let open Bonsai.Let_syntax in
-  let count, set_count = Bonsai.state 0 graph in
-  let%arr count and set_count in
-  Int.to_string count, set_count (count + 1)
+let require condition message =
+  if not condition then failwith message
 ;;
 
-let create_counter_app () =
-  Driver.create
-    ~time_source:(time_source ())
-    counter_component
-    ~render:(fun ~schedule_event (text, effect) ->
-      { text; click = (fun () -> schedule_event effect) })
-    ~update:(fun view ~schedule_event (text, effect) ->
-      view.text <- text;
-      view.click <- (fun () -> schedule_event effect);
-      view)
-;;
-
-let rendered_exn app = Driver.rendered app |> Option.value_exn
-
-let%test_unit "schedule-only events update on the next explicit render" =
-  let app = create_counter_app () in
-  Driver.flush app;
-  let view = rendered_exn app in
-  [%test_result: string] view.text ~expect:"0";
-  view.click ();
-  [%test_result: string] view.text ~expect:"0";
-  Driver.flush app;
-  [%test_result: string] view.text ~expect:"1"
-;;
-
-let%test_unit "schedule-and-render events update the mounted view immediately" =
-  let app = create_counter_app () in
-  Driver.flush_and_render app;
-  let view = rendered_exn app in
-  [%test_result: string] view.text ~expect:"0";
-  view.click ();
-  [%test_result: string] view.text ~expect:"1";
-  view.click ();
-  [%test_result: string] view.text ~expect:"2"
-;;
-
-let%test_unit "asynchronous effects rerender when their callback completes" =
-  let complete = ref None in
-  let component graph =
-    let open Bonsai.Let_syntax in
-    let count, set_count = Bonsai.state 0 graph in
-    let%arr count and set_count in
-    let effect =
-      Bonsai.Effect.bind
-        (Bonsai.Effect.Expert.of_fun ~f:(fun ~callback ~on_exn:_ ->
-           complete := Some (fun () -> callback ())))
-        ~f:(fun () -> set_count (count + 1))
-    in
-    Int.to_string count, effect
+let contains text ~substring =
+  let text_length = String.length text in
+  let substring_length = String.length substring in
+  let rec loop index =
+    if substring_length = 0
+    then true
+    else if index + substring_length > text_length
+    then false
+    else if String.sub text index substring_length = substring
+    then true
+    else loop (index + 1)
   in
+  loop 0
+;;
+
+let counter graph =
+  let count, set_count = Native.state graph ~key:"count" 0 in
+  Native.vstack
+    [ Native.text (string_of_int count)
+    ; Native.button "Increment" ~on_click:(set_count (count + 1))
+    ]
+;;
+
+let test_event_rerenders_component_state () =
+  let app = Native.App.create counter in
+  let before = Native.App.render_json app in
+  require (contains before ~substring:{|"text":"0"|}) "initial render should show count 0";
+  Native.App.dispatch_click app 1;
+  let after = Native.App.render_json app in
+  require (contains after ~substring:{|"text":"1"|}) "click should rerender count 1"
+;;
+
+let scoped_counter key graph =
+  Native.scope graph ~key (fun graph ->
+    let count, set_count = Native.state graph ~key:"count" 0 in
+    Native.button (key ^ ":" ^ string_of_int count) ~on_click:(set_count (count + 1)))
+;;
+
+let test_scoped_state_is_independent () =
   let app =
-    Driver.create
-      ~time_source:(time_source ())
-      component
-      ~render:(fun ~schedule_event (text, effect) ->
-        { text; click = (fun () -> schedule_event effect) })
-      ~update:(fun view ~schedule_event (text, effect) ->
-        view.text <- text;
-        view.click <- (fun () -> schedule_event effect);
-        view)
+    Native.App.create (fun graph ->
+      Native.vstack [ scoped_counter "a" graph; scoped_counter "b" graph ])
   in
-  Driver.flush_and_render app;
-  let view = rendered_exn app in
-  view.click ();
-  [%test_result: string] view.text ~expect:"0";
-  (Option.value_exn !complete) ();
-  [%test_result: string] view.text ~expect:"1"
+  let before = Native.App.render_json app in
+  require (contains before ~substring:{|"text":"a:0"|}) "initial render should show a:0";
+  require (contains before ~substring:{|"text":"b:0"|}) "initial render should show b:0";
+  Native.App.dispatch_click app 1;
+  let after = Native.App.render_json app in
+  require (contains after ~substring:{|"text":"a:1"|}) "first scoped counter should update";
+  require (contains after ~substring:{|"text":"b:0"|}) "second scoped counter should not update"
 ;;
+
+let test_change_event_updates_component_state () =
+  let component graph =
+    let value, set_value = Native.state graph ~key:"value" "" in
+    Native.text_field ~text:value ~placeholder:"Search" ~on_change:set_value ()
+  in
+  let app = Native.App.create component in
+  let before = Native.App.render_json app in
+  require (contains before ~substring:{|"text":""|}) "initial field should be empty";
+  Native.App.dispatch_change app 1 ~text:"tasks";
+  let after = Native.App.render_json app in
+  require (contains after ~substring:{|"text":"tasks"|}) "change should rerender text"
+;;
+
+let () =
+  test_event_rerenders_component_state ();
+  test_scoped_state_is_independent ();
+  test_change_event_updates_component_state ()

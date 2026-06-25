@@ -157,8 +157,6 @@ default_packages=(
   uopt
   base_bigstring
   string_dict
-  core
-  core_kernel
   uutf
   textutils_kernel
   janestreet_lru_cache
@@ -168,7 +166,6 @@ default_packages=(
   re
   sexp_pretty
   expect_test_helpers_base
-  expect_test_helpers_core
   spawn
   core_unix
   record_builder
@@ -485,7 +482,7 @@ build_virtual_dom_ui_effect() {
   fi
 
   cat >"$package_dir/META" <<'EOF'
-description = "Subset of virtual_dom needed by native Bonsai backends"
+description = "Subset of virtual_dom needed by native OCaml backends"
 version = "v0.18~preview.130.100+614"
 package "ui_effect" (
   directory = "ui_effect"

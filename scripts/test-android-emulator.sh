@@ -139,5 +139,5 @@ assert_text "Settings" "$search_xml"
 "$adb" exec-out screencap -p > "$screenshot"
 
 echo "Installed $apk on $booted_device"
-echo "Verified Android demo parity tabs and native Bonsai click dispatch: 0 -> 1"
+echo "Verified Android demo parity tabs and native click dispatch: 0 -> 1"
 echo "Captured $screenshot"

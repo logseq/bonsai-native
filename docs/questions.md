@@ -15,7 +15,7 @@ Text("Inbox")
 OCaml does not have Swift's trailing-closure and fluent builder syntax, but the
 authoring API still needs the same ergonomics. A user should be able to adjust
 common presentation details, such as padding, without dropping into backend
-Swift or low-level UIKit/Camlkit calls.
+Swift calls.
 
 ### Example Problem
 
@@ -26,7 +26,7 @@ The API should be:
 
 - Declarative and readable in OCaml.
 - Backend-neutral where possible.
-- Compatible with Bonsai values and effects.
+- Compatible with graph state values and effects.
 - Extensible as SwiftUI-only or iOS-version-specific capabilities appear.
 - Hard to misuse for common cases.
 

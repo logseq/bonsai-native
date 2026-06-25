@@ -1,16 +1,16 @@
 # bonsai-native
 
-`bonsai-native` is an OCaml native UI experiment for building iOS and Android
-apps with the Bonsai programming model.
+`bonsai-native` is an OCaml native UI experiment for sharing state and actions
+across iOS, macOS, and Android while leaving rendering to each platform UI.
 
 The app UI is authored in OCaml. Platform code is only the renderer bridge:
 
 ```text
-Bonsai component
+OCaml graph component
   -> bonsai_native node tree
   -> platform renderer + event table
-  -> Android JNI / iOS Camlkit
-  -> Jetpack Compose / UIKit
+  -> Android JNI / Apple SwiftUI bridge
+  -> Jetpack Compose / SwiftUI
   -> native app UI
 ```
 
@@ -18,12 +18,12 @@ This is not a WebView and not a SwiftUI wrapper.
 
 ## Packages
 
-- `bonsai_native`: shared OCaml node DSL, JSON/event bridge, and Bonsai driver
-  integration.
+- `bonsai_native`: shared OCaml graph state runtime, node DSL, JSON/event bridge,
+  and app driver.
 - `bonsai_android`: Android facade over `bonsai_native`; rendered by Kotlin
   Compose through JNI.
-- `bonsai_apple`: iOS/macOS-facing API and renderer abstractions; UIKit backend
-  lives under `apple/uikit`.
+- `bonsai_apple`: iOS/macOS-facing API and renderer abstractions; SwiftUI is the
+  maintained Apple backend.
 
 Backend package names intentionally remain explicit. Existing Android code can
 continue to open `Bonsai_android`, and iOS code can continue to open
@@ -33,18 +33,16 @@ continue to open `Bonsai_android`, and iOS code can continue to open
 
 ```ocaml
 let component graph =
-  let open Bonsai.Let_syntax in
-  let count, set_count = Bonsai.state 0 graph in
-  let%arr count and set_count in
+  let count, set_count = Bonsai_android.state graph ~key:"count" 0 in
   Bonsai_android.vstack
-    [ Bonsai_android.text (Int.to_string count)
+    [ Bonsai_android.text (string_of_int count)
     ; Bonsai_android.button "Increment" ~on_click:(set_count (count + 1))
     ]
 ```
 
 On Android, Compose receives a native node tree JSON payload and sends event ids
-back to OCaml through JNI. OCaml owns the Bonsai driver and event table, so
-state updates are still Bonsai effects.
+back to OCaml through JNI. OCaml owns the graph driver and event table, so state
+updates stay shared above the platform renderer.
 
 ## Repository Layout
 
@@ -52,7 +50,7 @@ state updates are still Bonsai effects.
 - `src/`: Android OCaml facade.
 - `android/`: Gradle/Compose demo app.
 - `jni/`: Android JNI bridge into OCaml.
-- `apple/`: Apple OCaml package, UIKit backend, and iOS examples.
+- `apple/`: Apple OCaml package, SwiftUI backend, and iOS/macOS examples.
 - `examples/`: Android demo entrypoints and smoke examples.
 - `scripts/`: Android and iOS bootstrap/build helpers.
 - `docs/`: architecture and platform build notes.
@@ -89,8 +87,8 @@ changes from `0` to `1`. It also switches through the Android `Todo` and
 
 ## iOS Quick Check
 
-The iOS package is under `apple/` and builds through Camlkit/opam-cross-ios
-contexts. See [docs/apple-native-build.md](docs/apple-native-build.md).
+The iOS package is under `apple/` and builds through opam-cross-ios contexts.
+See [docs/apple-native-build.md](docs/apple-native-build.md).
 
 The simulator app target is:
 
@@ -105,10 +103,9 @@ Working now:
 
 - Shared OCaml DSL for text, button, text fields, stacks, scroll views, keyed
   lists, navigation stacks, images, custom views, and common modifiers.
-- Android JNI native library built with OCaml 5.2.1, Core, Bonsai, and
-  `bonsai.ppx_bonsai`.
+- Android JNI native library built with OCaml 5.2.1 and the local graph runtime.
 - Android Compose renderer loads real native OCaml state and dispatches clicks
-  back into Bonsai.
+  back into OCaml.
 - Android and iOS demo apps expose the same `Counter`, `Todo`, and `Search`
   OCaml views.
 - Apple source/backend scaffolding is included in the same repo.

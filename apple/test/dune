@@ -1,6 +1,3 @@
-(library
+(test
  (name bonsai_apple_test)
- (libraries bonsai_apple core xxx)
- (inline_tests)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ (libraries bonsai_apple))

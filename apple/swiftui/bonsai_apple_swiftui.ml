@@ -1,6 +1,74 @@
-open! Core
-
 module Apple = Bonsai_apple
+
+module Option = struct
+  include Stdlib.Option
+
+  let map t ~f = map f t
+  let iter t ~f = iter f t
+  let value t ~default = value ~default t
+end
+
+module List = struct
+  include Stdlib.List
+
+  let map t ~f = map f t
+  let iter t ~f = iter f t
+end
+
+module Int = struct
+  include Stdlib.Int
+
+  module Table = struct
+    type 'a t = (int, 'a) Stdlib.Hashtbl.t
+
+    let create () = Stdlib.Hashtbl.create 128
+  end
+
+  let incr = Stdlib.incr
+  let of_string = int_of_string
+end
+
+module Bool = struct
+  include Stdlib.Bool
+
+  let of_string value =
+    match value with
+    | "true" | "1" -> true
+    | "false" | "0" -> false
+    | _ -> invalid_arg "Bool.of_string"
+  ;;
+end
+
+module Hashtbl = struct
+  include Stdlib.Hashtbl
+
+  let find table key = find_opt table key
+  let set table ~key ~data = replace table key data
+end
+
+module String = struct
+  include Stdlib.String
+
+  let is_empty value = length value = 0
+
+  let split value ~on =
+    let rec loop start index acc =
+      if index = length value
+      then List.rev (sub value start (index - start) :: acc)
+      else if Stdlib.Char.equal (get value index) on
+      then loop (index + 1) (index + 1) (sub value start (index - start) :: acc)
+      else loop start (index + 1) acc
+    in
+    loop 0 0 []
+  ;;
+
+  let lsplit2 value ~on =
+    match index_opt value on with
+    | None -> None
+    | Some index ->
+      Some (sub value 0 index, sub value (index + 1) (length value - index - 1))
+  ;;
+end
 
 type native = nativeint
 type application_delegate = nativeint
@@ -605,7 +673,8 @@ module Http = struct
     }
 
   let send_json request =
-    Bonsai.Effect.Expert.of_fun ~f:(fun ~callback ~on_exn:_ ->
+    fun () ->
+      let result = ref (Error "request did not complete synchronously") in
       http_send_json_native
         request.method_
         request.url
@@ -613,7 +682,8 @@ module Http = struct
         request.body
         request.timeout_seconds
         (fun success response ->
-          callback (if success then Ok response else Error response)))
+          result := if success then Ok response else Error response);
+      !result
   ;;
 end
 

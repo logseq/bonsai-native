@@ -3,30 +3,29 @@
 `bonsai_apple` should grow as an Apple-native declarative UI layer, not as a
 literal clone of SwiftUI's generic type system.
 
-The app authoring boundary stays in OCaml/Bonsai:
+The app authoring boundary stays in OCaml graph components:
 
 ```text
-OCaml/Bonsai component
+OCaml graph component
   -> Bonsai_apple.node tree
   -> Bonsai_apple.Renderer
-  -> UIKit or SwiftUI backend
+  -> SwiftUI backend
   -> native Apple UI
 ```
 
-SwiftUI and UIKit are renderer targets. App-specific Swift or Objective-C should
-not be required for normal app screens.
+SwiftUI is the renderer target. App-specific Swift should not be required for
+normal app screens.
 
 ## Design Rules
 
 - Add product-level Apple primitives to `bonsai_apple`, not app-local backend
   hacks.
-- Keep primitive state explicit and Bonsai-owned: selected tab, search text,
+- Keep primitive state explicit and graph-owned: selected tab, search text,
   picker value, toggle state, sheet visibility, and navigation selection should
   flow through events/effects.
 - Prefer semantic platform primitives over styling knobs. A `tab_view` primitive
   is better than exposing arbitrary SwiftUI modifiers needed to assemble tabs.
-- Implement each primitive in every active backend where practical:
-  `bonsai_apple.uikit` and `bonsai_apple.swiftui` first, AppKit later.
+- Implement each primitive in the SwiftUI backend where practical.
 - Keep escape hatches for specialized controls through `custom_view`, but do not
   use escape hatches for common Apple UI.
 
@@ -196,24 +195,11 @@ SwiftUI backend:
 - iOS 26 styling should prefer system APIs such as glass button style and tab
   bar behavior, gated by availability in Swift.
 
-UIKit backend:
-
-- `tab_view` maps to `UITabBarController`.
-- `navigation_split_view` maps to `UISplitViewController`.
-- `form`/`section` can map to grouped table/list style.
-- Inputs map to standard UIKit controls.
-- Search maps to `UISearchController`.
-
-The UIKit backend can lag behind SwiftUI for some advanced controls, but common
-shell, list, form, input, and presentation primitives should stay supported in
-both backends.
-
 ## Feasibility
 
 Yes, `bonsai_apple` can grow to support the Apple-native component set needed
 for a polished app. The practical target is not "every SwiftUI symbol"; it is a
-stable, declarative OCaml API for common Apple UI patterns, backed by SwiftUI
-and UIKit renderers.
+stable, declarative OCaml API for common Apple UI patterns, backed by SwiftUI.
 
 The next implementation step should be Layer 1 plus the minimal Layer 3 pieces
 needed by Todos:

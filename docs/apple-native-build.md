@@ -2,9 +2,8 @@
 
 The Apple package lives under `apple/` and exposes `bonsai_apple`.
 
-It targets the Jane Street preview package set
-`v0.18~preview.130.100+614`, matching Bonsai and `ppxlib_jane` from the same
-preview train. Use OCaml 5.2.x for now.
+It uses the local OCaml graph runtime and SwiftUI backend. Use OCaml 5.2.x for
+now.
 
 ## Host Dependencies
 
@@ -44,10 +43,10 @@ opam install conf-simulator-ios
 ARCH=arm64 SUBARCH=arm64 PLATFORM=iPhoneSimulator \
   SDK=$(xcrun --sdk iphonesimulator --show-sdk-version) VER=17.0 \
   opam install conf-ios
-opam install ocaml-ios camlkit-ios camlkit-gui-ios
+opam install ocaml-ios
 ```
 
-Then build Jane runtime packages into the iOS target sysroot:
+Then build the target runtime packages into the iOS target sysroot:
 
 ```sh
 cd ~/Codes/projects/bonsai-native
@@ -68,5 +67,4 @@ For a physical device, create a `device` switch with `PLATFORM=iPhoneOS`, run
 `scripts/bootstrap-ios-jane.sh --switch device --clean`, and build with
 `--workspace dune-workspace.device`.
 
-The UIKit backend is in `apple/uikit`. It should stay gated behind iOS Dune
-contexts because it depends on Camlkit UIKit packages and Apple frameworks.
+The maintained Apple backend is SwiftUI.

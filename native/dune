@@ -1,6 +1,3 @@
 (library
  (name bonsai_native)
- (public_name bonsai_native)
- (libraries bonsai bonsai.driver core)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ (public_name bonsai_native))

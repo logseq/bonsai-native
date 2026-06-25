@@ -9,7 +9,7 @@ android/_build/android/jniLibs/arm64-v8a/libbonsai_android_counter.so
 That shared library contains:
 
 - the OCaml runtime
-- Core/Bonsai/Jane preview packages built for Android
+- the local OCaml graph runtime built for Android
 - the OCaml Android demo entrypoint
 - JNI functions from `jni/bonsai_android_jni.c`
 
@@ -50,10 +50,8 @@ DUNE_WORKSPACE=$PWD/dune-workspace.basement-flags \
 scripts/bootstrap-android-jane.sh --clean
 ```
 
-The bootstrap script builds target copies of runtime packages such as
-`base`, `core`, `bonsai`, `ppx_fuelproof`, `ppx_log`, `ppx_portable`,
-`ppx_typed_fields`, `zarith`, and `bignum`. Host PPX tools are exposed only for
-preprocessing.
+The bootstrap script builds target copies of the small runtime packages needed
+by the Android cross switch.
 
 ## Build The Native Library
 
@@ -98,15 +96,15 @@ scripts/test-android-emulator.sh
 Expected result:
 
 ```text
-Verified Android demo parity tabs and native Bonsai click dispatch: 0 -> 1
+Verified Android demo parity tabs and native click dispatch: 0 -> 1
 ```
 
 The smoke test installs the APK, verifies the Android `Counter`, `Todo`, and
-`Search` tabs, and confirms that tapping `Increment` updates Bonsai state through
+`Search` tabs, and confirms that tapping `Increment` updates OCaml state through
 JNI.
 
 ## Notes
 
 The debug `.so` is currently large because it is unstripped and includes the
-OCaml runtime plus Jane/Bonsai packages. Release-size work should strip symbols
+OCaml runtime and local graph packages. Release-size work should strip symbols
 and consider package/linker pruning separately from correctness.

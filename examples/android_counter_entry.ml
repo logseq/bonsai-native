@@ -1,22 +1,13 @@
-open! Core
-
-let app_by_id =
-  let table = String.Table.create () in
-  List.iter Android_demo_components.metadata ~f:(fun (id, _) ->
-    Hashtbl.set
-      table
-      ~key:id
-      ~data:
-        (lazy
-          (Bonsai_android.App.create
-             ~time_source:(Bonsai.Time_source.create ~start:Time_ns.epoch)
-             (Android_demo_components.component_by_id id))));
-  table
-;;
+let apps : (string, Bonsai_android.App.t) Hashtbl.t = Hashtbl.create 3
 
 let app_for demo_id =
   let demo_id = Android_demo_components.normalize_id demo_id in
-  Hashtbl.find_exn app_by_id demo_id |> Lazy.force
+  match Hashtbl.find_opt apps demo_id with
+  | Some app -> app
+  | None ->
+    let app = Bonsai_android.App.create (Android_demo_components.component_by_id demo_id) in
+    Hashtbl.replace apps demo_id app;
+    app
 ;;
 
 let render demo_id = Bonsai_android.App.render_json (app_for demo_id)

@@ -6,9 +6,7 @@
   searchable_list
   navigation
   ios_demo_app)
- (libraries bonsai_apple core)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ (libraries bonsai_apple))
 
 (rule
  (targets BonsaiNativeSwiftUI.o)
@@ -107,11 +105,8 @@
   bonsai_apple
   bonsai_apple_swiftui
   xxx
-  core
-  core_kernel.caml_threads
   threads.posix)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ )
 
 (executable
  (name mac_app)
@@ -136,11 +131,8 @@
   bonsai_apple
   bonsai_apple_swiftui
   xxx
-  core
-  core_kernel.caml_threads
   threads.posix)
- (preprocess
-  (pps ppx_jane bonsai.ppx_bonsai)))
+ )
 
 (rule
  (targets ios_sdkroot_flags.sexp)

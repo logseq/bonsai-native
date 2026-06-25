@@ -1,0 +1,8 @@
+(rule
+ (alias runtest)
+ (deps
+  (source_tree ..))
+ (action
+  (chdir
+   %{workspace_root}
+   (run /bin/sh scripts/check-no-bonsai-core-deps.sh))))

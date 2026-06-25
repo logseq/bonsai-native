@@ -14,6 +14,4 @@
   (names bonsai_apple_swiftui_stubs))
  (c_library_flags
   (:standard -framework Foundation -framework SwiftUI))
- (libraries bonsai_apple core)
- (preprocess
-  (pps ppx_jane)))
+ (libraries bonsai_apple))
