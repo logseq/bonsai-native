@@ -150,6 +150,18 @@ let%test_unit "file exporter renders export metadata" =
       {|file-exporter#1 text="Export Anki text" filename=lulala.txt content_type=public.plain-text|}
 ;;
 
+let%test_unit "share link renders URL metadata" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.share_link ~title:"Share URL" ~url:"https://api.test/share/token" ())
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:{|share-link#1 text="Share URL" url=https://api.test/share/token|}
+;;
+
 let%test_unit "disabled file exporter renders disabled metadata" =
   Backend.reset ();
   let mounted =

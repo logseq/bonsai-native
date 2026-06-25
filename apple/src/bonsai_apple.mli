@@ -27,6 +27,12 @@ type file_export =
   ; content : string
   }
 
+type share_link =
+  { title : string
+  ; url : string
+  ; is_enabled : bool
+  }
+
 type toolbar_menu_action =
   { title : string
   ; system_image : string option
@@ -246,6 +252,7 @@ val file_exporter
   -> content:string
   -> unit
   -> node
+val share_link : ?is_enabled:bool -> title:string -> url:string -> unit -> node
 val file_importer
   :  title:string
   -> allowed_content_types:string list
@@ -311,6 +318,7 @@ type backend_kind =
   | Section
   | Picker
   | Photo_picker
+  | Share_link
   | File_exporter
   | File_importer
   | Camera_capture
@@ -426,6 +434,7 @@ module Renderer : sig
       -> rendered_picker_option list
       -> unit
     val set_file_exporter : view -> file_export -> unit
+    val set_share_link : view -> share_link -> unit
     val set_file_importer
       :  view
       -> allowed_content_types:string list

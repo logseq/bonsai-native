@@ -52,6 +52,7 @@ private enum NodeKind: Int32 {
   case navigationSplit = 20
   case adaptiveLayout = 21
   case toggle = 22
+  case shareLink = 23
 }
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
@@ -199,6 +200,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var exportFilename = ""
   @Published var exportContentType = ""
   @Published var exportContent = ""
+  @Published var shareURL = ""
   @Published var allowedContentTypes: [String] = []
   @Published var wantsImagePayload = false
 
@@ -488,6 +490,21 @@ private struct BonsaiNativeTextFieldView: View {
   }
 }
 
+private struct BonsaiNativeShareLinkView: View {
+  @ObservedObject var node: BonsaiNativeNode
+
+  var body: some View {
+    if let url = URL(string: node.shareURL) {
+      ShareLink(item: url) {
+        Label(node.text, systemImage: "square.and.arrow.up")
+      }
+    } else {
+      Label(node.text, systemImage: "square.and.arrow.up")
+        .foregroundStyle(.secondary)
+    }
+  }
+}
+
 private struct BonsaiNativeNodeView: View {
   @Environment(\.horizontalSizeClass) private var horizontalSizeClass
   @ObservedObject var node: BonsaiNativeNode
@@ -633,6 +650,10 @@ private struct BonsaiNativeNodeView: View {
 
     case .fileExporter:
       BonsaiNativeFileExporterView(node: node)
+        .disabled(!node.isEnabled)
+
+    case .shareLink:
+      BonsaiNativeShareLinkView(node: node)
         .disabled(!node.isEnabled)
 
     case .fileImporter:
@@ -2048,6 +2069,14 @@ public func bonsai_native_swiftui_set_file_exporter(
   node.exportFilename = filenamePointer.map(String.init(cString:)) ?? ""
   node.exportContentType = contentTypePointer.map(String.init(cString:)) ?? ""
   node.exportContent = contentPointer.map(String.init(cString:)) ?? ""
+}
+
+@_cdecl("bonsai_native_swiftui_set_share_link")
+public func bonsai_native_swiftui_set_share_link(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ urlPointer: UnsafePointer<CChar>?
+) {
+  nativeNode(from: pointer)?.shareURL = urlPointer.map(String.init(cString:)) ?? ""
 }
 
 @_cdecl("bonsai_native_swiftui_set_file_importer")

@@ -160,6 +160,7 @@ extern void bonsai_native_swiftui_set_file_exporter(
   const char *filename,
   const char *content_type,
   const char *content);
+extern void bonsai_native_swiftui_set_share_link(void *node, const char *url);
 extern void bonsai_native_swiftui_set_file_importer(
   void *node,
   const char **allowed_types,
@@ -898,6 +899,13 @@ CAMLprim value bonsai_apple_swiftui_set_file_exporter(
     String_val(filename),
     String_val(content_type),
     String_val(content));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_share_link(value node, value url)
+{
+  CAMLparam2(node, url);
+  bonsai_native_swiftui_set_share_link(pointer_val(node), String_val(url));
   CAMLreturn(Val_unit);
 }
 

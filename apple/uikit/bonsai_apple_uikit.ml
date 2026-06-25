@@ -178,6 +178,9 @@ let create kind =
     | Apple.File_exporter ->
       let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
       native, host_controller native
+    | Apple.Share_link ->
+      let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
+      native, host_controller native
     | Apple.File_importer ->
       let native = UIButton.self |> UIButtonClass.buttonWithType _UIButtonTypeSystem in
       native, host_controller native
@@ -234,6 +237,7 @@ let set_text view text =
   | Apple.Picker -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
   | Apple.Photo_picker -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
   | Apple.File_exporter -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
+  | Apple.Share_link -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
   | Apple.File_importer -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
   | Apple.Camera_capture -> UIButton.setTitle1 (nsstring text) ~forState:_UIControlStateNormal view.native
   | _ -> ()
@@ -467,6 +471,7 @@ let set_picker
 ;;
 
 let set_file_exporter _view _export = ()
+let set_share_link _view _share_link = ()
 
 let set_file_importer _view ~allowed_content_types:_ ~on_select:_ = ()
 
@@ -604,6 +609,7 @@ module Backend = struct
   let set_section = set_section
   let set_picker = set_picker
   let set_file_exporter = set_file_exporter
+  let set_share_link = set_share_link
   let set_file_importer = set_file_importer
   let set_image_payload_mode = set_image_payload_mode
   let set_on_click = set_on_click

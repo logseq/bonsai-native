@@ -33,6 +33,7 @@ private enum NodeKind: Int32 {
   case navigationSplit = 20
   case adaptiveLayout = 21
   case toggle = 22
+  case shareLink = 23
 }
 
 private struct BonsaiNativeRowAction: Identifiable {
@@ -122,6 +123,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var exportFilename = ""
   @Published var exportContentType = ""
   @Published var exportContent = ""
+  @Published var shareURL = ""
   @Published var allowedContentTypes: [String] = []
   @Published var wantsImagePayload = false
 
@@ -337,6 +339,16 @@ private struct BonsaiNativeNodeView: View {
     case .fileExporter:
       Label(node.text, systemImage: "square.and.arrow.up")
         .foregroundStyle(.secondary)
+    case .shareLink:
+      if let url = URL(string: node.shareURL) {
+        ShareLink(item: url) {
+          Label(node.text, systemImage: "square.and.arrow.up")
+        }
+        .disabled(!node.isEnabled)
+      } else {
+        Label(node.text, systemImage: "square.and.arrow.up")
+          .foregroundStyle(.secondary)
+      }
     case .fileImporter:
       Label(node.text, systemImage: "square.and.arrow.down")
         .foregroundStyle(.secondary)
@@ -973,6 +985,11 @@ public func bonsai_native_swiftui_set_file_exporter(_ pointer: UnsafeMutableRawP
   node.exportFilename = filenamePointer.map(String.init(cString:)) ?? ""
   node.exportContentType = contentTypePointer.map(String.init(cString:)) ?? ""
   node.exportContent = contentPointer.map(String.init(cString:)) ?? ""
+}
+
+@_cdecl("bonsai_native_swiftui_set_share_link")
+public func bonsai_native_swiftui_set_share_link(_ pointer: UnsafeMutableRawPointer?, _ urlPointer: UnsafePointer<CChar>?) {
+  nativeNode(from: pointer)?.shareURL = urlPointer.map(String.init(cString:)) ?? ""
 }
 
 @_cdecl("bonsai_native_swiftui_set_file_importer")

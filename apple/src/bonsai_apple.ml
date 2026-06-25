@@ -28,6 +28,13 @@ type file_export =
   }
 [@@deriving sexp_of, equal]
 
+type share_link =
+  { title : string
+  ; url : string
+  ; is_enabled : bool
+  }
+[@@deriving sexp_of, equal]
+
 type toolbar_menu_action =
   { title : string
   ; system_image : string option
@@ -190,6 +197,7 @@ type backend_kind =
   | Section
   | Picker
   | Photo_picker
+  | Share_link
   | File_exporter
   | File_importer
   | Camera_capture
@@ -277,6 +285,7 @@ type node =
       ; selected : string option
       ; on_select : string -> unit Effect.t
       }
+  | Share_link_node of share_link
   | File_exporter_node of
       { title : string
       ; is_enabled : bool
@@ -607,6 +616,10 @@ let file_exporter ?(is_enabled = true) ~title ~filename ~content_type ~content (
   File_exporter_node { title; is_enabled; export = { filename; content_type; content } }
 ;;
 
+let share_link ?(is_enabled = true) ~title ~url () =
+  Share_link_node { title; url; is_enabled }
+;;
+
 let file_importer ~title ~allowed_content_types ~on_select () =
   File_importer_node { title; allowed_content_types; on_select }
 ;;
@@ -680,6 +693,7 @@ let backend_kind = function
   | Section_node _ -> Section
   | Picker_node _ -> Picker
   | Photo_picker_node _ -> Photo_picker
+  | Share_link_node _ -> Share_link
   | File_exporter_node _ -> File_exporter
   | File_importer_node _ -> File_importer
   | Camera_capture_node _ -> Camera_capture
@@ -746,6 +760,7 @@ module Renderer = struct
       -> rendered_picker_option list
       -> unit
     val set_file_exporter : view -> file_export -> unit
+    val set_share_link : view -> share_link -> unit
     val set_file_importer
       :  view
       -> allowed_content_types:string list
@@ -926,6 +941,8 @@ module Renderer = struct
           , (is_enabled : bool)
           , (wants_payload : bool)
           , (selected : string option)]
+        | Share_link_node { title; url; is_enabled } ->
+          [%sexp "share-link", (title : string), (url : string), (is_enabled : bool)]
         | File_exporter_node { title; is_enabled; export } ->
           [%sexp "file-exporter", (title : string), (is_enabled : bool), (export : file_export)]
         | File_importer_node { title; allowed_content_types; on_select = _ } ->
@@ -977,6 +994,7 @@ module Renderer = struct
       | Sidebar_split_node _
       | Picker_node _
       | Photo_picker_node _
+      | Share_link_node _
       | File_exporter_node _
       | File_importer_node _
       | Camera_capture_node _
@@ -1186,6 +1204,13 @@ module Renderer = struct
          Backend.set_text t.view title;
          Backend.set_enabled t.view is_enabled;
          Backend.set_file_exporter t.view export;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Share_link_node share ->
+         Backend.set_text t.view share.title;
+         Backend.set_enabled t.view share.is_enabled;
+         Backend.set_share_link t.view share;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
@@ -1473,6 +1498,7 @@ module For_testing = struct
       ; mutable picker_selected : string option
       ; mutable on_select_picker : (string -> unit) option
       ; mutable picker_options : rendered_picker_option list
+      ; mutable share_link : share_link option
       ; mutable file_export : file_export option
       ; mutable allowed_content_types : string list
       ; mutable on_import_file : (string -> unit) option
@@ -1540,6 +1566,7 @@ module For_testing = struct
       ; picker_selected = None
       ; on_select_picker = None
       ; picker_options = []
+      ; share_link = None
       ; file_export = None
       ; allowed_content_types = []
       ; on_import_file = None
@@ -1721,6 +1748,11 @@ module For_testing = struct
       view.file_export <- Some export
     ;;
 
+    let set_share_link view share_link =
+      mutate ();
+      view.share_link <- Some share_link
+    ;;
+
     let set_file_importer view ~allowed_content_types ~on_select =
       mutate ();
       view.allowed_content_types <- allowed_content_types;
@@ -1768,6 +1800,7 @@ module For_testing = struct
       | Section -> "section"
       | Picker -> "picker"
       | Photo_picker -> "photo-picker"
+      | Share_link -> "share-link"
       | File_exporter -> "file-exporter"
       | File_importer -> "file-importer"
       | Camera_capture -> "camera-capture"
@@ -1845,6 +1878,11 @@ module For_testing = struct
             " filename=%s content_type=%s"
             export.filename
             export.content_type
+        | None -> ""
+      in
+      let share_link =
+        match view.share_link with
+        | Some share_link -> " url=" ^ share_link.url
         | None -> ""
       in
       let file_importer =
@@ -1998,6 +2036,7 @@ module For_testing = struct
        ^ toggle_selected
        ^ photo_picker
        ^ camera_capture
+       ^ share_link
        ^ file_exporter
        ^ file_importer
        ^ payload

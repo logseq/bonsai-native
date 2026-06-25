@@ -179,6 +179,12 @@ external set_native_file_exporter
   -> unit
   = "bonsai_apple_swiftui_set_file_exporter"
 
+external set_native_share_link
+  :  native
+  -> string
+  -> unit
+  = "bonsai_apple_swiftui_set_share_link"
+
 external set_native_file_importer
   :  native
   -> string array
@@ -442,6 +448,7 @@ let node_kind_id = function
   | Apple.Picker -> 13
   | Apple.Custom_view _ -> 14
   | Apple.Photo_picker -> 15
+  | Apple.Share_link -> 23
   | Apple.File_exporter -> 17
   | Apple.File_importer -> 18
   | Apple.Camera_capture -> 19
@@ -687,6 +694,10 @@ module Backend = struct
       export.filename
       export.content_type
       export.content
+  ;;
+
+  let set_share_link view (share_link : Apple.share_link) =
+    set_native_share_link view.native share_link.url
   ;;
 
   let set_file_importer view ~allowed_content_types ~on_select =
