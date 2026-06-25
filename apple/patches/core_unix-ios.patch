@@ -1,15 +1,14 @@
 --- core_unix/src/core_unix_stubs.c
 +++ core_unix/src/core_unix_stubs.c
-@@
+@@ -9,6 +9,7 @@
+ /* Darwin needs this to be included before if.h*/
  #if defined(__APPLE__)
  #define _POSIX_SOURCE
 +#include <TargetConditionals.h>
  #include <sys/socket.h>
  #include <xlocale.h>
  #elif defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
- #include <sys/socket.h>
- #endif
-@@
+@@ -70,6 +71,10 @@
  #include "timespec.h"
  #include "thread_id.h"
  
@@ -20,7 +19,9 @@
  #if defined(JSC_WORDEXP)
  #include <wordexp.h>
  #endif
-@@
+@@ -740,9 +745,14 @@
+ }
+ 
  CAMLprim value core_unix_clock_settime(value v_cl, value v_t) {
 +#if defined(JSC_TARGET_IOS)
 +  errno = ENOSYS;
@@ -32,7 +33,9 @@
 +#endif
    return Val_unit;
  }
-@@
+ 
+@@ -1254,6 +1264,9 @@
+ 
  CAMLprim value core_unix_wordexp(value v_flags, value v_str) {
    CAMLparam0();
 +#if defined(JSC_TARGET_IOS)
@@ -41,9 +44,11 @@
    CAMLlocal1(v_res);
    int flags = Int32_val(v_flags);
    unsigned int i, len = caml_string_length(v_str) + 1;
-@@
+@@ -1287,6 +1300,7 @@
    default:
      caml_failwith("wordexp: impossible");
    }
 +#endif
  }
+ 
+ #endif /* defined(JSC_WORDEXP) */
