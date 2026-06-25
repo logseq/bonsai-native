@@ -1,6 +1,6 @@
 (library
  (name bonsai_apple_test)
- (libraries bonsai_apple core)
+ (libraries bonsai_apple core xxx)
  (inline_tests)
  (preprocess
   (pps ppx_jane bonsai.ppx_bonsai)))

@@ -1468,6 +1468,37 @@ let%test_unit "tab view rejects duplicate tab ids before mounting" =
     ~expect:"duplicate Bonsai Apple tab id: today"
 ;;
 
+let%test_unit "iOS demo root renders as a shared tab view" =
+  Backend.reset ();
+  let app =
+    Test_app.create
+      ~time_source:(Bonsai.Time_source.create ~start:Time_ns.epoch)
+      Xxx.Ios_demo_app.component
+  in
+  Test_app.flush_and_render app;
+  let view = Option.value_exn (Test_app.view app) in
+  require_string_equal
+    (Backend.show view)
+    ~expect:
+      {|tab-view#1 selected=counter tabs=[counter:Counter:plus.circle,todo:Todo:checklist,search:Search:magnifyingglass:search]
+  stack(vertical)#2 key=counter
+    label#4 text=0
+    button#3 text=Increment
+  stack(vertical)#5 key=todo
+    stack(horizontal)#7 modifiers=[frame]
+      text-field#9 text="" placeholder="New task" style=Rounded_border modifiers=[frame]
+      button#8 text=Add
+    list#6 modifiers=[frame]
+  stack(vertical)#10 key=search
+    text-field#17 text="" placeholder=Search style=Rounded_border modifiers=[frame]
+    list#11 modifiers=[frame]
+      label#12 key=Today text=Today
+      label#13 key=Tasks text=Tasks
+      label#14 key=Settings text=Settings
+      label#15 key=Archive text=Archive
+      label#16 key=Projects text=Projects|}
+;;
+
 let%test_unit "sidebar split renders route metadata and schedules selection" =
   Backend.reset ();
   let scheduled = ref 0 in

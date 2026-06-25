@@ -4,14 +4,44 @@
   counter
   todo
   searchable_list
-  navigation)
+  navigation
+  ios_demo_app)
  (libraries bonsai_apple core)
  (preprocess
   (pps ppx_jane bonsai.ppx_bonsai)))
 
+(rule
+ (targets BonsaiNativeSwiftUI.o)
+ (deps
+  ../../scripts/build-swiftui-renderer.sh
+  ../swiftui/BonsaiNativeSwiftUI.swift)
+ (enabled_if
+  (or
+   (= %{context_name} device.ios)
+   (= %{context_name} simulator.ios)
+   (= %{context_name} simulator-arm.ios)
+   (= %{context_name} catalyst.ios)))
+ (action
+  (run /bin/sh ../../scripts/build-swiftui-renderer.sh %{targets})))
+
+(rule
+ (targets swiftui_link_flags.sexp)
+ (deps BonsaiNativeSwiftUI.o)
+ (enabled_if
+  (or
+   (= %{context_name} device.ios)
+   (= %{context_name} simulator.ios)
+   (= %{context_name} simulator-arm.ios)
+   (= %{context_name} catalyst.ios)))
+ (action
+  (with-stdout-to
+   %{targets}
+   (run /bin/sh -c "printf '(-ccopt \"%s\")' \"$PWD/BonsaiNativeSwiftUI.o\""))))
+
 (executable
  (name ios_app)
- (modules ios_app counter todo searchable_list)
+ (modules ios_app)
+ (link_deps BonsaiNativeSwiftUI.o)
  (enabled_if
   (or
    (= %{context_name} device.ios)
@@ -32,18 +62,31 @@
   -ccopt
   "-miphoneos-version-min=17.0"
   -ccopt
+  "-Wl,-dead_strip"
+  (:include swiftui_link_flags.sexp)
+  -ccopt
   "-framework UIKit"
+  -ccopt
+  "-framework SwiftUI"
+  -ccopt
+  "-framework Foundation"
+  -ccopt
+  "-framework CryptoKit"
+  -ccopt
+  "-framework PhotosUI"
+  -ccopt
+  "-framework UniformTypeIdentifiers"
+  -ccopt
+  "-framework Vision"
   -ccopt
   "-framework Security")
  (libraries
   bonsai_apple
-  bonsai_apple_uikit
+  bonsai_apple_swiftui
+  xxx
   core
   core_kernel.caml_threads
-  threads.posix
-  camlkit-base.CoreGraphics
-  camlkit-base.Foundation
-  camlkit-gui.UIKit)
+  threads.posix)
  (preprocess
   (pps ppx_jane bonsai.ppx_bonsai)))
 
@@ -80,6 +123,8 @@
    (progn
     (copy ../Info.plist Info.plist)
     (copy ../ios_app.exe BonsaiNativeCounter)
+    (run chmod u+w BonsaiNativeCounter)
+    (run strip -x BonsaiNativeCounter)
     (run
      /bin/sh
      -c
@@ -104,6 +149,8 @@
    (progn
     (copy ../Info.demos.plist Info.plist)
     (copy ../ios_app.exe BonsaiNativeDemos)
+    (run chmod u+w BonsaiNativeDemos)
+    (run strip -x BonsaiNativeDemos)
     (run
      /bin/sh
      -c
