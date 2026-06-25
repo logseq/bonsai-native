@@ -3507,28 +3507,39 @@ module For_testing = struct
       | None -> failwith "View has no presented sheet content"
     ;;
 
+    let has_presented_sheet view =
+      List.exists view.modifiers ~f:(function
+        | Rendered_sheet { is_presented = true; content = Some _; _ } -> true
+        | _ -> false)
+    ;;
+
+    let find_sheet_host_exn view ~path =
+      let raw_view = find_raw_exn view ~path in
+      if has_presented_sheet raw_view then raw_view else visible_view raw_view
+    ;;
+
     let click_sheet_exn view ~path ~sheet_path =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       click_exn (presented_sheet_content_exn view) ~path:sheet_path
     ;;
 
     let import_sheet_file_exn view ~path ~sheet_path ~content =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       import_file_exn (presented_sheet_content_exn view) ~path:sheet_path ~content
     ;;
 
     let change_sheet_text_exn view ~path ~sheet_path ~text =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       change_text_exn (presented_sheet_content_exn view) ~path:sheet_path ~text
     ;;
 
     let change_sheet_toggle_exn view ~path ~sheet_path ~is_on =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       change_toggle_exn (presented_sheet_content_exn view) ~path:sheet_path ~is_on
     ;;
 
     let nested_sheet_host_exn view ~path ~host_path =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       presented_sheet_content_exn view |> find_exn ~path:host_path
     ;;
 
@@ -3544,22 +3555,22 @@ module For_testing = struct
     ;;
 
     let select_sheet_photo_exn view ~path ~sheet_path ~image_id =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       select_photo_exn (presented_sheet_content_exn view) ~path:sheet_path ~image_id
     ;;
 
     let select_sheet_photo_payload_exn view ~path ~sheet_path ~payload =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       select_photo_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
     ;;
 
     let capture_sheet_camera_exn view ~path ~sheet_path ~image_id =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       capture_camera_exn (presented_sheet_content_exn view) ~path:sheet_path ~image_id
     ;;
 
     let capture_sheet_camera_payload_exn view ~path ~sheet_path ~payload =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       capture_camera_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
     ;;
 
@@ -3644,7 +3655,7 @@ module For_testing = struct
     ;;
 
     let click_sheet_toolbar_item_exn view ~path ~id =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       click_toolbar_item_exn (presented_sheet_content_exn view) ~path:[] ~id
     ;;
 
@@ -3679,7 +3690,7 @@ module For_testing = struct
     ;;
 
     let dismiss_sheet_exn view ~path =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       match
         List.find_map view.modifiers ~f:(function
           | Rendered_sheet { is_presented = true; on_dismiss = Some on_dismiss; _ } ->
@@ -3747,7 +3758,7 @@ module For_testing = struct
     ;;
 
     let select_sheet_picker_exn view ~path ~sheet_path ~id =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       select_picker_exn (presented_sheet_content_exn view) ~path:sheet_path ~id
     ;;
 
@@ -3775,7 +3786,7 @@ module For_testing = struct
     ;;
 
     let click_sheet_row_menu_action_exn view ~path ~sheet_path ~title =
-      let view = find_visible_exn view ~path in
+      let view = find_sheet_host_exn view ~path in
       click_row_menu_action_exn (presented_sheet_content_exn view) ~path:sheet_path ~title
     ;;
 
