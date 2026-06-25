@@ -237,6 +237,7 @@ type node =
       }
   | Button_node of
       { title : string
+      ; system_image : string option
       ; is_enabled : bool
       ; on_click : unit Effect.t
       }
@@ -428,7 +429,9 @@ let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
   Text { text = value; attributes = { style; weight; color } }
 ;;
 
-let button ?(is_enabled = true) title ~on_click = Button_node { title; is_enabled; on_click }
+let button ?(is_enabled = true) ?system_image title ~on_click =
+  Button_node { title; system_image; is_enabled; on_click }
+;;
 
 let text_field
   ?placeholder
@@ -792,6 +795,7 @@ module Renderer = struct
     val create : backend_kind -> view
     val destroy : view -> unit
     val set_text : view -> string -> unit
+    val set_system_image : view -> string option -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
@@ -939,8 +943,8 @@ module Renderer = struct
         match node with
         | Text { text; attributes } ->
           [%sexp "text", (text : string), (attributes : text_attributes)]
-        | Button_node { title; is_enabled; on_click = _ } ->
-          [%sexp "button", (title : string), (is_enabled : bool)]
+        | Button_node { title; system_image; is_enabled; on_click = _ } ->
+          [%sexp "button", (title : string), (system_image : string option), (is_enabled : bool)]
         | Text_field_node { text; placeholder; style; is_secure; on_change = _; on_submit = _ } ->
           [%sexp
             "text-field"
@@ -1135,8 +1139,9 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_enabled t.view true;
          replace_children []
-       | Button_node { title; is_enabled; on_click } ->
+       | Button_node { title; system_image; is_enabled; on_click } ->
          Backend.set_text t.view title;
+         Backend.set_system_image t.view system_image;
          Backend.set_enabled t.view is_enabled;
          Backend.set_on_click
            t.view
@@ -1611,6 +1616,7 @@ module For_testing = struct
       { id : int
       ; kind : backend_kind
       ; mutable text : string option
+      ; mutable system_image : string option
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable text_field_style : text_field_style
@@ -1680,6 +1686,7 @@ module For_testing = struct
       { id = !next_id
       ; kind
       ; text = None
+      ; system_image = None
       ; text_attributes = default_text_attributes
       ; placeholder = None
       ; text_field_style = Rounded_border
@@ -1724,6 +1731,11 @@ module For_testing = struct
     let set_text view text =
       mutate ();
       view.text <- Some text
+    ;;
+
+    let set_system_image view system_image =
+      mutate ();
+      view.system_image <- system_image
     ;;
 
     let set_text_attributes view attributes =
@@ -1975,6 +1987,11 @@ module For_testing = struct
         | Some text -> " text=" ^ Sexp.to_string_hum ([%sexp_of: string] text)
       in
       let enabled = if view.is_enabled then "" else " disabled" in
+      let system_image =
+        match view.system_image with
+        | None -> ""
+        | Some system_image -> " image=" ^ system_image
+      in
       let text_attributes =
         if equal_text_attributes view.text_attributes default_text_attributes
         then ""
@@ -2269,6 +2286,7 @@ module For_testing = struct
        ^ file_importer
        ^ payload
        ^ image_source
+       ^ system_image
        ^ enabled
        ^ selected
        ^ tabs

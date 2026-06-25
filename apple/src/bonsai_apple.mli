@@ -194,7 +194,7 @@ val text
   -> string
   -> node
 
-val button : ?is_enabled:bool -> string -> on_click:unit Effect.t -> node
+val button : ?is_enabled:bool -> ?system_image:string -> string -> on_click:unit Effect.t -> node
 val text_field
   :  ?placeholder:string
   -> ?style:text_field_style
@@ -444,6 +444,7 @@ module Renderer : sig
     val create : backend_kind -> view
     val destroy : view -> unit
     val set_text : view -> string -> unit
+    val set_system_image : view -> string option -> unit
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit

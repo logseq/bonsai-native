@@ -156,6 +156,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   let kind: NodeKind
 
   @Published var text = ""
+  @Published var systemImage: String?
   @Published var textStyle: Int32 = 5
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
@@ -619,8 +620,18 @@ private struct BonsaiNativeNodeView: View {
         .foregroundStyle(textColor(node.textColor))
 
     case .button:
-      Button(node.text) {
+      Button {
         model.sendClick(node.clickEventId)
+      } label: {
+        if let systemImage = node.systemImage {
+          if node.text.isEmpty {
+            Image(systemName: systemImage)
+          } else {
+            Label(node.text, systemImage: systemImage)
+          }
+        } else {
+          Text(node.text)
+        }
       }
       .disabled(!node.isEnabled)
 
@@ -1910,6 +1921,15 @@ public func bonsai_native_swiftui_set_text(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.text = textPointer.map(String.init(cString:)) ?? ""
+}
+
+@_cdecl("bonsai_native_swiftui_set_system_image")
+public func bonsai_native_swiftui_set_system_image(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ systemImagePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.systemImage = systemImagePointer.map(String.init(cString:))
 }
 
 @_cdecl("bonsai_native_swiftui_set_image_source")
