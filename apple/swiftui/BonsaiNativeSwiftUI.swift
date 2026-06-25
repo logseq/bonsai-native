@@ -141,6 +141,7 @@ private struct BonsaiNativeSidebarAction: Identifiable {
   let title: String
   let systemImage: String?
   let eventId: Int32?
+  var menuActions: [BonsaiNativeRowAction]
 }
 
 private struct BonsaiNativeToolbarItem: Identifiable {
@@ -1617,21 +1618,49 @@ private struct BonsaiNativeNodeView: View {
       }
     } else {
       ForEach(node.sidebarActions) { action in
-        Button {
-          if let eventId = action.eventId {
-            model.sendClick(eventId)
+        if action.menuActions.isEmpty {
+          Button {
+            if let eventId = action.eventId {
+              model.sendClick(eventId)
+            }
+            withAnimation(.easeOut(duration: 0.18)) {
+              isCompactSidebarOpen = false
+            }
+          } label: {
+            sidebarRowLabel(
+              title: action.title,
+              systemImage: action.systemImage,
+              isSelected: action.id == node.selectedTabId
+            )
           }
-          withAnimation(.easeOut(duration: 0.18)) {
-            isCompactSidebarOpen = false
+          .buttonStyle(.plain)
+        } else {
+          Menu {
+            ForEach(action.menuActions) { menuAction in
+              Button(role: menuAction.style == 1 ? .destructive : nil) {
+                if let eventId = menuAction.eventId {
+                  model.sendClick(eventId)
+                }
+                withAnimation(.easeOut(duration: 0.18)) {
+                  isCompactSidebarOpen = false
+                }
+              } label: {
+                if let systemImage = menuAction.systemImage {
+                  Label(menuAction.title, systemImage: systemImage)
+                } else {
+                  Text(menuAction.title)
+                }
+              }
+            }
+          } label: {
+            sidebarRowLabel(
+              title: action.title,
+              systemImage: action.systemImage,
+              isSelected: action.id == node.selectedTabId
+            )
           }
-        } label: {
-          sidebarRowLabel(
-            title: action.title,
-            systemImage: action.systemImage,
-            isSelected: action.id == node.selectedTabId
-          )
+          .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
       }
     }
   }
@@ -3260,7 +3289,8 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
       id: String(cString: headerActionIdPointer),
       title: String(cString: headerActionTitlePointer),
       systemImage: headerActionSystemImagePointer.map(String.init(cString:)),
-      eventId: headerActionEventId < 0 ? nil : headerActionEventId
+      eventId: headerActionEventId < 0 ? nil : headerActionEventId,
+      menuActions: []
     )
   } else {
     node.sidebarHeaderAction = nil
@@ -3281,7 +3311,33 @@ public func bonsai_native_swiftui_append_sidebar_action(
       id: String(cString: idPointer),
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
-      eventId: eventId < 0 ? nil : eventId
+      eventId: eventId < 0 ? nil : eventId,
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_sidebar_action_menu_action")
+public func bonsai_native_swiftui_append_sidebar_action_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let titlePointer,
+        let lastIndex = node.sidebarActions.indices.last
+  else { return }
+  node.sidebarActions[lastIndex].menuActions.append(
+    BonsaiNativeRowAction(
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      eventId: eventId < 0 ? nil : eventId,
+      exportFilename: nil,
+      exportContentType: nil,
+      exportContent: nil
     )
   )
 }
@@ -3303,7 +3359,8 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
     id: String(cString: idPointer),
     title: String(cString: titlePointer),
     systemImage: systemImagePointer.map(String.init(cString:)),
-    eventId: eventId < 0 ? nil : eventId
+    eventId: eventId < 0 ? nil : eventId,
+    menuActions: []
   )
 }
 

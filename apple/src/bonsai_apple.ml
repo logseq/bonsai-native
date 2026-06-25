@@ -94,13 +94,6 @@ type toolbar_item =
   ; menu_actions : toolbar_menu_action list
   }
 
-type sidebar_action =
-  { id : string
-  ; title : string
-  ; system_image : string option
-  ; on_click : unit Effect.t
-  }
-
 type text_style =
   | Large_title
   | Title
@@ -152,6 +145,14 @@ type row_action =
   ; system_image : string option
   ; style : row_action_style
   ; on_click : unit Effect.t
+  }
+
+type sidebar_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; on_click : unit Effect.t
+  ; menu_actions : row_action list
   }
 
 type list_row_content_style =
@@ -207,13 +208,6 @@ type rendered_tab =
   ; role : tab_role option
   }
 [@@deriving sexp_of, equal]
-
-type rendered_sidebar_action =
-  { id : string
-  ; title : string
-  ; system_image : string option
-  ; on_click : unit -> unit
-  }
 
 type axis =
   | Vertical
@@ -537,6 +531,14 @@ type rendered_row_action =
   ; system_image : string option
   ; style : row_action_style
   ; on_click : unit -> unit
+  }
+
+type rendered_sidebar_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; on_click : unit -> unit
+  ; menu_actions : rendered_row_action list
   }
 
 type rendered_picker_option = picker_option =
@@ -980,10 +982,10 @@ let alert
     , node )
 ;;
 
-let sidebar_action ~id ~title ?system_image ~(on_click : unit Effect.t) ()
+let sidebar_action ~id ~title ?system_image ~(on_click : unit Effect.t) ?(menu_actions = []) ()
   : sidebar_action
   =
-  { id; title; system_image; on_click }
+  { id; title; system_image; on_click; menu_actions }
 ;;
 
 let sheet ~is_presented ~content ?(detents = []) ?on_dismiss node =
@@ -1706,6 +1708,13 @@ module Renderer = struct
            ; title = action.title
            ; system_image = action.system_image
            ; on_click = (fun () -> t.schedule_event action.on_click)
+           ; menu_actions =
+               List.map action.menu_actions ~f:(fun menu_action ->
+                 { title = menu_action.title
+                 ; system_image = menu_action.system_image
+                 ; style = menu_action.style
+                 ; on_click = (fun () -> t.schedule_event menu_action.on_click)
+                 })
            }
          in
          Backend.set_sidebar_shell
@@ -3107,7 +3116,23 @@ module For_testing = struct
           | None -> ""
           | Some image -> ":" ^ image
         in
-        action.id ^ ":" ^ action.title ^ image
+        let menu =
+          match action.menu_actions with
+          | [] -> ""
+          | menu_actions ->
+            ":menu=["
+            ^ String.concat
+                ~sep:","
+                (List.map menu_actions ~f:(fun menu_action ->
+                   let style =
+                     match menu_action.style with
+                     | Default -> "default"
+                     | Destructive -> "destructive"
+                   in
+                   menu_action.title ^ ":" ^ style))
+            ^ "]"
+        in
+        action.id ^ ":" ^ action.title ^ image ^ menu
       in
       let sidebar_header_action =
         match view.kind, view.sidebar_header_action with
@@ -3736,6 +3761,23 @@ module For_testing = struct
       match List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id) with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no sidebar action with id %s" id ()
+    ;;
+
+    let click_sidebar_action_menu_action_exn view ~id ~title =
+      match List.find view.sidebar_actions ~f:(fun action -> String.equal action.id id) with
+      | None -> failwithf "View has no sidebar action with id %s" id ()
+      | Some action ->
+        (match
+           List.find action.menu_actions ~f:(fun menu_action ->
+             String.equal menu_action.title title)
+         with
+         | Some menu_action -> menu_action.on_click ()
+         | None ->
+           failwithf
+             "Sidebar action %s has no menu action with title %S"
+             id
+             title
+             ())
     ;;
 
     let click_sidebar_bottom_action_exn view ~id =

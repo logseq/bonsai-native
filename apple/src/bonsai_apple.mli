@@ -195,13 +195,6 @@ type rendered_tab =
   }
 [@@deriving sexp_of]
 
-type rendered_sidebar_action =
-  { id : string
-  ; title : string
-  ; system_image : string option
-  ; on_click : unit -> unit
-  }
-
 type node
 
 val text
@@ -325,6 +318,7 @@ val sidebar_action
   -> title:string
   -> ?system_image:string
   -> on_click:unit Effect.t
+  -> ?menu_actions:row_action list
   -> unit
   -> sidebar_action
 val sidebar_split
@@ -589,6 +583,14 @@ type rendered_row_action =
   ; system_image : string option
   ; style : row_action_style
   ; on_click : unit -> unit
+  }
+
+type rendered_sidebar_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; on_click : unit -> unit
+  ; menu_actions : rendered_row_action list
   }
 
 type rendered_picker_option =
@@ -921,6 +923,7 @@ module For_testing : sig
     val select_sidebar_route_exn : view -> id:string -> unit
     val click_sidebar_header_action_exn : view -> id:string -> unit
     val click_sidebar_action_exn : view -> id:string -> unit
+    val click_sidebar_action_menu_action_exn : view -> id:string -> title:string -> unit
     val click_sidebar_bottom_action_exn : view -> id:string -> unit
     val select_picker_exn : view -> path:int list -> id:string -> unit
     val click_row_leading_exn : view -> path:int list -> unit

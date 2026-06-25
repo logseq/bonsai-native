@@ -552,6 +552,15 @@ external append_native_sidebar_action
   -> unit
   = "bonsai_apple_swiftui_append_sidebar_action"
 
+external append_native_sidebar_action_menu_action
+  :  native
+  -> string
+  -> string option
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_sidebar_action_menu_action"
+
 external set_native_sidebar_bottom_action
   :  native
   -> string option
@@ -956,7 +965,21 @@ module Backend = struct
         action.Apple.id
         action.title
         action.system_image
-        (install_sidebar_action action));
+        (install_sidebar_action action);
+      List.iter action.menu_actions ~f:(fun menu_action ->
+        let event_id = install_handler None (Click menu_action.on_click) in
+        view.sidebar_event_ids <- event_id :: view.sidebar_event_ids;
+        let style_id =
+          match menu_action.style with
+          | Apple.Default -> 0
+          | Apple.Destructive -> 1
+        in
+        append_native_sidebar_action_menu_action
+          view.native
+          menu_action.title
+          menu_action.system_image
+          style_id
+          event_id));
     match bottom_action with
     | None -> set_native_sidebar_bottom_action view.native None None None no_event
     | Some action ->

@@ -205,6 +205,12 @@ extern void bonsai_native_swiftui_append_sidebar_action(
   const char *title,
   const char *system_image,
   int32_t event_id);
+extern void bonsai_native_swiftui_append_sidebar_action_menu_action(
+  void *node,
+  const char *title,
+  const char *system_image,
+  int32_t style,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_sidebar_bottom_action(
   void *node,
   const char *id,
@@ -1238,6 +1244,23 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_action(
     String_val(id),
     String_val(title),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_sidebar_action_menu_action(
+  value node,
+  value title,
+  value system_image,
+  value style,
+  value event_id)
+{
+  CAMLparam5(node, title, system_image, style, event_id);
+  bonsai_native_swiftui_append_sidebar_action_menu_action(
+    pointer_val(node),
+    String_val(title),
+    Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Int_val(style),
     Int_val(event_id));
   CAMLreturn(Val_unit);
 }
