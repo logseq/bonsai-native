@@ -135,6 +135,9 @@ extern void bonsai_native_swiftui_set_padding(
   double leading,
   double bottom,
   double trailing);
+extern void bonsai_native_swiftui_set_regular_material_panel(
+  void *node,
+  double corner_radius);
 extern void bonsai_native_swiftui_set_frame(void *node, double width, double height);
 extern void bonsai_native_swiftui_clear_tabs(
   void *node,
@@ -893,6 +896,17 @@ CAMLprim value bonsai_apple_swiftui_set_frame(value node, value width, value hei
 {
   CAMLparam3(node, width, height);
   bonsai_native_swiftui_set_frame(pointer_val(node), Double_val(width), Double_val(height));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_regular_material_panel(
+  value node,
+  value corner_radius)
+{
+  CAMLparam2(node, corner_radius);
+  bonsai_native_swiftui_set_regular_material_panel(
+    pointer_val(node),
+    Double_val(corner_radius));
   CAMLreturn(Val_unit);
 }
 

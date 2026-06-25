@@ -307,6 +307,7 @@ val camera_capture_payload
 val list_row : list_row -> node
 val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
+val regular_material_panel : ?corner_radius:float -> node -> node
 val frame : ?width:float -> ?height:float -> node -> node
 val navigation_title : string -> node -> node
 val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
@@ -382,6 +383,7 @@ type backend_kind =
 
 type modifier =
   | Padding of edge_insets
+  | Regular_material_panel of { corner_radius : float }
   | Frame of frame
   | Navigation_title of string
   | Searchable of
@@ -407,6 +409,7 @@ type modifier =
 
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
+  | Rendered_regular_material_panel of { corner_radius : float }
   | Rendered_frame of frame
   | Rendered_navigation_title of string
   | Rendered_searchable of

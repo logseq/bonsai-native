@@ -360,6 +360,7 @@ and tab =
 
 and modifier =
   | Padding of edge_insets
+  | Regular_material_panel of { corner_radius : float }
   | Frame of frame
   | Navigation_title of string
   | Searchable of
@@ -385,6 +386,7 @@ and modifier =
 
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
+  | Rendered_regular_material_panel of { corner_radius : float }
   | Rendered_frame of frame
   | Rendered_navigation_title of string
   | Rendered_searchable of
@@ -736,6 +738,9 @@ let custom_view ?key ~kind () = Custom_view_node { key; kind }
 
 let default_insets = { top = 8.; leading = 8.; bottom = 8.; trailing = 8. }
 let padding ?(insets = default_insets) node = Modified_node (Padding insets, node)
+let regular_material_panel ?(corner_radius = 8.) node =
+  Modified_node (Regular_material_panel { corner_radius }, node)
+;;
 let frame ?width ?height node = Modified_node (Frame { width; height }, node)
 let navigation_title title node = Modified_node (Navigation_title title, node)
 let searchable ~text ~on_change node = Modified_node (Searchable { text; on_change }, node)
@@ -939,6 +944,8 @@ module Renderer = struct
       let modifiers =
         List.map modifiers ~f:(function
           | Padding insets -> [%sexp "padding", (insets : edge_insets)]
+          | Regular_material_panel { corner_radius } ->
+            [%sexp "regular-material-panel", (corner_radius : float)]
           | Frame frame -> [%sexp "frame", (frame : frame)]
           | Navigation_title title -> [%sexp "navigation-title", (title : string)]
           | Searchable { text; on_change = _ } -> [%sexp "searchable", (text : string)]
@@ -1517,6 +1524,8 @@ module Renderer = struct
         List.mapi modifiers ~f:(fun index modifier ->
           match modifier with
           | Padding insets -> Rendered_padding insets
+          | Regular_material_panel { corner_radius } ->
+            Rendered_regular_material_panel { corner_radius }
           | Frame frame -> Rendered_frame frame
           | Navigation_title title -> Rendered_navigation_title title
           | Searchable { text; on_change } -> Rendered_searchable { text; on_change }
@@ -2036,6 +2045,7 @@ module For_testing = struct
 
     let modifier_name = function
       | Rendered_padding _ -> "padding"
+      | Rendered_regular_material_panel _ -> "panel"
       | Rendered_frame _ -> "frame"
       | Rendered_navigation_title _ -> "navigation-title"
       | Rendered_searchable _ -> "searchable"
@@ -2151,6 +2161,16 @@ module For_testing = struct
           " modifiers=["
           ^ String.concat ~sep:"," (List.map modifiers ~f:modifier_name)
           ^ "]"
+      in
+      let panel =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_regular_material_panel { corner_radius } -> Some corner_radius
+            | _ -> None)
+        with
+        | None -> ""
+        | Some corner_radius ->
+          sprintf " panel=regular-material corner-radius=%g" corner_radius
       in
       let toolbar =
         match
@@ -2369,6 +2389,7 @@ module For_testing = struct
        ^ file_importer
        ^ payload
        ^ image_source
+       ^ panel
        ^ system_image
        ^ button_subtitle
        ^ title_visibility

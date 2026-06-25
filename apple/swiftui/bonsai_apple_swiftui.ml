@@ -94,6 +94,12 @@ external set_native_progress
   -> unit
   = "bonsai_apple_swiftui_set_progress"
 
+external set_native_regular_material_panel
+  :  native
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_regular_material_panel"
+
 external set_native_spacing
   :  native
   -> float option
@@ -1090,6 +1096,7 @@ module Backend = struct
     let saw_alert = ref false in
     let saw_toolbar = ref false in
     let saw_padding = ref false in
+    let saw_regular_material_panel = ref false in
     let saw_frame = ref false in
     let saw_navigation_title = ref false in
     List.iter modifiers ~f:(function
@@ -1124,6 +1131,9 @@ module Backend = struct
       | Apple.Rendered_padding { top; leading; bottom; trailing } ->
         saw_padding := true;
         set_native_padding view.native top leading bottom trailing
+      | Apple.Rendered_regular_material_panel { corner_radius } ->
+        saw_regular_material_panel := true;
+        set_native_regular_material_panel view.native corner_radius
       | Apple.Rendered_frame { width; height } ->
         saw_frame := true;
         set_native_frame
@@ -1141,6 +1151,8 @@ module Backend = struct
     if not !saw_alert then clear_alert view;
     if not !saw_toolbar then clear_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
+    if not !saw_regular_material_panel
+    then set_native_regular_material_panel view.native (-1.);
     if not !saw_frame then set_native_frame view.native (-1.) (-1.);
     if not !saw_navigation_title then set_native_navigation_title view.native None
   ;;

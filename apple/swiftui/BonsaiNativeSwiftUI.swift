@@ -191,6 +191,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
+  @Published var regularMaterialPanelCornerRadius: CGFloat?
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
   @Published var tabs: [BonsaiNativeTab] = []
@@ -454,9 +455,11 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
   @ObservedObject var model: BonsaiNativeHostModel
 
   func body(content: Content) -> some View {
-    content
-      .padding(node.padding ?? EdgeInsets())
-      .frame(width: node.frameWidth, height: node.frameHeight)
+    regularMaterialPanel(
+      content
+        .padding(node.padding ?? EdgeInsets())
+        .frame(width: node.frameWidth, height: node.frameHeight)
+    )
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
       .alert(
@@ -511,6 +514,18 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
           BonsaiNativeNodeView(node: sheetContent, model: model)
         }
       }
+  }
+
+  @ViewBuilder
+  private func regularMaterialPanel<PanelContent: View>(_ content: PanelContent) -> some View {
+    if let cornerRadius = node.regularMaterialPanelCornerRadius {
+      content.background(
+        .regularMaterial,
+        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      )
+    } else {
+      content
+    }
   }
 }
 
@@ -1928,6 +1943,15 @@ public func bonsai_native_swiftui_set_frame(
   guard let node = nativeNode(from: pointer) else { return }
   node.frameWidth = width < 0 ? nil : CGFloat(width)
   node.frameHeight = height < 0 ? nil : CGFloat(height)
+}
+
+@_cdecl("bonsai_native_swiftui_set_regular_material_panel")
+public func bonsai_native_swiftui_set_regular_material_panel(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ cornerRadius: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.regularMaterialPanelCornerRadius = cornerRadius < 0 ? nil : CGFloat(cornerRadius)
 }
 
 @_cdecl("bonsai_native_swiftui_create_node")

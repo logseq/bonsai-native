@@ -114,6 +114,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var alertActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var padding: EdgeInsets?
+  @Published var regularMaterialPanelCornerRadius: CGFloat?
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
   @Published var tabs: [BonsaiNativeTab] = []
@@ -628,13 +629,15 @@ private struct BonsaiNativeNodeView: View {
 
   @ViewBuilder
   private func applyModifiers<Content: View>(to content: Content) -> some View {
-    let base = content
+    let base = regularMaterialPanel(
+      content
       .padding(node.padding ?? EdgeInsets())
       .frame(
         width: node.frameWidth,
         height: node.frameHeight,
         alignment: .topLeading
       )
+    )
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
       .alert(
         node.alertTitle,
@@ -698,7 +701,19 @@ private struct BonsaiNativeNodeView: View {
           if let sheetContent = node.sheetContent {
             BonsaiNativeNodeView(node: sheetContent, model: model)
           }
-        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func regularMaterialPanel<PanelContent: View>(_ content: PanelContent) -> some View {
+    if let cornerRadius = node.regularMaterialPanelCornerRadius {
+      content.background(
+        .regularMaterial,
+        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      )
+    } else {
+      content
     }
   }
 
@@ -1054,6 +1069,12 @@ public func bonsai_native_swiftui_set_frame(_ pointer: UnsafeMutableRawPointer?,
   guard let node = nativeNode(from: pointer) else { return }
   node.frameWidth = width < 0 ? nil : CGFloat(width)
   node.frameHeight = height < 0 ? nil : CGFloat(height)
+}
+
+@_cdecl("bonsai_native_swiftui_set_regular_material_panel")
+public func bonsai_native_swiftui_set_regular_material_panel(_ pointer: UnsafeMutableRawPointer?, _ cornerRadius: Double) {
+  nativeNode(from: pointer)?.regularMaterialPanelCornerRadius =
+    cornerRadius < 0 ? nil : CGFloat(cornerRadius)
 }
 
 @_cdecl("bonsai_native_swiftui_clear_tabs")
