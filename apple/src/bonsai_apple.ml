@@ -40,6 +40,7 @@ type toolbar_item =
   { id : string
   ; title : string
   ; system_image : string option
+  ; is_enabled : bool
   ; on_click : unit Effect.t
   ; menu_actions : toolbar_menu_action list
   }
@@ -175,6 +176,7 @@ type backend_kind =
   | Button
   | Text_field
   | Text_editor
+  | Toggle
   | Stack of axis
   | Scroll_view
   | List
@@ -208,8 +210,14 @@ type node =
       { text : string
       ; placeholder : string option
       ; style : text_field_style
+      ; is_secure : bool
       ; on_change : string -> unit Effect.t
       ; on_submit : unit Effect.t option
+      }
+  | Toggle_node of
+      { title : string
+      ; is_on : bool
+      ; on_change : bool -> unit Effect.t
       }
   | Text_editor_node of
       { text : string
@@ -307,6 +315,7 @@ and tab =
 and modifier =
   | Padding of edge_insets
   | Frame of frame
+  | Navigation_title of string
   | Searchable of
       { text : string
       ; on_change : string -> unit Effect.t
@@ -321,6 +330,7 @@ and modifier =
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
   | Rendered_frame of frame
+  | Rendered_navigation_title of string
   | Rendered_searchable of
       { text : string
       ; on_change : string -> unit Effect.t
@@ -361,9 +371,19 @@ let text ?(style = Body) ?(weight = Regular) ?(color = Primary) value =
 
 let button ?(is_enabled = true) title ~on_click = Button_node { title; is_enabled; on_click }
 
-let text_field ?placeholder ?(style = Rounded_border) ?on_submit ~text ~on_change () =
-  Text_field_node { text; placeholder; style; on_change; on_submit }
+let text_field
+  ?placeholder
+  ?(style = Rounded_border)
+  ?(is_secure = false)
+  ?on_submit
+  ~text
+  ~on_change
+  ()
+  =
+  Text_field_node { text; placeholder; style; is_secure; on_change; on_submit }
 ;;
+
+let toggle title ~is_on ~on_change = Toggle_node { title; is_on; on_change }
 
 let text_editor ?placeholder ~text ~on_change () =
   Text_editor_node { text; placeholder; on_change }
@@ -615,11 +635,12 @@ let custom_view ?key ~kind () = Custom_view_node { key; kind }
 let default_insets = { top = 8.; leading = 8.; bottom = 8.; trailing = 8. }
 let padding ?(insets = default_insets) node = Modified_node (Padding insets, node)
 let frame ?width ?height node = Modified_node (Frame { width; height }, node)
+let navigation_title title node = Modified_node (Navigation_title title, node)
 let searchable ~text ~on_change node = Modified_node (Searchable { text; on_change }, node)
-let toolbar_item ?system_image ?(menu_actions = []) ~id ~title ~on_click ()
+let toolbar_item ?system_image ?(is_enabled = true) ?(menu_actions = []) ~id ~title ~on_click ()
   : toolbar_item
   =
-  { id; title; system_image; on_click; menu_actions }
+  { id; title; system_image; is_enabled; on_click; menu_actions }
 ;;
 let toolbar items node = Modified_node (Toolbar items, node)
 let sidebar_action ~id ~title ?system_image ~(on_click : unit Effect.t) ()
@@ -644,6 +665,7 @@ let backend_kind = function
   | Text _ -> Label
   | Button_node _ -> Button
   | Text_field_node _ -> Text_field
+  | Toggle_node _ -> Toggle
   | Text_editor_node _ -> Text_editor
   | Stack_node { axis; _ } -> Stack axis
   | Scroll_view_node _ -> Scroll_view
@@ -675,6 +697,8 @@ module Renderer = struct
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
+    val set_text_field_secure : view -> bool -> unit
+    val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
     val set_tabs
@@ -775,13 +799,18 @@ module Renderer = struct
         List.map modifiers ~f:(function
           | Padding insets -> [%sexp "padding", (insets : edge_insets)]
           | Frame frame -> [%sexp "frame", (frame : frame)]
+          | Navigation_title title -> [%sexp "navigation-title", (title : string)]
           | Searchable { text; on_change = _ } -> [%sexp "searchable", (text : string)]
           | Toolbar items ->
             [%sexp
               ( "toolbar"
               , (List.map items ~f:(fun item ->
-                   item.id, item.title, item.system_image, List.length item.menu_actions)
-                 : (string * string * string option * int) list) )]
+                   ( item.id
+                   , item.title
+                   , item.system_image
+                   , item.is_enabled
+                   , List.length item.menu_actions ))
+                 : (string * string * string option * bool * int) list) )]
           | Sheet { is_presented; content; on_dismiss = _ } ->
             [%sexp "sheet", (is_presented : bool), (fingerprint content : string)])
       in
@@ -791,12 +820,15 @@ module Renderer = struct
           [%sexp "text", (text : string), (attributes : text_attributes)]
         | Button_node { title; is_enabled; on_click = _ } ->
           [%sexp "button", (title : string), (is_enabled : bool)]
-        | Text_field_node { text; placeholder; style; on_change = _; on_submit = _ } ->
+        | Text_field_node { text; placeholder; style; is_secure; on_change = _; on_submit = _ } ->
           [%sexp
             "text-field"
           , (text : string)
           , (placeholder : string option)
-          , (style : text_field_style)]
+          , (style : text_field_style)
+          , (is_secure : bool)]
+        | Toggle_node { title; is_on; on_change = _ } ->
+          [%sexp "toggle", (title : string), (is_on : bool)]
         | Text_editor_node { text; placeholder; on_change = _ } ->
           [%sexp "text-editor", (text : string), (placeholder : string option)]
         | Stack_node { axis; spacing; children } ->
@@ -932,6 +964,7 @@ module Renderer = struct
       | Text _ | Image_node _ | List_row_node _ | Custom_view_node _ -> true
       | Button_node _
       | Text_field_node _
+      | Toggle_node _
       | Text_editor_node _
       | Stack_node _
       | Scroll_view_node _
@@ -980,10 +1013,11 @@ module Renderer = struct
            (if is_enabled then Some (fun () -> t.schedule_event on_click) else None);
          Backend.set_on_change t.view None;
          replace_children []
-       | Text_field_node { text; placeholder; style; on_change; on_submit } ->
+       | Text_field_node { text; placeholder; style; is_secure; on_change; on_submit } ->
          Backend.set_text t.view text;
          Backend.set_placeholder t.view placeholder;
          Backend.set_text_field_style t.view style;
+         Backend.set_text_field_secure t.view is_secure;
          Backend.set_on_click
            t.view
            (Option.map on_submit ~f:(fun on_submit ->
@@ -991,6 +1025,11 @@ module Renderer = struct
          Backend.set_on_change
            t.view
            (Some (fun text -> t.schedule_event (on_change text)));
+         replace_children []
+       | Toggle_node { title; is_on; on_change } ->
+         Backend.set_text t.view title;
+         Backend.set_toggle t.view ~is_on ~on_change:(fun is_on ->
+           t.schedule_event (on_change is_on));
          replace_children []
        | Text_editor_node { text; placeholder; on_change } ->
          Backend.set_text t.view text;
@@ -1266,6 +1305,7 @@ module Renderer = struct
           match modifier with
           | Padding insets -> Rendered_padding insets
           | Frame frame -> Rendered_frame frame
+          | Navigation_title title -> Rendered_navigation_title title
           | Searchable { text; on_change } -> Rendered_searchable { text; on_change }
           | Toolbar items -> Rendered_toolbar items
           | Sheet { is_presented; content; on_dismiss } ->
@@ -1412,10 +1452,13 @@ module For_testing = struct
       ; mutable text_attributes : text_attributes
       ; mutable placeholder : string option
       ; mutable text_field_style : text_field_style
+      ; mutable text_field_secure : bool
+      ; mutable toggle_is_on : bool
       ; mutable children : (string option * view) list
       ; mutable is_enabled : bool
       ; mutable on_click : (unit -> unit) option
       ; mutable on_change : (string -> unit) option
+      ; mutable on_toggle : (bool -> unit) option
       ; mutable selected_tab : string option
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
@@ -1476,10 +1519,13 @@ module For_testing = struct
       ; text_attributes = default_text_attributes
       ; placeholder = None
       ; text_field_style = Rounded_border
+      ; text_field_secure = false
+      ; toggle_is_on = false
       ; children = []
       ; is_enabled = true
       ; on_click = None
       ; on_change = None
+      ; on_toggle = None
       ; selected_tab = None
       ; on_select_tab = None
       ; tabs = []
@@ -1527,6 +1573,17 @@ module For_testing = struct
     let set_text_field_style view style =
       mutate ();
       view.text_field_style <- style
+    ;;
+
+    let set_text_field_secure view is_secure =
+      mutate ();
+      view.text_field_secure <- is_secure
+    ;;
+
+    let set_toggle view ~is_on ~on_change =
+      mutate ();
+      view.toggle_is_on <- is_on;
+      view.on_toggle <- Some on_change
     ;;
 
     let set_spacing _view _spacing = mutate ()
@@ -1696,6 +1753,7 @@ module For_testing = struct
       | Button -> "button"
       | Text_field -> "text-field"
       | Text_editor -> "text-editor"
+      | Toggle -> "toggle"
       | Stack Vertical -> "stack(vertical)"
       | Stack Horizontal -> "stack(horizontal)"
       | Scroll_view -> "scroll-view"
@@ -1719,6 +1777,7 @@ module For_testing = struct
     let modifier_name = function
       | Rendered_padding _ -> "padding"
       | Rendered_frame _ -> "frame"
+      | Rendered_navigation_title _ -> "navigation-title"
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
       | Rendered_sheet _ -> "sheet"
@@ -1757,6 +1816,16 @@ module For_testing = struct
           " style=" ^ Sexp.to_string_hum ([%sexp_of: text_field_style] view.text_field_style)
         | _ -> ""
       in
+      let text_field_secure =
+        match view.kind, view.text_field_secure with
+        | Text_field, true -> " secure"
+        | _ -> ""
+      in
+      let toggle_selected =
+        match view.kind with
+        | Toggle -> " selected=" ^ Bool.to_string view.toggle_is_on
+        | _ -> ""
+      in
       let photo_picker =
         match view.kind with
         | Photo_picker ->
@@ -1770,13 +1839,13 @@ module For_testing = struct
         | _ -> ""
       in
       let file_exporter =
-        match view.kind, view.file_export with
-        | File_exporter, Some export ->
+        match view.file_export with
+        | Some export ->
           sprintf
             " filename=%s content_type=%s"
             export.filename
             export.content_type
-        | _ -> ""
+        | None -> ""
       in
       let file_importer =
         match view.kind with
@@ -1794,6 +1863,35 @@ module For_testing = struct
           " modifiers=["
           ^ String.concat ~sep:"," (List.map modifiers ~f:modifier_name)
           ^ "]"
+      in
+      let toolbar =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_toolbar items -> Some items
+            | _ -> None)
+        with
+        | None -> ""
+        | Some items ->
+          let item_text =
+            items
+            |> List.map ~f:(fun (item : toolbar_item) ->
+              sprintf
+                "%s:%s:%s"
+                item.id
+                item.title
+                (if item.is_enabled then "enabled" else "disabled"))
+            |> String.concat ~sep:","
+          in
+          " toolbar=[" ^ item_text ^ "]"
+      in
+      let navigation_title =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_navigation_title title -> Some title
+            | _ -> None)
+        with
+        | None -> ""
+        | Some title -> " navigation-title=" ^ title
       in
       let selected =
         match view.selected_tab with
@@ -1896,6 +1994,8 @@ module For_testing = struct
        ^ text_attributes
        ^ placeholder
        ^ text_field_style
+       ^ text_field_secure
+       ^ toggle_selected
        ^ photo_picker
        ^ camera_capture
        ^ file_exporter
@@ -1911,7 +2011,9 @@ module For_testing = struct
        ^ section
        ^ picker
        ^ list_row
-       ^ modifiers)
+       ^ modifiers
+       ^ toolbar
+       ^ navigation_title)
       :: child_lines
       @ sheet_lines
     ;;
@@ -1940,6 +2042,14 @@ module For_testing = struct
       match view.on_change with
       | Some f -> f text
       | None -> failwith "View has no text-change handler"
+    ;;
+
+    let change_toggle_exn view ~path ~is_on =
+      let view = find_exn view ~path in
+      view.toggle_is_on <- is_on;
+      match view.on_toggle with
+      | Some f -> f is_on
+      | None -> failwith "View has no toggle-change handler"
     ;;
 
     let submit_text_exn view ~path =
@@ -2014,6 +2124,11 @@ module For_testing = struct
       change_text_exn (presented_sheet_content_exn view) ~path:sheet_path ~text
     ;;
 
+    let change_sheet_toggle_exn view ~path ~sheet_path ~is_on =
+      let view = find_exn view ~path in
+      change_toggle_exn (presented_sheet_content_exn view) ~path:sheet_path ~is_on
+    ;;
+
     let nested_sheet_host_exn view ~path ~host_path =
       let view = find_exn view ~path in
       presented_sheet_content_exn view |> find_exn ~path:host_path
@@ -2075,8 +2190,16 @@ module For_testing = struct
             List.find items ~f:(fun item -> String.equal item.id id)
           | _ -> None)
       with
-      | Some item -> schedule_event_exn view item.on_click
+      | Some item ->
+        if item.is_enabled
+        then schedule_event_exn view item.on_click
+        else failwithf "Toolbar item %S is disabled" id ()
       | None -> failwithf "View has no toolbar item with id %S" id ()
+    ;;
+
+    let click_sheet_toolbar_item_exn view ~path ~id =
+      let view = find_exn view ~path in
+      click_toolbar_item_exn (presented_sheet_content_exn view) ~path:[] ~id
     ;;
 
     let click_toolbar_menu_action_exn view ~path ~id ~title =
@@ -2091,7 +2214,9 @@ module For_testing = struct
                   String.equal action.title title))
           | _ -> None)
       with
-      | Some action -> schedule_event_exn view action.on_click
+      | Some action ->
+        view.file_export <- action.file_export;
+        schedule_event_exn view action.on_click
       | None ->
         failwithf
           "View has no toolbar menu action with id %S and title %S"

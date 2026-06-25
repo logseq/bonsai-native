@@ -32,6 +32,7 @@ private enum NodeKind: Int32 {
   case cameraCapture = 19
   case navigationSplit = 20
   case adaptiveLayout = 21
+  case toggle = 22
 }
 
 private struct BonsaiNativeRowAction: Identifiable {
@@ -73,6 +74,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
   @Published var textFieldStyle: Int32 = 0
+  @Published var isTextFieldSecure = false
+  @Published var isToggleOn = false
   @Published var isEnabled = true
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
@@ -85,6 +88,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var sheetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
   @Published var dismissEventId: Int32?
+  @Published var navigationTitle: String?
   @Published var padding: EdgeInsets?
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
@@ -182,6 +186,19 @@ private func nativeNode(from pointer: UnsafeMutableRawPointer?) -> BonsaiNativeN
   return Unmanaged<BonsaiNativeNode>.fromOpaque(pointer).takeUnretainedValue()
 }
 
+private struct BonsaiNativeNavigationTitleModifier: ViewModifier {
+  @ObservedObject var node: BonsaiNativeNode
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if let title = node.navigationTitle {
+      content.navigationTitle(title)
+    } else {
+      content
+    }
+  }
+}
+
 private struct BonsaiNativeNodeView: View {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
@@ -203,18 +220,45 @@ private struct BonsaiNativeNodeView: View {
         .disabled(!node.isEnabled)
         .buttonStyle(.bordered)
     case .textField:
-      TextField(
-        node.placeholder ?? "",
-        text: Binding(
-          get: { node.text },
+      Group {
+        if node.isTextFieldSecure {
+          SecureField(
+            node.placeholder ?? "",
+            text: Binding(
+              get: { node.text },
+              set: { value in
+                node.text = value
+                model.sendChange(node.changeEventId, text: value)
+              }
+            )
+          )
+        } else {
+          TextField(
+            node.placeholder ?? "",
+            text: Binding(
+              get: { node.text },
+              set: { value in
+                node.text = value
+                model.sendChange(node.changeEventId, text: value)
+              }
+            )
+          )
+        }
+      }
+      .textFieldStyle(.roundedBorder)
+      .onSubmit { model.sendClick(node.clickEventId) }
+    case .toggle:
+      Toggle(
+        node.text,
+        isOn: Binding(
+          get: { node.isToggleOn },
           set: { value in
-            node.text = value
-            model.sendChange(node.changeEventId, text: value)
+            node.isToggleOn = value
+            model.sendChange(node.changeEventId, text: value ? "true" : "false")
           }
         )
       )
-      .textFieldStyle(.roundedBorder)
-      .onSubmit { model.sendClick(node.clickEventId) }
+      .disabled(!node.isEnabled)
     case .textEditor:
       TextEditor(
         text: Binding(
@@ -500,6 +544,7 @@ private struct BonsaiNativeNodeView: View {
         height: node.frameHeight,
         alignment: .topLeading
       )
+      .modifier(BonsaiNativeNavigationTitleModifier(node: node))
 
     if node.isSearchable {
       base
@@ -594,6 +639,18 @@ public func bonsai_native_swiftui_set_placeholder(_ pointer: UnsafeMutableRawPoi
 @_cdecl("bonsai_native_swiftui_set_text_field_style")
 public func bonsai_native_swiftui_set_text_field_style(_ pointer: UnsafeMutableRawPointer?, _ style: Int32) {
   nativeNode(from: pointer)?.textFieldStyle = style
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_secure")
+public func bonsai_native_swiftui_set_text_field_secure(_ pointer: UnsafeMutableRawPointer?, _ isSecure: Bool) {
+  nativeNode(from: pointer)?.isTextFieldSecure = isSecure
+}
+
+@_cdecl("bonsai_native_swiftui_set_toggle")
+public func bonsai_native_swiftui_set_toggle(_ pointer: UnsafeMutableRawPointer?, _ isOn: Bool, _ eventId: Int32) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.isToggleOn = isOn
+  node.changeEventId = eventId < 0 ? nil : eventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_spacing")
@@ -755,6 +812,15 @@ public func bonsai_native_swiftui_set_sheet(
   node.sheetContent = nativeNode(from: contentPointer)
   node.isSheetPresented = isPresented
   node.dismissEventId = dismissEventId < 0 ? nil : dismissEventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_navigation_title")
+public func bonsai_native_swiftui_set_navigation_title(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.navigationTitle = titlePointer.map(String.init(cString:))
 }
 
 @_cdecl("bonsai_native_swiftui_set_padding")

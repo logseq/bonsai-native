@@ -51,6 +51,7 @@ private enum NodeKind: Int32 {
   case cameraCapture = 19
   case navigationSplit = 20
   case adaptiveLayout = 21
+  case toggle = 22
 }
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
@@ -109,6 +110,7 @@ private struct BonsaiNativeToolbarItem: Identifiable {
   let title: String
   let systemImage: String?
   let eventId: Int32?
+  let isEnabled: Bool
   var menuActions: [BonsaiNativeRowAction]
 }
 
@@ -148,6 +150,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textWeight: Int32 = 0
   @Published var textColor: Int32 = 0
   @Published var textFieldStyle: Int32 = 0
+  @Published var isTextFieldSecure = false
+  @Published var isToggleOn = false
   @Published var isEnabled = true
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
@@ -160,6 +164,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var sheetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
   @Published var dismissEventId: Int32?
+  @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var frameWidth: CGFloat?
@@ -392,6 +397,19 @@ private struct BonsaiNativeSearchModifier: ViewModifier {
   }
 }
 
+private struct BonsaiNativeNavigationTitleModifier: ViewModifier {
+  @ObservedObject var node: BonsaiNativeNode
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+    if let title = node.navigationTitle {
+      content.navigationTitle(title)
+    } else {
+      content
+    }
+  }
+}
+
 private struct BonsaiNativeNodeModifiers: ViewModifier {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
@@ -401,6 +419,7 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
       .padding(node.padding ?? EdgeInsets())
       .frame(width: node.frameWidth, height: node.frameHeight)
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
+      .modifier(BonsaiNativeNavigationTitleModifier(node: node))
       .sheet(
         isPresented: Binding(
           get: { node.isSheetPresented },
@@ -438,16 +457,31 @@ private struct BonsaiNativeTextFieldView: View {
   }
 
   private var textField: some View {
-    TextField(
-      node.placeholder ?? "",
-      text: Binding(
-        get: { node.text },
-        set: { value in
-          node.text = value
-          model.sendChange(node.changeEventId, text: value)
-        }
-      )
-    )
+    Group {
+      if node.isTextFieldSecure {
+        SecureField(
+          node.placeholder ?? "",
+          text: Binding(
+            get: { node.text },
+            set: { value in
+              node.text = value
+              model.sendChange(node.changeEventId, text: value)
+            }
+          )
+        )
+      } else {
+        TextField(
+          node.placeholder ?? "",
+          text: Binding(
+            get: { node.text },
+            set: { value in
+              node.text = value
+              model.sendChange(node.changeEventId, text: value)
+            }
+          )
+        )
+      }
+    }
     .onSubmit {
       model.sendClick(node.clickEventId)
     }
@@ -498,6 +532,19 @@ private struct BonsaiNativeNodeView: View {
 
     case .textField:
       BonsaiNativeTextFieldView(node: node, model: model)
+
+    case .toggle:
+      Toggle(
+        node.text,
+        isOn: Binding(
+          get: { node.isToggleOn },
+          set: { value in
+            node.isToggleOn = value
+            model.sendChange(node.changeEventId, text: value ? "true" : "false")
+          }
+        )
+      )
+      .disabled(!node.isEnabled)
 
     case .textEditor:
       ZStack(alignment: .topLeading) {
@@ -901,6 +948,7 @@ private struct BonsaiNativeNodeView: View {
             toolbarItemLabel(item)
           }
           .buttonStyle(.plain)
+          .disabled(!item.isEnabled)
         } else {
           Menu {
             ForEach(item.menuActions) { action in
@@ -918,6 +966,7 @@ private struct BonsaiNativeNodeView: View {
             toolbarItemLabel(item)
           }
           .buttonStyle(.plain)
+          .disabled(!item.isEnabled)
         }
       }
     }
@@ -1797,6 +1846,26 @@ public func bonsai_native_swiftui_set_text_field_style(
   node.textFieldStyle = style
 }
 
+@_cdecl("bonsai_native_swiftui_set_text_field_secure")
+public func bonsai_native_swiftui_set_text_field_secure(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isSecure: Bool
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.isTextFieldSecure = isSecure
+}
+
+@_cdecl("bonsai_native_swiftui_set_toggle")
+public func bonsai_native_swiftui_set_toggle(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isOn: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.isToggleOn = isOn
+  node.changeEventId = eventId < 0 ? nil : eventId
+}
+
 @_cdecl("bonsai_native_swiftui_set_spacing")
 public func bonsai_native_swiftui_set_spacing(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2077,6 +2146,15 @@ public func bonsai_native_swiftui_set_sheet(
   node.dismissEventId = dismissEventId < 0 ? nil : dismissEventId
 }
 
+@_cdecl("bonsai_native_swiftui_set_navigation_title")
+public func bonsai_native_swiftui_set_navigation_title(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.navigationTitle = titlePointer.map(String.init(cString:))
+}
+
 @_cdecl("bonsai_native_swiftui_clear_toolbar")
 public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPointer?) {
   guard let node = nativeNode(from: pointer) else { return }
@@ -2089,6 +2167,7 @@ public func bonsai_native_swiftui_append_toolbar_item(
   _ idPointer: UnsafePointer<CChar>?,
   _ titlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isEnabled: Bool,
   _ eventId: Int32
 ) {
   guard let node = nativeNode(from: pointer),
@@ -2100,6 +2179,7 @@ public func bonsai_native_swiftui_append_toolbar_item(
       title: String(cString: titlePointer),
       systemImage: systemImagePointer.map(String.init(cString:)),
       eventId: eventId < 0 ? nil : eventId,
+      isEnabled: isEnabled,
       menuActions: []
     )
   )

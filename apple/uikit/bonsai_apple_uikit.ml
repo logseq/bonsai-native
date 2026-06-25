@@ -136,6 +136,9 @@ let create kind =
       UIButtonConfiguration.setCornerStyle _UIButtonConfigurationCornerStyleCapsule configuration;
       UIButton.setConfiguration configuration native;
       native, host_controller native
+    | Apple.Toggle ->
+      let native = init_view UIView.self in
+      native, host_controller native
     | Apple.Text_field ->
       let field = init_text_field () in
       UITextField.setBorderStyle _UITextBorderStyleRoundedRect field;
@@ -240,6 +243,8 @@ let set_text_attributes _view _attributes = ()
 let set_enabled _view _is_enabled = ()
 let set_image_payload_mode _view _wants_payload = ()
 let set_text_field_style _view _style = ()
+let set_text_field_secure _view _is_secure = ()
+let set_toggle _view ~is_on:_ ~on_change:_ = ()
 
 let set_placeholder view placeholder =
   match view.kind, placeholder with
@@ -507,6 +512,7 @@ let install_toolbar view ~schedule_event items =
         action_with_title item.Apple.title (fun () -> schedule_event item.Apple.on_click)
       in
       let button = UIBarButtonItem.self |> alloc |> UIBarButtonItem.initWithPrimaryAction action in
+      UIBarButtonItem.setEnabled item.is_enabled button;
       (action, handler_block), button)
     |> List.unzip
   in
@@ -515,6 +521,8 @@ let install_toolbar view ~schedule_event items =
   let navigation_item = UIViewController.navigationItem view.controller in
   UINavigationItem.setRightBarButtonItems (nsarray buttons) navigation_item
 ;;
+
+let set_navigation_title view title = UIViewController.setTitle (nsstring title) view.controller
 
 let apply_padding view insets =
   let insets =
@@ -562,6 +570,7 @@ let install_sheet view ~is_presented ~content =
 ;;
 
 let set_modifiers view ~schedule_event modifiers =
+  let saw_navigation_title = ref false in
   List.iter modifiers ~f:(function
     | Apple.Rendered_padding insets -> apply_padding view insets
     | Apple.Rendered_frame frame -> apply_frame view frame
@@ -569,7 +578,11 @@ let set_modifiers view ~schedule_event modifiers =
       install_searchable view ~schedule_event ~text ~on_change
     | Apple.Rendered_toolbar items -> install_toolbar view ~schedule_event items
     | Apple.Rendered_sheet { is_presented; content; on_dismiss = _ } ->
-      install_sheet view ~is_presented ~content)
+      install_sheet view ~is_presented ~content
+    | Apple.Rendered_navigation_title title ->
+      saw_navigation_title := true;
+      set_navigation_title view title);
+  if not !saw_navigation_title then set_navigation_title view ""
 ;;
 
 module Backend = struct
@@ -582,6 +595,8 @@ module Backend = struct
   let set_enabled = set_enabled
   let set_placeholder = set_placeholder
   let set_text_field_style = set_text_field_style
+  let set_text_field_secure = set_text_field_secure
+  let set_toggle = set_toggle
   let set_spacing = set_spacing
   let set_children = set_children
   let set_tabs = set_tabs

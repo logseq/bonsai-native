@@ -39,6 +39,7 @@ type toolbar_item =
   { id : string
   ; title : string
   ; system_image : string option
+  ; is_enabled : bool
   ; on_click : unit Effect.t
   ; menu_actions : toolbar_menu_action list
   }
@@ -172,11 +173,13 @@ val button : ?is_enabled:bool -> string -> on_click:unit Effect.t -> node
 val text_field
   :  ?placeholder:string
   -> ?style:text_field_style
+  -> ?is_secure:bool
   -> ?on_submit:unit Effect.t
   -> text:string
   -> on_change:(string -> unit Effect.t)
   -> unit
   -> node
+val toggle : string -> is_on:bool -> on_change:(bool -> unit Effect.t) -> node
 val text_editor
   :  ?placeholder:string
   -> text:string
@@ -265,9 +268,11 @@ val list_row : list_row -> node
 val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
 val frame : ?width:float -> ?height:float -> node -> node
+val navigation_title : string -> node -> node
 val searchable : text:string -> on_change:(string -> unit Effect.t) -> node -> node
 val toolbar_item
   :  ?system_image:string
+  -> ?is_enabled:bool
   -> ?menu_actions:toolbar_menu_action list
   -> id:string
   -> title:string
@@ -292,6 +297,7 @@ type backend_kind =
   | Button
   | Text_field
   | Text_editor
+  | Toggle
   | Stack of axis
   | Scroll_view
   | List
@@ -314,6 +320,7 @@ type backend_kind =
 type modifier =
   | Padding of edge_insets
   | Frame of frame
+  | Navigation_title of string
   | Searchable of
       { text : string
       ; on_change : string -> unit Effect.t
@@ -328,6 +335,7 @@ type modifier =
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
   | Rendered_frame of frame
+  | Rendered_navigation_title of string
   | Rendered_searchable of
       { text : string
       ; on_change : string -> unit Effect.t
@@ -369,6 +377,8 @@ module Renderer : sig
     val set_text_attributes : view -> text_attributes -> unit
     val set_placeholder : view -> string option -> unit
     val set_text_field_style : view -> text_field_style -> unit
+    val set_text_field_secure : view -> bool -> unit
+    val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
     val set_tabs
@@ -475,6 +485,7 @@ module For_testing : sig
     val show : view -> string
     val click_exn : view -> path:int list -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
+    val change_toggle_exn : view -> path:int list -> is_on:bool -> unit
     val submit_text_exn : view -> path:int list -> unit
     val select_photo_exn : view -> path:int list -> image_id:string -> unit
     val capture_camera_exn : view -> path:int list -> image_id:string -> unit
@@ -508,6 +519,13 @@ module For_testing : sig
       -> sheet_path:int list
       -> text:string
       -> unit
+    val change_sheet_toggle_exn
+      :  view
+      -> path:int list
+      -> sheet_path:int list
+      -> is_on:bool
+      -> unit
+    val click_sheet_toolbar_item_exn : view -> path:int list -> id:string -> unit
     val click_nested_sheet_exn
       :  view
       -> path:int list

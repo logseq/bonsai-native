@@ -80,6 +80,42 @@ let%test_unit "button and text-field events are scheduled through Bonsai effects
   [%test_result: string list] !text_changes ~expect:[ "bonsai" ]
 ;;
 
+let%test_unit "toggle and secure text-field events are scheduled through Bonsai effects" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let toggle_changes = ref [] in
+  let text_changes = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.vstack
+         [ Apple.toggle "Require password" ~is_on:false ~on_change:(fun is_on ->
+             toggle_changes := is_on :: !toggle_changes;
+             noop)
+         ; Apple.text_field
+             ~text:""
+             ~placeholder:"Password"
+             ~is_secure:true
+             ~on_change:(fun text ->
+               text_changes := text :: !text_changes;
+               noop)
+             ()
+         ])
+  in
+  let root = Renderer.view mounted in
+  require_string_equal
+    (Backend.show root)
+    ~expect:
+      {|stack(vertical)#1
+  toggle#3 text="Require password" selected=false
+  text-field#2 text="" placeholder=Password style=Rounded_border secure|};
+  Backend.change_toggle_exn root ~path:[ 0 ] ~is_on:true;
+  Backend.change_text_exn root ~path:[ 1 ] ~text:"secret";
+  [%test_result: int] !scheduled ~expect:2;
+  [%test_result: bool list] !toggle_changes ~expect:[ true ];
+  [%test_result: string list] !text_changes ~expect:[ "secret" ]
+;;
+
 let%test_unit "disabled buttons render disabled and do not schedule events" =
   Backend.reset ();
   let scheduled = ref 0 in
@@ -632,6 +668,74 @@ let%test_unit "modifier events are scheduled through Bonsai effects" =
   Backend.dismiss_sheet_exn root ~path:[];
   [%test_result: int] !scheduled ~expect:4;
   [%test_result: string list] !searchable_changes ~expect:[ "bonsai" ]
+;;
+
+let%test_unit "disabled toolbar items render disabled and do not schedule events" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.text "Share"
+       |> Apple.toolbar
+            [ Apple.toolbar_item
+                ~id:"create"
+                ~title:"Create"
+                ~is_enabled:false
+                ~on_click:noop
+                ()
+            ])
+  in
+  let root = Renderer.view mounted in
+  require_string_contains (Backend.show root) {|toolbar=[create:Create:disabled]|};
+  require_raises_string
+    (fun () -> Backend.click_toolbar_item_exn root ~path:[] ~id:"create")
+    ~expect:"Toolbar item \"create\" is disabled";
+  [%test_result: int] !scheduled ~expect:0
+;;
+
+let%test_unit "navigation title modifier renders in the testing backend" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.navigation_stack [ Apple.text "Body" ] |> Apple.navigation_title "Share")
+  in
+  require_string_contains (show mounted) {|navigation-title=Share|}
+;;
+
+let%test_unit "toolbar menu file export is visible to the testing backend" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.text "Deck"
+       |> Apple.toolbar
+            [ Apple.toolbar_item
+                ~id:"share"
+                ~title:"Share"
+                ~system_image:"square.and.arrow.up"
+                ~menu_actions:
+                  [ { title = "Anki text"
+                    ; system_image = Some "doc.plaintext"
+                    ; style = Apple.Default
+                    ; on_click = noop
+                    ; file_export =
+                        Some
+                          { filename = "Biology.txt"
+                          ; content_type = "public.plain-text"
+                          ; content = "Biology\tQuestion\tAnswer"
+                          }
+                    }
+                  ]
+                ~on_click:noop
+                ()
+            ])
+  in
+  let root = Renderer.view mounted in
+  Backend.click_toolbar_menu_action_exn root ~path:[] ~id:"share" ~title:"Anki text";
+  let rendered = Backend.show root in
+  require_string_contains rendered {|filename=Biology.txt content_type=public.plain-text|}
 ;;
 
 let%test_unit "presented sheet content is mounted and diffed by the renderer" =

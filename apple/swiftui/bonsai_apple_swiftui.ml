@@ -51,6 +51,19 @@ external set_native_text_field_style
   -> unit
   = "bonsai_apple_swiftui_set_text_field_style"
 
+external set_native_text_field_secure
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_text_field_secure"
+
+external set_native_toggle
+  :  native
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_toggle"
+
 external set_native_spacing
   :  native
   -> float option
@@ -227,6 +240,12 @@ external set_native_sheet
   -> unit
   = "bonsai_apple_swiftui_set_sheet"
 
+external set_native_navigation_title
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_navigation_title"
+
 external clear_native_toolbar
   :  native
   -> unit
@@ -237,9 +256,11 @@ external append_native_toolbar_item
   -> string
   -> string
   -> string option
+  -> bool
   -> int
   -> unit
-  = "bonsai_apple_swiftui_append_toolbar_item"
+  = "bonsai_apple_swiftui_append_toolbar_item_bytecode"
+    "bonsai_apple_swiftui_append_toolbar_item"
 
 external append_native_toolbar_menu_action
   :  native
@@ -405,6 +426,7 @@ let node_kind_id = function
   | Apple.Button -> 1
   | Apple.Text_field -> 2
   | Apple.Text_editor -> 3
+  | Apple.Toggle -> 22
   | Apple.Stack Apple.Vertical -> 4
   | Apple.Stack Apple.Horizontal -> 5
   | Apple.Scroll_view -> 6
@@ -523,6 +545,20 @@ module Backend = struct
 
   let set_text_field_style view style =
     set_native_text_field_style view.native (text_field_style_id style)
+  ;;
+
+  let set_text_field_secure view is_secure =
+    set_native_text_field_secure view.native is_secure
+  ;;
+
+  let set_toggle view ~is_on ~on_change =
+    let event_id =
+      install_handler
+        view.change_event_id
+        (Change (fun value -> on_change (Bool.of_string value)))
+    in
+    view.change_event_id <- Some event_id;
+    set_native_toggle view.native is_on event_id
   ;;
 
   let set_spacing view spacing = set_native_spacing view.native spacing
@@ -859,7 +895,13 @@ module Backend = struct
     List.iter items ~f:(fun (item : Apple.toolbar_item) ->
       let event_id = install_handler None (Click (fun () -> schedule_event item.on_click)) in
       view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
-      append_native_toolbar_item view.native item.id item.title item.system_image event_id;
+      append_native_toolbar_item
+        view.native
+        item.id
+        item.title
+        item.system_image
+        item.is_enabled
+        event_id;
       List.iter item.menu_actions ~f:(fun action ->
         let event_id =
           install_handler None (Click (fun () -> schedule_event action.on_click))
@@ -889,6 +931,7 @@ module Backend = struct
     let saw_toolbar = ref false in
     let saw_padding = ref false in
     let saw_frame = ref false in
+    let saw_navigation_title = ref false in
     List.iter modifiers ~f:(function
       | Apple.Rendered_searchable { text; on_change } ->
         saw_searchable := true;
@@ -905,6 +948,9 @@ module Backend = struct
           view.native
           (Option.value width ~default:(-1.))
           (Option.value height ~default:(-1.))
+      | Apple.Rendered_navigation_title title ->
+        saw_navigation_title := true;
+        set_native_navigation_title view.native (Some title)
       | Apple.Rendered_toolbar items ->
         saw_toolbar := true;
         install_toolbar view ~schedule_event items);
@@ -912,7 +958,8 @@ module Backend = struct
     if not !saw_sheet then clear_sheet view;
     if not !saw_toolbar then clear_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
-    if not !saw_frame then set_native_frame view.native (-1.) (-1.)
+    if not !saw_frame then set_native_frame view.native (-1.) (-1.);
+    if not !saw_navigation_title then set_native_navigation_title view.native None
   ;;
 end
 
