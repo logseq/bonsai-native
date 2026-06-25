@@ -55,6 +55,17 @@ private enum NodeKind: Int32 {
   case shareLink = 23
   case navigationLink = 24
   case progressView = 25
+  case zStack = 26
+  case spacer = 27
+  case divider = 28
+  case form = 29
+  case navigationPathStack = 30
+  case slider = 31
+  case stepper = 32
+  case datePicker = 33
+  case colorPicker = 34
+  case menu = 35
+  case disclosureGroup = 36
 }
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
@@ -174,6 +185,21 @@ private struct BonsaiNativeAlertAction: Identifiable {
   let eventId: Int32?
 }
 
+private struct BonsaiNativePresentationDetent: Identifiable {
+  let id = UUID()
+  let kind: Int32
+  let value: Double
+}
+
+private struct BonsaiNativeMenuAction: Identifiable {
+  let id: String
+  let title: String
+  let systemImage: String?
+  let style: Int32
+  let isEnabled: Bool
+  let eventId: Int32?
+}
+
 private final class BonsaiNativeNode: ObservableObject, Identifiable {
   let id = UUID()
   let kind: NodeKind
@@ -205,7 +231,11 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var sheetContent: BonsaiNativeNode?
   @Published var bottomSafeAreaInsetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
+  @Published var sheetDetents: [BonsaiNativePresentationDetent] = []
   @Published var dismissEventId: Int32?
+  @Published var popoverContent: BonsaiNativeNode?
+  @Published var isPopoverPresented = false
+  @Published var popoverDismissEventId: Int32?
   @Published var isAlertPresented = false
   @Published var alertTitle = ""
   @Published var alertMessage: String?
@@ -214,6 +244,11 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var alertTextEventId: Int32?
   @Published var alertDismissEventId: Int32?
   @Published var alertActions: [BonsaiNativeAlertAction] = []
+  @Published var isConfirmationDialogPresented = false
+  @Published var confirmationDialogTitle = ""
+  @Published var confirmationDialogMessage: String?
+  @Published var confirmationDialogDismissEventId: Int32?
+  @Published var confirmationDialogActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
@@ -249,6 +284,24 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var pickerSelected = ""
   @Published var pickerEventId: Int32?
   @Published var pickerOptions: [BonsaiNativePickerOption] = []
+  @Published var sliderValue: Double = 0
+  @Published var sliderMin: Double = 0
+  @Published var sliderMax: Double = 1
+  @Published var stepperValue: Int32 = 0
+  @Published var stepperMin: Int32 = 0
+  @Published var stepperMax: Int32 = 100
+  @Published var stepperStep: Int32 = 1
+  @Published var selectedDateText = ""
+  @Published var selectedColorText = "#007AFF"
+  @Published var menuActions: [BonsaiNativeMenuAction] = []
+  @Published var isDisclosureExpanded = false
+  @Published var navigationPath: [String] = []
+  @Published var navigationPathEventId: Int32?
+  @Published var navigationDestinationIds: [String] = []
+  @Published var listRefreshEventId: Int32?
+  @Published var listDeleteEventId: Int32?
+  @Published var listMoveEventId: Int32?
+  @Published var isListEditMode = false
   @Published var exportFilename = ""
   @Published var exportContentType = ""
   @Published var exportContent = ""
@@ -531,6 +584,47 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
           Text(message)
         }
       }
+      .confirmationDialog(
+        node.confirmationDialogTitle,
+        isPresented: Binding(
+          get: { node.isConfirmationDialogPresented },
+          set: { presented in
+            node.isConfirmationDialogPresented = presented
+            if !presented {
+              model.sendClick(node.confirmationDialogDismissEventId)
+            }
+          }
+        ),
+        titleVisibility: .visible
+      ) {
+        ForEach(node.confirmationDialogActions) { action in
+          Button(role: alertButtonRole(action.role)) {
+            model.sendClick(action.eventId)
+          } label: {
+            Text(action.title)
+          }
+          .disabled(!action.isEnabled)
+        }
+      } message: {
+        if let message = node.confirmationDialogMessage {
+          Text(message)
+        }
+      }
+      .popover(
+        isPresented: Binding(
+          get: { node.isPopoverPresented },
+          set: { presented in
+            node.isPopoverPresented = presented
+            if !presented {
+              model.sendClick(node.popoverDismissEventId)
+            }
+          }
+        )
+      ) {
+        if let popoverContent = node.popoverContent {
+          BonsaiNativeNodeView(node: popoverContent, model: model)
+        }
+      }
       .sheet(
         isPresented: Binding(
           get: { node.isSheetPresented },
@@ -544,8 +638,25 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
       ) {
         if let sheetContent = node.sheetContent {
           BonsaiNativeNodeView(node: sheetContent, model: model)
+            .presentationDetents(sheetPresentationDetents)
         }
       }
+  }
+
+  private var sheetPresentationDetents: Set<PresentationDetent> {
+    guard !node.sheetDetents.isEmpty else { return [.large] }
+    return Set(node.sheetDetents.map { detent in
+      switch detent.kind {
+      case 0:
+        return .medium
+      case 2:
+        return .fraction(detent.value)
+      case 3:
+        return .height(detent.value)
+      default:
+        return .large
+      }
+    })
   }
 
   @ViewBuilder
@@ -590,6 +701,38 @@ private func alertButtonRole(_ rawRole: Int32) -> ButtonRole? {
   case 1: return .cancel
   case 2: return .destructive
   default: return nil
+  }
+}
+
+private extension Color {
+  init?(hex: String) {
+    var value = hex.trimmingCharacters(in: .whitespacesAndNewlines)
+    if value.hasPrefix("#") {
+      value.removeFirst()
+    }
+    guard value.count == 6, let raw = Int(value, radix: 16) else { return nil }
+    self.init(
+      red: Double((raw >> 16) & 0xff) / 255.0,
+      green: Double((raw >> 8) & 0xff) / 255.0,
+      blue: Double(raw & 0xff) / 255.0
+    )
+  }
+
+  func hexString() -> String? {
+    let uiColor = UIColor(self)
+    var red: CGFloat = 0
+    var green: CGFloat = 0
+    var blue: CGFloat = 0
+    var alpha: CGFloat = 0
+    guard uiColor.getRed(&red, green: &green, blue: &blue, alpha: &alpha) else {
+      return nil
+    }
+    return String(
+      format: "#%02X%02X%02X",
+      Int(round(red * 255)),
+      Int(round(green * 255)),
+      Int(round(blue * 255))
+    )
   }
 }
 
@@ -779,6 +922,22 @@ private struct BonsaiNativeNodeView: View {
         childViews
       }
 
+    case .zStack:
+      ZStack {
+        childViews
+      }
+
+    case .spacer:
+      Spacer()
+
+    case .divider:
+      Divider()
+
+    case .form:
+      Form {
+        childViews
+      }
+
     case .scrollView:
       ScrollView {
         childViews
@@ -786,12 +945,7 @@ private struct BonsaiNativeNodeView: View {
       .background(bonsaiHomeBodyBackground)
 
     case .list:
-      List {
-        childViews
-      }
-      .listStyle(.insetGrouped)
-      .scrollContentBackground(.hidden)
-      .background(bonsaiHomeBodyBackground)
+      listView
 
     case .navigationStack:
       NavigationStack {
@@ -801,6 +955,9 @@ private struct BonsaiNativeNodeView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+
+    case .navigationPathStack:
+      navigationPathStack
 
     case .navigationLink:
       NavigationLink {
@@ -847,6 +1004,24 @@ private struct BonsaiNativeNodeView: View {
     case .picker:
       picker
 
+    case .slider:
+      slider
+
+    case .stepper:
+      stepper
+
+    case .datePicker:
+      datePicker
+
+    case .colorPicker:
+      colorPicker
+
+    case .menu:
+      menu
+
+    case .disclosureGroup:
+      disclosureGroup
+
     case .photoPicker:
       BonsaiNativePhotoPickerView(node: node, model: model)
         .disabled(!node.isEnabled)
@@ -874,6 +1049,59 @@ private struct BonsaiNativeNodeView: View {
   private var childViews: some View {
     ForEach(node.children) { child in
       BonsaiNativeNodeView(node: child, model: model)
+    }
+  }
+
+  private var listView: some View {
+    List {
+      ForEach(Array(node.children.enumerated()), id: \.element.id) { _, child in
+        BonsaiNativeNodeView(node: child, model: model)
+      }
+      .onDelete { offsets in
+        guard let index = offsets.first else { return }
+        model.sendChange(node.listDeleteEventId, text: String(index))
+      }
+      .onMove { source, destination in
+        guard let fromIndex = source.first else { return }
+        model.sendChange(node.listMoveEventId, text: "\(fromIndex):\(destination)")
+      }
+    }
+    .environment(\.editMode, .constant(node.isListEditMode ? .active : .inactive))
+    .refreshable {
+      model.sendClick(node.listRefreshEventId)
+    }
+    .listStyle(.insetGrouped)
+    .scrollContentBackground(.hidden)
+    .background(bonsaiHomeBodyBackground)
+  }
+
+  private var navigationPathBinding: Binding<[String]> {
+    Binding(
+      get: { node.navigationPath },
+      set: { value in
+        node.navigationPath = value
+        model.sendChange(node.navigationPathEventId, text: value.joined(separator: "\n"))
+      }
+    )
+  }
+
+  private var navigationPathStack: some View {
+    NavigationStack(path: navigationPathBinding) {
+      Group {
+        if let root = node.children.first {
+          BonsaiNativeNodeView(node: root, model: model)
+        } else {
+          EmptyView()
+        }
+      }
+      .navigationDestination(for: String.self) { destinationId in
+        if let index = node.navigationDestinationIds.firstIndex(of: destinationId),
+           node.children.indices.contains(index + 1) {
+          BonsaiNativeNodeView(node: node.children[index + 1], model: model)
+        } else {
+          EmptyView()
+        }
+      }
     }
   }
 
@@ -913,6 +1141,120 @@ private struct BonsaiNativeNodeView: View {
     .frame(minHeight: 52)
     .padding(.horizontal, 16)
   }
+
+  private var slider: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack {
+        Text(node.text)
+        Spacer()
+        Text(node.sliderValue, format: .number.precision(.fractionLength(2)))
+          .foregroundStyle(.secondary)
+      }
+      Slider(
+        value: Binding(
+          get: { node.sliderValue },
+          set: { value in
+            node.sliderValue = value
+            model.sendChange(node.changeEventId, text: String(value))
+          }
+        ),
+        in: node.sliderMin...node.sliderMax
+      )
+    }
+  }
+
+  private var stepper: some View {
+    Stepper(
+      value: Binding(
+        get: { Int(node.stepperValue) },
+        set: { value in
+          node.stepperValue = Int32(value)
+          model.sendChange(node.changeEventId, text: String(value))
+        }
+      ),
+      in: Int(node.stepperMin)...Int(node.stepperMax),
+      step: Int(node.stepperStep)
+    ) {
+      Text("\(node.text): \(node.stepperValue)")
+    }
+  }
+
+  private var datePickerDate: Binding<Date> {
+    Binding(
+      get: { Self.dateFormatter.date(from: node.selectedDateText) ?? Date() },
+      set: { date in
+        let selected = Self.dateFormatter.string(from: date)
+        node.selectedDateText = selected
+        model.sendChange(node.changeEventId, text: selected)
+      }
+    )
+  }
+
+  private var datePicker: some View {
+    DatePicker(node.text, selection: datePickerDate, displayedComponents: .date)
+  }
+
+  private var colorPickerColor: Binding<Color> {
+    Binding(
+      get: { Color(hex: node.selectedColorText) ?? .accentColor },
+      set: { color in
+        let selected = color.hexString() ?? node.selectedColorText
+        node.selectedColorText = selected
+        model.sendChange(node.changeEventId, text: selected)
+      }
+    )
+  }
+
+  private var colorPicker: some View {
+    ColorPicker(node.text, selection: colorPickerColor)
+  }
+
+  private var menu: some View {
+    Menu {
+      ForEach(node.menuActions) { action in
+        Button(role: action.style == 1 ? .destructive : nil) {
+          model.sendClick(action.eventId)
+        } label: {
+          if let systemImage = action.systemImage {
+            Label(action.title, systemImage: systemImage)
+          } else {
+            Text(action.title)
+          }
+        }
+        .disabled(!action.isEnabled)
+      }
+    } label: {
+      if let systemImage = node.systemImage {
+        Label(node.text, systemImage: systemImage)
+      } else {
+        Text(node.text)
+      }
+    }
+  }
+
+  private var disclosureGroup: some View {
+    DisclosureGroup(
+      isExpanded: Binding(
+        get: { node.isDisclosureExpanded },
+        set: { isExpanded in
+          node.isDisclosureExpanded = isExpanded
+          model.sendChange(node.changeEventId, text: isExpanded ? "true" : "false")
+        }
+      )
+    ) {
+      childViews
+    } label: {
+      Text(node.text)
+    }
+  }
+
+  private static let dateFormatter: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.calendar = Calendar(identifier: .gregorian)
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    return formatter
+  }()
 
   private func textFont(_ style: Int32) -> Font {
     switch style {
@@ -2206,6 +2548,21 @@ public func bonsai_native_swiftui_set_children(
   }
 }
 
+@_cdecl("bonsai_native_swiftui_set_list_behavior")
+public func bonsai_native_swiftui_set_list_behavior(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ refreshEventId: Int32,
+  _ deleteEventId: Int32,
+  _ moveEventId: Int32,
+  _ editMode: Bool
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.listRefreshEventId = refreshEventId < 0 ? nil : refreshEventId
+  node.listDeleteEventId = deleteEventId < 0 ? nil : deleteEventId
+  node.listMoveEventId = moveEventId < 0 ? nil : moveEventId
+  node.isListEditMode = editMode
+}
+
 @_cdecl("bonsai_native_swiftui_set_on_click")
 public func bonsai_native_swiftui_set_on_click(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2409,6 +2766,137 @@ public func bonsai_native_swiftui_set_file_importer(
   node.changeEventId = eventId < 0 ? nil : eventId
 }
 
+@_cdecl("bonsai_native_swiftui_set_slider")
+public func bonsai_native_swiftui_set_slider(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ value: Double,
+  _ min: Double,
+  _ max: Double,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.text = titlePointer.map(String.init(cString:)) ?? ""
+  node.sliderValue = value
+  node.sliderMin = min
+  node.sliderMax = max
+  node.changeEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_stepper")
+public func bonsai_native_swiftui_set_stepper(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ value: Int32,
+  _ min: Int32,
+  _ max: Int32,
+  _ step: Int32,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.text = titlePointer.map(String.init(cString:)) ?? ""
+  node.stepperValue = value
+  node.stepperMin = min
+  node.stepperMax = max
+  node.stepperStep = Swift.max(1, step)
+  node.changeEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_date_picker")
+public func bonsai_native_swiftui_set_date_picker(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ selectedPointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.text = titlePointer.map(String.init(cString:)) ?? ""
+  node.selectedDateText = selectedPointer.map(String.init(cString:)) ?? ""
+  node.changeEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_color_picker")
+public func bonsai_native_swiftui_set_color_picker(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ selectedPointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.text = titlePointer.map(String.init(cString:)) ?? ""
+  node.selectedColorText = selectedPointer.map(String.init(cString:)) ?? "#007AFF"
+  node.changeEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_clear_menu")
+public func bonsai_native_swiftui_clear_menu(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.text = titlePointer.map(String.init(cString:)) ?? ""
+  node.systemImage = systemImagePointer.map(String.init(cString:))
+  node.menuActions = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_menu_action")
+public func bonsai_native_swiftui_append_menu_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ style: Int32,
+  _ isEnabled: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
+  node.menuActions.append(
+    BonsaiNativeMenuAction(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      style: style,
+      isEnabled: isEnabled,
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_set_disclosure_group")
+public func bonsai_native_swiftui_set_disclosure_group(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ isExpanded: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.text = titlePointer.map(String.init(cString:)) ?? ""
+  node.isDisclosureExpanded = isExpanded
+  node.changeEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_navigation_path_stack")
+public func bonsai_native_swiftui_set_navigation_path_stack(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ pathPointer: UnsafeMutablePointer<UnsafePointer<CChar>?>?,
+  _ pathCount: Int32,
+  _ eventId: Int32,
+  _ destinationsPointer: UnsafeMutablePointer<UnsafePointer<CChar>?>?,
+  _ destinationsCount: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.navigationPath = (0..<Int(pathCount)).compactMap { index in
+    guard let value = pathPointer?[index] else { return nil }
+    return String(cString: value)
+  }
+  node.navigationPathEventId = eventId < 0 ? nil : eventId
+  node.navigationDestinationIds = (0..<Int(destinationsCount)).compactMap { index in
+    guard let value = destinationsPointer?[index] else { return nil }
+    return String(cString: value)
+  }
+}
+
 @_cdecl("bonsai_native_swiftui_clear_list_row_actions")
 public func bonsai_native_swiftui_clear_list_row_actions(_ pointer: UnsafeMutableRawPointer?) {
   guard let node = nativeNode(from: pointer) else { return }
@@ -2490,6 +2978,26 @@ public func bonsai_native_swiftui_set_sheet(
   node.dismissEventId = dismissEventId < 0 ? nil : dismissEventId
 }
 
+@_cdecl("bonsai_native_swiftui_set_sheet_detents")
+public func bonsai_native_swiftui_set_sheet_detents(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ kindsPointer: UnsafeMutablePointer<Int32>?,
+  _ valuesPointer: UnsafeMutablePointer<Double>?,
+  _ count: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  guard count > 0, let kindsPointer, let valuesPointer else {
+    node.sheetDetents = []
+    return
+  }
+  node.sheetDetents = (0..<Int(count)).map { index in
+    BonsaiNativePresentationDetent(
+      kind: kindsPointer[index],
+      value: valuesPointer[index]
+    )
+  }
+}
+
 @_cdecl("bonsai_native_swiftui_set_safe_area_inset_bottom")
 public func bonsai_native_swiftui_set_safe_area_inset_bottom(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2497,6 +3005,19 @@ public func bonsai_native_swiftui_set_safe_area_inset_bottom(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.bottomSafeAreaInsetContent = nativeNode(from: contentPointer)
+}
+
+@_cdecl("bonsai_native_swiftui_set_popover")
+public func bonsai_native_swiftui_set_popover(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ contentPointer: UnsafeMutableRawPointer?,
+  _ isPresented: Bool,
+  _ dismissEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.popoverContent = nativeNode(from: contentPointer)
+  node.isPopoverPresented = isPresented
+  node.popoverDismissEventId = dismissEventId < 0 ? nil : dismissEventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_alert")
@@ -2546,6 +3067,49 @@ public func bonsai_native_swiftui_append_alert_action(
         let idPointer,
         let titlePointer else { return }
   node.alertActions.append(
+    BonsaiNativeAlertAction(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      role: role,
+      isEnabled: isEnabled,
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_set_confirmation_dialog")
+public func bonsai_native_swiftui_set_confirmation_dialog(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isPresented: Bool,
+  _ dismissEventId: Int32,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ messagePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.isConfirmationDialogPresented = isPresented
+  node.confirmationDialogDismissEventId = dismissEventId < 0 ? nil : dismissEventId
+  node.confirmationDialogTitle = titlePointer.map(String.init(cString:)) ?? ""
+  node.confirmationDialogMessage = messagePointer.map(String.init(cString:))
+}
+
+@_cdecl("bonsai_native_swiftui_clear_confirmation_dialog_actions")
+public func bonsai_native_swiftui_clear_confirmation_dialog_actions(
+  _ pointer: UnsafeMutableRawPointer?
+) {
+  nativeNode(from: pointer)?.confirmationDialogActions = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_confirmation_dialog_action")
+public func bonsai_native_swiftui_append_confirmation_dialog_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ role: Int32,
+  _ isEnabled: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
+  node.confirmationDialogActions.append(
     BonsaiNativeAlertAction(
       id: String(cString: idPointer),
       title: String(cString: titlePointer),

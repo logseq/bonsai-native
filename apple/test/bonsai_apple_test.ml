@@ -53,6 +53,219 @@ let%test_unit "renders primitive nodes and stack hierarchy" =
     text-field#3 text=milk placeholder=Task style=Rounded_border|}
 ;;
 
+let%test_unit "renders SwiftUI layout containers" =
+  Backend.reset ();
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> ())
+      (Apple.form
+         [ Apple.zstack [ Apple.text "Title"; Apple.divider () ]
+         ; Apple.hstack [ Apple.text "Leading"; Apple.spacer (); Apple.text "Trailing" ]
+         ])
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|form#1
+  zstack#6
+    label#8 text=Title
+    divider#7
+  stack(horizontal)#2
+    label#5 text=Leading
+    spacer#4
+    label#3 text=Trailing|}
+;;
+
+let%test_unit "renders common SwiftUI controls and schedules their events" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let slider_changes = ref [] in
+  let stepper_changes = ref [] in
+  let date_changes = ref [] in
+  let color_changes = ref [] in
+  let disclosure_changes = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.vstack
+         [ Apple.slider
+             ~title:"Opacity"
+             ~value:0.5
+             ~min:0.0
+             ~max:1.0
+             ~on_change:(fun value ->
+               slider_changes := value :: !slider_changes;
+               noop)
+         ; Apple.stepper
+             ~title:"Count"
+             ~value:2
+             ~min:0
+             ~max:10
+             ~step:2
+             ~on_change:(fun value ->
+               stepper_changes := value :: !stepper_changes;
+               noop)
+         ; Apple.date_picker
+             ~title:"Due"
+             ~selected:"2026-06-26"
+             ~on_select:(fun value ->
+               date_changes := value :: !date_changes;
+               noop)
+         ; Apple.color_picker
+             ~title:"Tint"
+             ~selected:"#336699"
+             ~on_select:(fun value ->
+               color_changes := value :: !color_changes;
+               noop)
+         ; Apple.menu
+             ~title:"More"
+             ~system_image:"ellipsis.circle"
+             [ Apple.menu_action
+                 ~id:"archive"
+                 ~title:"Archive"
+                 ~system_image:"archivebox"
+                 ~on_click:noop
+                 ()
+             ]
+         ; Apple.disclosure_group
+             ~title:"Advanced"
+             ~is_expanded:false
+             ~on_change:(fun is_expanded ->
+               disclosure_changes := is_expanded :: !disclosure_changes;
+               noop)
+             [ Apple.text "Details" ]
+         ])
+  in
+  let root = Renderer.view mounted in
+  require_string_equal
+    (Backend.show root)
+    ~expect:
+      {|stack(vertical)#1
+  slider#8 text=Opacity value=0.5 range=0..1
+  stepper#7 text=Count value=2 range=0..10 step=2
+  date-picker#6 text=Due selected=2026-06-26
+  color-picker#5 text=Tint selected=#336699
+  menu#4 text=More image=ellipsis.circle actions=[archive:Archive:archivebox:default:enabled]
+  disclosure-group#2 text=Advanced expanded=false
+    label#3 text=Details|};
+  Backend.change_slider_exn root ~path:[ 0 ] ~value:0.75;
+  Backend.change_stepper_exn root ~path:[ 1 ] ~value:4;
+  Backend.select_date_exn root ~path:[ 2 ] ~selected:"2026-06-27";
+  Backend.select_color_exn root ~path:[ 3 ] ~selected:"#112233";
+  Backend.click_menu_action_exn root ~path:[ 4 ] ~id:"archive";
+  Backend.change_disclosure_group_exn root ~path:[ 5 ] ~is_expanded:true;
+  [%test_result: int] !scheduled ~expect:6;
+  [%test_result: float list] !slider_changes ~expect:[ 0.75 ];
+  [%test_result: int list] !stepper_changes ~expect:[ 4 ];
+  [%test_result: string list] !date_changes ~expect:[ "2026-06-27" ];
+  [%test_result: string list] !color_changes ~expect:[ "#112233" ];
+  [%test_result: bool list] !disclosure_changes ~expect:[ true ]
+;;
+
+let%test_unit "presentation modifiers support confirmation dialog, popover, and sheet detents" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.text "Host"
+       |> Apple.sheet
+            ~is_presented:true
+            ~content:(Apple.text "Editor")
+            ~detents:[ Apple.Medium; Apple.Fraction 0.4 ]
+       |> Apple.popover ~is_presented:true ~content:(Apple.text "Popover") ~on_dismiss:noop
+       |> Apple.confirmation_dialog
+            ~is_presented:true
+            ~title:"Delete item?"
+            ~message:"This cannot be undone."
+            ~actions:
+              [ Apple.alert_action
+                  ~id:"delete"
+                  ~title:"Delete"
+                  ~role:Apple.Alert_destructive
+                  ~on_click:noop
+                  ()
+              ]
+            ())
+  in
+  let root = Renderer.view mounted in
+  require_string_equal
+    (Backend.show root)
+    ~expect:
+      {|label#1 text=Host modifiers=[confirmation-dialog,popover,sheet] sheet-detents=[medium,fraction:0.4] confirmation-dialog=Delete item? message=("This cannot be undone.") actions=[delete:Delete:destructive:enabled] popover=true
+  popover:
+    label#2 text=Popover
+  sheet:
+    label#3 text=Editor|};
+  Backend.click_confirmation_dialog_action_exn root ~id:"delete";
+  Backend.dismiss_popover_exn root;
+  [%test_result: int] !scheduled ~expect:2
+;;
+
+let%test_unit "programmatic navigation path renders destinations and schedules path changes" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let path_changes = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.navigation_path_stack
+         ~path:[ "settings" ]
+         ~on_path_change:(fun path ->
+           path_changes := path :: !path_changes;
+           noop)
+         ~root:(Apple.text "Home")
+         ~destinations:[ "settings", Apple.text "Settings"; "about", Apple.text "About" ])
+  in
+  let root = Renderer.view mounted in
+  require_string_equal
+    (Backend.show root)
+    ~expect:
+      {|navigation-path-stack#1 path=[settings] destinations=[settings,about]
+  label#2 text=Home
+  label#3 key=settings text=Settings
+  label#4 key=about text=About|};
+  Backend.change_navigation_path_exn root ~path:[ "settings"; "about" ];
+  [%test_result: int] !scheduled ~expect:1;
+  [%test_result: string list list] !path_changes ~expect:[ [ "settings"; "about" ] ]
+;;
+
+let%test_unit "list supports refresh, delete, move, and edit mode callbacks" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let deleted = ref [] in
+  let moved = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.list
+         [ "Buy milk"; "Ship patch" ]
+         ~key:Fn.id
+         ~edit_mode:true
+         ~on_refresh:noop
+         ~on_delete:(fun index ->
+           deleted := index :: !deleted;
+           noop)
+         ~on_move:(fun ~from_index ~to_index ->
+           moved := (from_index, to_index) :: !moved;
+           noop)
+         ~row:Apple.text)
+  in
+  let root = Renderer.view mounted in
+  require_string_equal
+    (Backend.show root)
+    ~expect:
+      {|list#1 edit-mode refreshable on-delete on-move
+  label#2 key=Buy milk text="Buy milk"
+  label#3 key=Ship patch text="Ship patch"|};
+  Backend.refresh_list_exn root ~path:[];
+  Backend.delete_list_row_exn root ~path:[] ~index:0;
+  Backend.move_list_row_exn root ~path:[] ~from_index:1 ~to_index:0;
+  [%test_result: int] !scheduled ~expect:3;
+  [%test_result: int list] !deleted ~expect:[ 0 ];
+  [%test_result: (int * int) list] !moved ~expect:[ 1, 0 ]
+;;
+
 let%test_unit "button and text-field events are scheduled through Bonsai effects" =
   Backend.reset ();
   let scheduled = ref 0 in

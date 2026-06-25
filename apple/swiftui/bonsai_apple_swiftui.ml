@@ -112,6 +112,15 @@ external set_native_children
   -> unit
   = "bonsai_apple_swiftui_set_children"
 
+external set_native_list_behavior
+  :  native
+  -> int
+  -> int
+  -> int
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_list_behavior"
+
 external set_native_on_click
   :  native
   -> int
@@ -241,6 +250,78 @@ external set_native_file_importer
   -> unit
   = "bonsai_apple_swiftui_set_file_importer"
 
+external set_native_slider
+  :  native
+  -> string
+  -> float
+  -> float
+  -> float
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_slider_bytecode" "bonsai_apple_swiftui_set_slider"
+
+external set_native_stepper
+  :  native
+  -> string
+  -> int
+  -> int
+  -> int
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_stepper_bytecode" "bonsai_apple_swiftui_set_stepper"
+
+external set_native_date_picker
+  :  native
+  -> string
+  -> string
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_date_picker"
+
+external set_native_color_picker
+  :  native
+  -> string
+  -> string
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_color_picker"
+
+external clear_native_menu
+  :  native
+  -> string
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_clear_menu"
+
+external append_native_menu_action
+  :  native
+  -> string
+  -> string
+  -> string option
+  -> int
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_menu_action_bytecode"
+    "bonsai_apple_swiftui_append_menu_action"
+
+external set_native_disclosure_group
+  :  native
+  -> string
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_disclosure_group"
+
+external set_native_navigation_path_stack
+  :  native
+  -> string array
+  -> int
+  -> string array
+  -> unit
+  = "bonsai_apple_swiftui_set_navigation_path_stack"
+
 external set_native_image_payload_mode
   :  native
   -> bool
@@ -295,11 +376,26 @@ external set_native_sheet
   -> unit
   = "bonsai_apple_swiftui_set_sheet"
 
+external set_native_sheet_detents
+  :  native
+  -> int array
+  -> float array
+  -> unit
+  = "bonsai_apple_swiftui_set_sheet_detents"
+
 external set_native_safe_area_inset_bottom
   :  native
   -> native option
   -> unit
   = "bonsai_apple_swiftui_set_safe_area_inset_bottom"
+
+external set_native_popover
+  :  native
+  -> native option
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_popover"
 
 external set_native_alert
   :  native
@@ -333,6 +429,31 @@ external append_native_alert_action
   -> unit
   = "bonsai_apple_swiftui_append_alert_action_bytecode"
     "bonsai_apple_swiftui_append_alert_action"
+
+external set_native_confirmation_dialog
+  :  native
+  -> bool
+  -> int
+  -> string option
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_confirmation_dialog"
+
+external clear_native_confirmation_dialog_actions
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_confirmation_dialog_actions"
+
+external append_native_confirmation_dialog_action
+  :  native
+  -> string
+  -> string
+  -> int
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_confirmation_dialog_action_bytecode"
+    "bonsai_apple_swiftui_append_confirmation_dialog_action"
 
 external set_native_navigation_title
   :  native
@@ -526,9 +647,14 @@ let node_kind_id = function
   | Apple.Toggle -> 22
   | Apple.Stack Apple.Vertical -> 4
   | Apple.Stack Apple.Horizontal -> 5
+  | Apple.Z_stack -> 26
+  | Apple.Spacer -> 27
+  | Apple.Divider -> 28
+  | Apple.Form -> 29
   | Apple.Scroll_view -> 6
   | Apple.List -> 7
   | Apple.Navigation_stack -> 8
+  | Apple.Navigation_path_stack -> 30
   | Apple.Navigation_link -> 24
   | Apple.Navigation_split -> 20
   | Apple.Adaptive_layout -> 21
@@ -538,6 +664,12 @@ let node_kind_id = function
   | Apple.List_row -> 11
   | Apple.Section -> 12
   | Apple.Picker -> 13
+  | Apple.Slider -> 31
+  | Apple.Stepper -> 32
+  | Apple.Date_picker -> 33
+  | Apple.Color_picker -> 34
+  | Apple.Menu -> 35
+  | Apple.Disclosure_group -> 36
   | Apple.Custom_view _ -> 14
   | Apple.Photo_picker -> 15
   | Apple.Share_link -> 23
@@ -558,9 +690,13 @@ module Backend = struct
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
     ; mutable sheet_dismiss_event_id : int option
+    ; mutable popover_dismiss_event_id : int option
     ; mutable alert_event_ids : int list
+    ; mutable confirmation_dialog_event_ids : int list
     ; mutable toolbar_event_ids : int list
     ; mutable picker_select_event_id : int option
+    ; mutable list_event_ids : int list
+    ; mutable menu_event_ids : int list
     ; mutable row_event_ids : int list
     ; mutable sidebar_event_ids : int list
     ; mutable sidebar_search_event_id : int option
@@ -581,9 +717,13 @@ module Backend = struct
     ; search_event_id = None
     ; tab_select_event_id = None
     ; sheet_dismiss_event_id = None
+    ; popover_dismiss_event_id = None
     ; alert_event_ids = []
+    ; confirmation_dialog_event_ids = []
     ; toolbar_event_ids = []
     ; picker_select_event_id = None
+    ; list_event_ids = []
+    ; menu_event_ids = []
     ; row_event_ids = []
     ; sidebar_event_ids = []
     ; sidebar_search_event_id = None
@@ -598,9 +738,13 @@ module Backend = struct
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
     clear_handler view.sheet_dismiss_event_id;
+    clear_handler view.popover_dismiss_event_id;
     List.iter view.alert_event_ids ~f:(Hashtbl.remove event_handlers);
+    List.iter view.confirmation_dialog_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
     clear_handler view.picker_select_event_id;
+    List.iter view.list_event_ids ~f:(Hashtbl.remove event_handlers);
+    List.iter view.menu_event_ids ~f:(Hashtbl.remove event_handlers);
     clear_handler view.sidebar_search_event_id;
     List.iter view.row_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.sidebar_event_ids ~f:(Hashtbl.remove event_handlers);
@@ -689,6 +833,48 @@ module Backend = struct
 
   let set_children view ~keyed:_ children =
     set_native_children view.native (Array.of_list (List.map children ~f:(fun child -> child.native)))
+  ;;
+
+  let set_list_behavior view ~on_refresh ~on_delete ~on_move ~edit_mode =
+    List.iter view.list_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.list_event_ids <- [];
+    let install_click = function
+      | None -> no_event
+      | Some f ->
+        let event_id = install_handler None (Click f) in
+        view.list_event_ids <- event_id :: view.list_event_ids;
+        event_id
+    in
+    let install_change = function
+      | None -> no_event
+      | Some f ->
+        let event_id = install_handler None (Change f) in
+        view.list_event_ids <- event_id :: view.list_event_ids;
+        event_id
+    in
+    let refresh_event_id = install_click on_refresh in
+    let delete_event_id =
+      install_change
+        (Option.map on_delete ~f:(fun on_delete ->
+           fun payload -> on_delete (Int.of_string payload)))
+    in
+    let move_event_id =
+      install_change
+        (Option.map on_move ~f:(fun on_move ->
+           fun payload ->
+             match String.lsplit2 payload ~on:':' with
+             | Some (from_index, to_index) ->
+               on_move
+                 ~from_index:(Int.of_string from_index)
+                 ~to_index:(Int.of_string to_index)
+             | None -> ()))
+    in
+    set_native_list_behavior
+      view.native
+      refresh_event_id
+      delete_event_id
+      move_event_id
+      edit_mode
   ;;
 
   let set_tabs view ~selected ~on_select (tabs : Apple.rendered_tab list) =
@@ -809,6 +995,139 @@ module Backend = struct
       append_native_picker_option view.native option.Apple.id option.title)
   ;;
 
+  let set_slider view ~title ~value ~min ~max ~on_change =
+    let event_id =
+      match on_change with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_change ->
+        let event_id =
+          install_handler view.change_event_id (Change (fun value ->
+            on_change (Float.of_string value)))
+        in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_slider view.native title value min max event_id
+  ;;
+
+  let set_stepper view ~title ~value ~min ~max ~step ~on_change =
+    let event_id =
+      match on_change with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_change ->
+        let event_id =
+          install_handler view.change_event_id (Change (fun value ->
+            on_change (Int.of_string value)))
+        in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_stepper view.native title value min max step event_id
+  ;;
+
+  let set_date_picker view ~title ~selected ~on_select =
+    let event_id =
+      match on_select with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_select ->
+        let event_id = install_handler view.change_event_id (Change on_select) in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_date_picker view.native title selected event_id
+  ;;
+
+  let set_color_picker view ~title ~selected ~on_select =
+    let event_id =
+      match on_select with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_select ->
+        let event_id = install_handler view.change_event_id (Change on_select) in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_color_picker view.native title selected event_id
+  ;;
+
+  let style_id = function
+    | Apple.Default -> 0
+    | Apple.Destructive -> 1
+  ;;
+
+  let set_menu view ~title ~system_image ~(actions : Apple.menu_action list) ~schedule_event =
+    List.iter view.menu_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.menu_event_ids <- [];
+    clear_native_menu view.native title system_image;
+    List.iter actions ~f:(fun action ->
+      let event_id =
+        install_handler None (Click (fun () -> schedule_event action.on_click))
+      in
+      view.menu_event_ids <- event_id :: view.menu_event_ids;
+      append_native_menu_action
+        view.native
+        action.id
+        action.title
+        action.system_image
+        (style_id action.style)
+        action.is_enabled
+        event_id)
+  ;;
+
+  let set_disclosure_group view ~title ~is_expanded ~on_change =
+    let event_id =
+      match on_change with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_change ->
+        let event_id =
+          install_handler view.change_event_id (Change (fun value ->
+            on_change (Bool.of_string value)))
+        in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_disclosure_group view.native title is_expanded event_id
+  ;;
+
+  let set_navigation_path_stack view ~path ~on_path_change ~destinations =
+    let event_id =
+      match on_path_change with
+      | None ->
+        clear_handler view.change_event_id;
+        view.change_event_id <- None;
+        no_event
+      | Some on_path_change ->
+        let event_id =
+          install_handler view.change_event_id (Change (fun payload ->
+            let path =
+              if String.is_empty payload then [] else String.split payload ~on:'\n'
+            in
+            on_path_change path))
+        in
+        view.change_event_id <- Some event_id;
+        event_id
+    in
+    set_native_navigation_path_stack
+      view.native
+      (Array.of_list path)
+      event_id
+      (Array.of_list destinations)
+  ;;
+
   let set_file_exporter view (export : Apple.file_export) =
     set_native_file_exporter
       view.native
@@ -903,11 +1222,6 @@ module Backend = struct
       let event_id = install_handler view.change_event_id (Change handler) in
       view.change_event_id <- Some event_id;
       set_native_on_change view.native event_id
-  ;;
-
-  let style_id = function
-    | Apple.Default -> 0
-    | Apple.Destructive -> 1
   ;;
 
   let list_row_content_style_id = function
@@ -1027,7 +1341,14 @@ module Backend = struct
     clear_native_searchable view.native
   ;;
 
-  let install_sheet view ~schedule_event ~is_presented ~content ~on_dismiss =
+  let detent_id_and_value = function
+    | Apple.Medium -> 0, 0.
+    | Apple.Large -> 1, 0.
+    | Apple.Fraction fraction -> 2, fraction
+    | Apple.Height height -> 3, height
+  ;;
+
+  let install_sheet view ~schedule_event ~is_presented ~content ~detents ~on_dismiss =
     let dismiss_event_id =
       match on_dismiss with
       | None ->
@@ -1047,13 +1368,48 @@ module Backend = struct
       view.native
       (Option.map content ~f:(fun content -> content.native))
       is_presented
-      dismiss_event_id
+      dismiss_event_id;
+    let detents = List.map detents ~f:detent_id_and_value in
+    set_native_sheet_detents
+      view.native
+      (Array.of_list (List.map detents ~f:fst))
+      (Array.of_list (List.map detents ~f:snd))
   ;;
 
   let clear_sheet view =
     clear_handler view.sheet_dismiss_event_id;
     view.sheet_dismiss_event_id <- None;
-    set_native_sheet view.native None false no_event
+    set_native_sheet view.native None false no_event;
+    set_native_sheet_detents view.native [||] [||]
+  ;;
+
+  let install_popover view ~schedule_event ~is_presented ~content ~on_dismiss =
+    let dismiss_event_id =
+      match on_dismiss with
+      | None ->
+        clear_handler view.popover_dismiss_event_id;
+        view.popover_dismiss_event_id <- None;
+        no_event
+      | Some on_dismiss ->
+        let event_id =
+          install_handler
+            view.popover_dismiss_event_id
+            (Click (fun () -> schedule_event on_dismiss))
+        in
+        view.popover_dismiss_event_id <- Some event_id;
+        event_id
+    in
+    set_native_popover
+      view.native
+      (Option.map content ~f:(fun content -> content.native))
+      is_presented
+      dismiss_event_id
+  ;;
+
+  let clear_popover view =
+    clear_handler view.popover_dismiss_event_id;
+    view.popover_dismiss_event_id <- None;
+    set_native_popover view.native None false no_event
   ;;
 
   let set_safe_area_inset_bottom view content =
@@ -1128,6 +1484,51 @@ module Backend = struct
     clear_native_alert_actions view.native
   ;;
 
+  let install_confirmation_dialog
+    view
+    ~schedule_event
+    ~is_presented
+    ~title
+    ~message
+    ~actions
+    ~on_dismiss
+    =
+    List.iter view.confirmation_dialog_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.confirmation_dialog_event_ids <- [];
+    let install_click effect =
+      let event_id = install_handler None (Click (fun () -> schedule_event effect)) in
+      view.confirmation_dialog_event_ids <- event_id :: view.confirmation_dialog_event_ids;
+      event_id
+    in
+    let dismiss_event_id =
+      match on_dismiss with
+      | None -> no_event
+      | Some on_dismiss -> install_click on_dismiss
+    in
+    set_native_confirmation_dialog
+      view.native
+      is_presented
+      dismiss_event_id
+      (Some title)
+      message;
+    clear_native_confirmation_dialog_actions view.native;
+    List.iter actions ~f:(fun (action : Apple.alert_action) ->
+      append_native_confirmation_dialog_action
+        view.native
+        action.id
+        action.title
+        (alert_role_id action.role)
+        action.is_enabled
+        (install_click action.on_click))
+  ;;
+
+  let clear_confirmation_dialog view =
+    List.iter view.confirmation_dialog_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.confirmation_dialog_event_ids <- [];
+    set_native_confirmation_dialog view.native false no_event None None;
+    clear_native_confirmation_dialog_actions view.native
+  ;;
+
   let install_toolbar view ~schedule_event items =
     List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
     view.toolbar_event_ids <- [];
@@ -1169,6 +1570,8 @@ module Backend = struct
   let set_modifiers view ~schedule_event modifiers =
     let saw_searchable = ref false in
     let saw_sheet = ref false in
+    let saw_popover = ref false in
+    let saw_confirmation_dialog = ref false in
     let saw_safe_area_inset_bottom = ref false in
     let saw_alert = ref false in
     let saw_toolbar = ref false in
@@ -1181,9 +1584,23 @@ module Backend = struct
       | Apple.Rendered_searchable { text; on_change } ->
         saw_searchable := true;
         install_searchable view ~schedule_event ~text ~on_change
-      | Apple.Rendered_sheet { is_presented; content; on_dismiss } ->
+      | Apple.Rendered_sheet { is_presented; content; detents; on_dismiss } ->
         saw_sheet := true;
-        install_sheet view ~schedule_event ~is_presented ~content ~on_dismiss
+        install_sheet view ~schedule_event ~is_presented ~content ~detents ~on_dismiss
+      | Apple.Rendered_popover { is_presented; content; on_dismiss } ->
+        saw_popover := true;
+        install_popover view ~schedule_event ~is_presented ~content ~on_dismiss
+      | Apple.Rendered_confirmation_dialog
+          { is_presented; title; message; actions; on_dismiss } ->
+        saw_confirmation_dialog := true;
+        install_confirmation_dialog
+          view
+          ~schedule_event
+          ~is_presented
+          ~title
+          ~message
+          ~actions
+          ~on_dismiss
       | Apple.Rendered_safe_area_inset_bottom { content } ->
         saw_safe_area_inset_bottom := true;
         set_safe_area_inset_bottom view (Some content)
@@ -1232,6 +1649,8 @@ module Backend = struct
         set_tap_action view (Some (fun () -> schedule_event on_click)));
     if not !saw_searchable then clear_searchable view;
     if not !saw_sheet then clear_sheet view;
+    if not !saw_popover then clear_popover view;
+    if not !saw_confirmation_dialog then clear_confirmation_dialog view;
     if not !saw_safe_area_inset_bottom then set_safe_area_inset_bottom view None;
     if not !saw_alert then clear_alert view;
     if not !saw_toolbar then clear_toolbar view;

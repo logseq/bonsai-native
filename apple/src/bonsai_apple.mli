@@ -35,6 +35,22 @@ type alert_action =
   ; on_click : unit Effect.t
   }
 
+type presentation_detent =
+  | Medium
+  | Large
+  | Fraction of float
+  | Height of float
+[@@deriving sexp_of]
+
+type menu_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; style : row_action_style
+  ; is_enabled : bool
+  ; on_click : unit Effect.t
+  }
+
 type file_export =
   { filename : string
   ; content_type : string
@@ -223,8 +239,20 @@ val progress_view : value:float -> node
 
 val vstack : ?spacing:float -> node list -> node
 val hstack : ?spacing:float -> node list -> node
+val zstack : node list -> node
+val spacer : unit -> node
+val divider : unit -> node
+val form : node list -> node
 val scroll_view : node -> node
-val list : 'a list -> key:('a -> string) -> row:('a -> node) -> node
+val list
+  :  ?on_refresh:unit Effect.t
+  -> ?on_delete:(int -> unit Effect.t)
+  -> ?on_move:(from_index:int -> to_index:int -> unit Effect.t)
+  -> ?edit_mode:bool
+  -> 'a list
+  -> key:('a -> string)
+  -> row:('a -> node)
+  -> node
 val section : key:string -> ?title:string -> node list -> node
 val section_key : node -> string
 val picker_option : id:string -> title:string -> picker_option
@@ -234,7 +262,54 @@ val picker
   -> on_select:(string -> unit Effect.t)
   -> picker_option list
   -> node
+val slider
+  :  title:string
+  -> value:float
+  -> min:float
+  -> max:float
+  -> on_change:(float -> unit Effect.t)
+  -> node
+val stepper
+  :  title:string
+  -> value:int
+  -> min:int
+  -> max:int
+  -> step:int
+  -> on_change:(int -> unit Effect.t)
+  -> node
+val date_picker
+  :  title:string
+  -> selected:string
+  -> on_select:(string -> unit Effect.t)
+  -> node
+val color_picker
+  :  title:string
+  -> selected:string
+  -> on_select:(string -> unit Effect.t)
+  -> node
+val menu_action
+  :  id:string
+  -> title:string
+  -> ?system_image:string
+  -> ?style:row_action_style
+  -> ?is_enabled:bool
+  -> on_click:unit Effect.t
+  -> unit
+  -> menu_action
+val menu : title:string -> ?system_image:string -> menu_action list -> node
+val disclosure_group
+  :  title:string
+  -> is_expanded:bool
+  -> on_change:(bool -> unit Effect.t)
+  -> node list
+  -> node
 val navigation_stack : node list -> node
+val navigation_path_stack
+  :  path:string list
+  -> on_path_change:(string list -> unit Effect.t)
+  -> root:node
+  -> destinations:(string * node) list
+  -> node
 val navigation_link
   :  ?on_activate:unit Effect.t
   -> ?on_deactivate:unit Effect.t
@@ -355,7 +430,23 @@ val alert
 val sheet
   :  is_presented:bool
   -> content:node
+  -> ?detents:presentation_detent list
   -> ?on_dismiss:unit Effect.t
+  -> node
+  -> node
+val popover
+  :  is_presented:bool
+  -> content:node
+  -> ?on_dismiss:unit Effect.t
+  -> node
+  -> node
+val confirmation_dialog
+  :  is_presented:bool
+  -> title:string
+  -> ?message:string
+  -> ?actions:alert_action list
+  -> ?on_dismiss:unit Effect.t
+  -> unit
   -> node
   -> node
 
@@ -371,9 +462,14 @@ type backend_kind =
   | Text_editor
   | Toggle
   | Stack of axis
+  | Z_stack
+  | Spacer
+  | Divider
+  | Form
   | Scroll_view
   | List
   | Navigation_stack
+  | Navigation_path_stack
   | Navigation_link
   | Navigation_split
   | Adaptive_layout
@@ -383,6 +479,12 @@ type backend_kind =
   | List_row
   | Section
   | Picker
+  | Slider
+  | Stepper
+  | Date_picker
+  | Color_picker
+  | Menu
+  | Disclosure_group
   | Photo_picker
   | Share_link
   | File_exporter
@@ -407,6 +509,19 @@ type modifier =
   | Sheet of
       { is_presented : bool
       ; content : node
+      ; detents : presentation_detent list
+      ; on_dismiss : unit Effect.t option
+      }
+  | Popover of
+      { is_presented : bool
+      ; content : node
+      ; on_dismiss : unit Effect.t option
+      }
+  | Confirmation_dialog of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; actions : alert_action list
       ; on_dismiss : unit Effect.t option
       }
   | Alert of
@@ -435,6 +550,19 @@ type 'view rendered_modifier =
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
+      ; detents : presentation_detent list
+      ; on_dismiss : unit Effect.t option
+      }
+  | Rendered_popover of
+      { is_presented : bool
+      ; content : 'view option
+      ; on_dismiss : unit Effect.t option
+      }
+  | Rendered_confirmation_dialog of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; actions : alert_action list
       ; on_dismiss : unit Effect.t option
       }
   | Rendered_alert of
@@ -486,6 +614,13 @@ module Renderer : sig
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
+    val set_list_behavior
+      :  view
+      -> on_refresh:(unit -> unit) option
+      -> on_delete:(int -> unit) option
+      -> on_move:(from_index:int -> to_index:int -> unit) option
+      -> edit_mode:bool
+      -> unit
     val set_tabs
       :  view
       -> selected:string
@@ -536,6 +671,54 @@ module Renderer : sig
       -> selected:string
       -> on_select:(string -> unit) option
       -> rendered_picker_option list
+      -> unit
+    val set_slider
+      :  view
+      -> title:string
+      -> value:float
+      -> min:float
+      -> max:float
+      -> on_change:(float -> unit) option
+      -> unit
+    val set_stepper
+      :  view
+      -> title:string
+      -> value:int
+      -> min:int
+      -> max:int
+      -> step:int
+      -> on_change:(int -> unit) option
+      -> unit
+    val set_date_picker
+      :  view
+      -> title:string
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> unit
+    val set_color_picker
+      :  view
+      -> title:string
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> unit
+    val set_menu
+      :  view
+      -> title:string
+      -> system_image:string option
+      -> actions:menu_action list
+      -> schedule_event:(unit Effect.t -> unit)
+      -> unit
+    val set_disclosure_group
+      :  view
+      -> title:string
+      -> is_expanded:bool
+      -> on_change:(bool -> unit) option
+      -> unit
+    val set_navigation_path_stack
+      :  view
+      -> path:string list
+      -> on_path_change:(string list -> unit) option
+      -> destinations:string list
       -> unit
     val set_file_exporter : view -> file_export -> unit
     val set_share_link : view -> share_link -> unit
@@ -609,6 +792,8 @@ module For_testing : sig
       -> unit
     val change_alert_text_exn : view -> text:string -> unit
     val click_alert_action_exn : view -> id:string -> unit
+    val click_confirmation_dialog_action_exn : view -> id:string -> unit
+    val dismiss_popover_exn : view -> unit
     val change_nested_sheet_alert_text_exn
       :  view
       -> path:int list
@@ -629,6 +814,16 @@ module For_testing : sig
       -> text:string
       -> unit
     val change_toggle_exn : view -> path:int list -> is_on:bool -> unit
+    val change_slider_exn : view -> path:int list -> value:float -> unit
+    val change_stepper_exn : view -> path:int list -> value:int -> unit
+    val select_date_exn : view -> path:int list -> selected:string -> unit
+    val select_color_exn : view -> path:int list -> selected:string -> unit
+    val click_menu_action_exn : view -> path:int list -> id:string -> unit
+    val change_disclosure_group_exn : view -> path:int list -> is_expanded:bool -> unit
+    val change_navigation_path_exn : view -> path:string list -> unit
+    val refresh_list_exn : view -> path:int list -> unit
+    val delete_list_row_exn : view -> path:int list -> index:int -> unit
+    val move_list_row_exn : view -> path:int list -> from_index:int -> to_index:int -> unit
     val submit_text_exn : view -> path:int list -> unit
     val submit_safe_area_inset_bottom_text_exn
       :  view

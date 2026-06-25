@@ -35,6 +35,22 @@ type alert_action =
   ; on_click : unit Effect.t
   }
 
+type presentation_detent =
+  | Medium
+  | Large
+  | Fraction of float
+  | Height of float
+[@@deriving sexp_of, equal]
+
+type menu_action =
+  { id : string
+  ; title : string
+  ; system_image : string option
+  ; style : row_action_style
+  ; is_enabled : bool
+  ; on_click : unit Effect.t
+  }
+
 type file_export =
   { filename : string
   ; content_type : string
@@ -211,9 +227,14 @@ type backend_kind =
   | Text_editor
   | Toggle
   | Stack of axis
+  | Z_stack
+  | Spacer
+  | Divider
+  | Form
   | Scroll_view
   | List
   | Navigation_stack
+  | Navigation_path_stack
   | Navigation_link
   | Navigation_split
   | Adaptive_layout
@@ -223,6 +244,12 @@ type backend_kind =
   | List_row
   | Section
   | Picker
+  | Slider
+  | Stepper
+  | Date_picker
+  | Color_picker
+  | Menu
+  | Disclosure_group
   | Photo_picker
   | Share_link
   | File_exporter
@@ -269,9 +296,25 @@ type node =
       ; spacing : float option
       ; children : node list
       }
+  | Z_stack_node of node list
+  | Spacer_node
+  | Divider_node
+  | Form_node of node list
   | Scroll_view_node of node
-  | List_node of keyed_node list
+  | List_node of
+      { rows : keyed_node list
+      ; on_refresh : unit Effect.t option
+      ; on_delete : (int -> unit Effect.t) option
+      ; on_move : (from_index:int -> to_index:int -> unit Effect.t) option
+      ; edit_mode : bool
+      }
   | Navigation_stack_node of node list
+  | Navigation_path_stack_node of
+      { path : string list
+      ; on_path_change : string list -> unit Effect.t
+      ; root : node
+      ; destinations : keyed_node list
+      }
   | Navigation_link_node of
       { label : node
       ; destination : node
@@ -317,6 +360,42 @@ type node =
       ; selected : string
       ; on_select : string -> unit Effect.t
       ; options : picker_option list
+      }
+  | Slider_node of
+      { title : string
+      ; value : float
+      ; min : float
+      ; max : float
+      ; on_change : float -> unit Effect.t
+      }
+  | Stepper_node of
+      { title : string
+      ; value : int
+      ; min : int
+      ; max : int
+      ; step : int
+      ; on_change : int -> unit Effect.t
+      }
+  | Date_picker_node of
+      { title : string
+      ; selected : string
+      ; on_select : string -> unit Effect.t
+      }
+  | Color_picker_node of
+      { title : string
+      ; selected : string
+      ; on_select : string -> unit Effect.t
+      }
+  | Menu_node of
+      { title : string
+      ; system_image : string option
+      ; actions : menu_action list
+      }
+  | Disclosure_group_node of
+      { title : string
+      ; is_expanded : bool
+      ; on_change : bool -> unit Effect.t
+      ; children : node list
       }
   | Photo_picker_node of
       { title : string
@@ -378,6 +457,19 @@ and modifier =
   | Sheet of
       { is_presented : bool
       ; content : node
+      ; detents : presentation_detent list
+      ; on_dismiss : unit Effect.t option
+      }
+  | Popover of
+      { is_presented : bool
+      ; content : node
+      ; on_dismiss : unit Effect.t option
+      }
+  | Confirmation_dialog of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; actions : alert_action list
       ; on_dismiss : unit Effect.t option
       }
   | Alert of
@@ -406,6 +498,19 @@ type 'view rendered_modifier =
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
+      ; detents : presentation_detent list
+      ; on_dismiss : unit Effect.t option
+      }
+  | Rendered_popover of
+      { is_presented : bool
+      ; content : 'view option
+      ; on_dismiss : unit Effect.t option
+      }
+  | Rendered_confirmation_dialog of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; actions : alert_action list
       ; on_dismiss : unit Effect.t option
       }
   | Rendered_alert of
@@ -478,16 +583,30 @@ let text_editor ?placeholder ~text ~on_change () =
 let progress_view ~value = Progress_view_node { value }
 let vstack ?spacing children = Stack_node { axis = Vertical; spacing; children }
 let hstack ?spacing children = Stack_node { axis = Horizontal; spacing; children }
+let zstack children = Z_stack_node children
+let spacer () = Spacer_node
+let divider () = Divider_node
+let form children = Form_node children
 let scroll_view child = Scroll_view_node child
 
-let list rows ~key ~row =
+let list
+  ?on_refresh
+  ?on_delete
+  ?on_move
+  ?(edit_mode = false)
+  rows
+  ~key
+  ~row
+  =
   let seen = String.Hash_set.create () in
-  List_node
-    (List.map rows ~f:(fun value ->
+  let rows =
+    List.map rows ~f:(fun value ->
        let key = key value in
        if Hash_set.mem seen key then failwithf "duplicate Bonsai Apple list key: %s" key ();
        Hash_set.add seen key;
-       { key; node = row value }))
+       { key; node = row value })
+  in
+  List_node { rows; on_refresh; on_delete; on_move; edit_mode }
 ;;
 
 let section ~key ?title children = Section_node { key; title; children }
@@ -508,7 +627,60 @@ let picker ~title ~selected ~on_select (options : picker_option list) =
   Picker_node { title; selected; on_select; options }
 ;;
 
+let slider ~title ~value ~min ~max ~on_change =
+  Slider_node { title; value; min; max; on_change }
+;;
+
+let stepper ~title ~value ~min ~max ~step ~on_change =
+  Stepper_node { title; value; min; max; step; on_change }
+;;
+
+let date_picker ~title ~selected ~on_select =
+  Date_picker_node { title; selected; on_select }
+;;
+
+let color_picker ~title ~selected ~on_select =
+  Color_picker_node { title; selected; on_select }
+;;
+
+let menu_action
+  ~id
+  ~title
+  ?system_image
+  ?(style = Default)
+  ?(is_enabled = true)
+  ~on_click
+  ()
+  =
+  { id; title; system_image; style; is_enabled; on_click }
+;;
+
+let menu ~title ?system_image (actions : menu_action list) =
+  let seen = String.Hash_set.create () in
+  List.iter actions ~f:(fun action ->
+    if Hash_set.mem seen action.id
+    then failwithf "duplicate Bonsai Apple menu action id: %s" action.id ();
+    Hash_set.add seen action.id);
+  Menu_node { title; system_image; actions }
+;;
+
+let disclosure_group ~title ~is_expanded ~on_change children =
+  Disclosure_group_node { title; is_expanded; on_change; children }
+;;
+
 let navigation_stack children = Navigation_stack_node children
+
+let navigation_path_stack ~path ~on_path_change ~root ~destinations =
+  let seen = String.Hash_set.create () in
+  let destinations =
+    List.map destinations ~f:(fun (key, node) ->
+      if Hash_set.mem seen key
+      then failwithf "duplicate Bonsai Apple navigation destination id: %s" key ();
+      Hash_set.add seen key;
+      { key; node })
+  in
+  Navigation_path_stack_node { path; on_path_change; root; destinations }
+;;
 
 let navigation_link ?on_activate ?on_deactivate ~destination label =
   Navigation_link_node { label; destination; on_activate; on_deactivate }
@@ -814,8 +986,26 @@ let sidebar_action ~id ~title ?system_image ~(on_click : unit Effect.t) ()
   { id; title; system_image; on_click }
 ;;
 
-let sheet ~is_presented ~content ?on_dismiss node =
-  Modified_node (Sheet { is_presented; content; on_dismiss }, node)
+let sheet ~is_presented ~content ?(detents = []) ?on_dismiss node =
+  Modified_node (Sheet { is_presented; content; detents; on_dismiss }, node)
+;;
+
+let popover ~is_presented ~content ?on_dismiss node =
+  Modified_node (Popover { is_presented; content; on_dismiss }, node)
+;;
+
+let confirmation_dialog
+  ~is_presented
+  ~title
+  ?message
+  ?(actions = [])
+  ?on_dismiss
+  ()
+  node
+  =
+  Modified_node
+    ( Confirmation_dialog { is_presented; title; message; actions; on_dismiss }
+    , node )
 ;;
 
 let rec unwrap_modifiers node =
@@ -834,9 +1024,14 @@ let backend_kind = function
   | Text_editor_node _ -> Text_editor
   | Progress_view_node _ -> Progress_view
   | Stack_node { axis; _ } -> Stack axis
+  | Z_stack_node _ -> Z_stack
+  | Spacer_node -> Spacer
+  | Divider_node -> Divider
+  | Form_node _ -> Form
   | Scroll_view_node _ -> Scroll_view
   | List_node _ -> List
   | Navigation_stack_node _ -> Navigation_stack
+  | Navigation_path_stack_node _ -> Navigation_path_stack
   | Navigation_link_node _ -> Navigation_link
   | Navigation_split_node _ -> Navigation_split
   | Adaptive_layout_node _ -> Adaptive_layout
@@ -846,6 +1041,12 @@ let backend_kind = function
   | List_row_node _ -> List_row
   | Section_node _ -> Section
   | Picker_node _ -> Picker
+  | Slider_node _ -> Slider
+  | Stepper_node _ -> Stepper
+  | Date_picker_node _ -> Date_picker
+  | Color_picker_node _ -> Color_picker
+  | Menu_node _ -> Menu
+  | Disclosure_group_node _ -> Disclosure_group
   | Photo_picker_node _ -> Photo_picker
   | Share_link_node _ -> Share_link
   | File_exporter_node _ -> File_exporter
@@ -873,6 +1074,13 @@ module Renderer = struct
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
     val set_children : view -> keyed:(string option) list -> view list -> unit
+    val set_list_behavior
+      :  view
+      -> on_refresh:(unit -> unit) option
+      -> on_delete:(int -> unit) option
+      -> on_move:(from_index:int -> to_index:int -> unit) option
+      -> edit_mode:bool
+      -> unit
     val set_tabs
       :  view
       -> selected:string
@@ -923,6 +1131,54 @@ module Renderer = struct
       -> selected:string
       -> on_select:(string -> unit) option
       -> rendered_picker_option list
+      -> unit
+    val set_slider
+      :  view
+      -> title:string
+      -> value:float
+      -> min:float
+      -> max:float
+      -> on_change:(float -> unit) option
+      -> unit
+    val set_stepper
+      :  view
+      -> title:string
+      -> value:int
+      -> min:int
+      -> max:int
+      -> step:int
+      -> on_change:(int -> unit) option
+      -> unit
+    val set_date_picker
+      :  view
+      -> title:string
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> unit
+    val set_color_picker
+      :  view
+      -> title:string
+      -> selected:string
+      -> on_select:(string -> unit) option
+      -> unit
+    val set_menu
+      :  view
+      -> title:string
+      -> system_image:string option
+      -> actions:menu_action list
+      -> schedule_event:(unit Effect.t -> unit)
+      -> unit
+    val set_disclosure_group
+      :  view
+      -> title:string
+      -> is_expanded:bool
+      -> on_change:(bool -> unit) option
+      -> unit
+    val set_navigation_path_stack
+      :  view
+      -> path:string list
+      -> on_path_change:(string list -> unit) option
+      -> destinations:string list
       -> unit
     val set_file_exporter : view -> file_export -> unit
     val set_share_link : view -> share_link -> unit
@@ -997,8 +1253,24 @@ module Renderer = struct
           | Tap_action _ -> [%sexp "tap-action"]
           | Safe_area_inset_bottom { content } ->
             [%sexp "safe-area-inset-bottom", (fingerprint content : string)]
-          | Sheet { is_presented; content; on_dismiss = _ } ->
-            [%sexp "sheet", (is_presented : bool), (fingerprint content : string)]
+          | Sheet { is_presented; content; detents; on_dismiss = _ } ->
+            [%sexp
+              "sheet"
+            , (is_presented : bool)
+            , (fingerprint content : string)
+            , (detents : presentation_detent list)]
+          | Popover { is_presented; content; on_dismiss = _ } ->
+            [%sexp "popover", (is_presented : bool), (fingerprint content : string)]
+          | Confirmation_dialog
+              { is_presented; title; message; actions; on_dismiss = _ } ->
+            [%sexp
+              "confirmation-dialog"
+            , (is_presented : bool)
+            , (title : string)
+            , (message : string option)
+            , (List.map actions ~f:(fun action ->
+                 action.id, action.title, action.role, action.is_enabled)
+               : (string * string * alert_action_role * bool) list)]
           | Alert
               { is_presented
               ; title
@@ -1052,14 +1324,31 @@ module Renderer = struct
           , (axis : axis)
           , (spacing : float option)
           , (List.map children ~f:fingerprint : string list)]
+        | Z_stack_node children ->
+          [%sexp "zstack", (List.map children ~f:fingerprint : string list)]
+        | Spacer_node -> [%sexp "spacer"]
+        | Divider_node -> [%sexp "divider"]
+        | Form_node children ->
+          [%sexp "form", (List.map children ~f:fingerprint : string list)]
         | Scroll_view_node child -> [%sexp "scroll-view", (fingerprint child : string)]
-        | List_node rows ->
+        | List_node { rows; on_refresh; on_delete; on_move; edit_mode } ->
           [%sexp
             ( "list"
             , (List.map rows ~f:(fun row -> row.key, fingerprint row.node)
-               : (string * string) list) )]
+               : (string * string) list)
+            , (Option.is_some on_refresh : bool)
+            , (Option.is_some on_delete : bool)
+            , (Option.is_some on_move : bool)
+            , (edit_mode : bool) )]
         | Navigation_stack_node children ->
           [%sexp "navigation-stack", (List.map children ~f:fingerprint : string list)]
+        | Navigation_path_stack_node { path; root; destinations; on_path_change = _ } ->
+          [%sexp
+            ( "navigation-path-stack"
+            , (path : string list)
+            , (fingerprint root : string)
+            , (List.map destinations ~f:(fun row -> row.key, fingerprint row.node)
+               : (string * string) list) )]
         | Navigation_link_node { label; destination; on_activate = _; on_deactivate = _ } ->
           [%sexp
             "navigation-link"
@@ -1143,6 +1432,34 @@ module Renderer = struct
         | Image_node image -> [%sexp "image", (image : image)]
         | Picker_node { title; selected; options; on_select = _ } ->
           [%sexp "picker", (title : string), (selected : string), (options : picker_option list)]
+        | Slider_node { title; value; min; max; on_change = _ } ->
+          [%sexp "slider", (title : string), (value : float), (min : float), (max : float)]
+        | Stepper_node { title; value; min; max; step; on_change = _ } ->
+          [%sexp
+            "stepper"
+          , (title : string)
+          , (value : int)
+          , (min : int)
+          , (max : int)
+          , (step : int)]
+        | Date_picker_node { title; selected; on_select = _ } ->
+          [%sexp "date-picker", (title : string), (selected : string)]
+        | Color_picker_node { title; selected; on_select = _ } ->
+          [%sexp "color-picker", (title : string), (selected : string)]
+        | Menu_node { title; system_image; actions } ->
+          [%sexp
+            "menu"
+          , (title : string)
+          , (system_image : string option)
+          , (List.map actions ~f:(fun action ->
+               action.id, action.title, action.system_image, action.style, action.is_enabled)
+             : (string * string * string option * row_action_style * bool) list)]
+        | Disclosure_group_node { title; is_expanded; children; on_change = _ } ->
+          [%sexp
+            "disclosure-group"
+          , (title : string)
+          , (is_expanded : bool)
+          , (List.map children ~f:fingerprint : string list)]
         | Photo_picker_node
             { title
             ; system_image
@@ -1197,15 +1514,24 @@ module Renderer = struct
     (* Skipping a patch also skips callback refresh. Only nodes whose callbacks are
        represented in their fingerprint can safely use this path. *)
     and can_skip_patch_when_unchanged = function
-      | Text _ | Image_node _ | List_row_node _ | Progress_view_node _ | Custom_view_node _ -> true
+      | Text _
+      | Image_node _
+      | List_row_node _
+      | Progress_view_node _
+      | Spacer_node
+      | Divider_node
+      | Custom_view_node _ -> true
       | Button_node _
       | Text_field_node _
       | Toggle_node _
       | Text_editor_node _
       | Stack_node _
+      | Z_stack_node _
+      | Form_node _
       | Scroll_view_node _
       | List_node _
       | Navigation_stack_node _
+      | Navigation_path_stack_node _
       | Navigation_link_node _
       | Navigation_split_node _
       | Adaptive_layout_node _
@@ -1213,6 +1539,12 @@ module Renderer = struct
       | Tab_view_node _
       | Sidebar_split_node _
       | Picker_node _
+      | Slider_node _
+      | Stepper_node _
+      | Date_picker_node _
+      | Color_picker_node _
+      | Menu_node _
+      | Disclosure_group_node _
       | Photo_picker_node _
       | Share_link_node _
       | File_exporter_node _
@@ -1287,18 +1619,51 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
+       | Z_stack_node children ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t children
+       | Spacer_node | Divider_node ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Form_node children ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t children
        | Scroll_view_node child ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t [ child ]
-       | List_node rows ->
+       | List_node { rows; on_refresh; on_delete; on_move; edit_mode } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
+         Backend.set_list_behavior
+           t.view
+           ~on_refresh:(Option.map on_refresh ~f:(fun effect -> fun () -> t.schedule_event effect))
+           ~on_delete:
+             (Option.map on_delete ~f:(fun on_delete ->
+                fun index -> t.schedule_event (on_delete index)))
+           ~on_move:
+             (Option.map on_move ~f:(fun on_move ->
+                fun ~from_index ~to_index ->
+                  t.schedule_event (on_move ~from_index ~to_index)))
+           ~edit_mode;
          reconcile_keyed t rows
        | Navigation_stack_node children ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
+       | Navigation_path_stack_node { path; on_path_change; root; destinations } ->
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         Backend.set_navigation_path_stack
+           t.view
+           ~path
+           ~on_path_change:
+             (Some (fun path -> t.schedule_event (on_path_change path)))
+           ~destinations:(List.map destinations ~f:(fun destination -> destination.key));
+         reconcile_keyed t ({ key = "__root__"; node = root } :: destinations)
        | Navigation_link_node { label; destination; on_activate; on_deactivate } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
@@ -1427,6 +1792,61 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          replace_children []
+       | Slider_node { title; value; min; max; on_change } ->
+         Backend.set_slider
+           t.view
+           ~title
+           ~value
+           ~min
+           ~max
+           ~on_change:(Some (fun value -> t.schedule_event (on_change value)));
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Stepper_node { title; value; min; max; step; on_change } ->
+         Backend.set_stepper
+           t.view
+           ~title
+           ~value
+           ~min
+           ~max
+           ~step
+           ~on_change:(Some (fun value -> t.schedule_event (on_change value)));
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Date_picker_node { title; selected; on_select } ->
+         Backend.set_date_picker
+           t.view
+           ~title
+           ~selected
+           ~on_select:(Some (fun selected -> t.schedule_event (on_select selected)));
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Color_picker_node { title; selected; on_select } ->
+         Backend.set_color_picker
+           t.view
+           ~title
+           ~selected
+           ~on_select:(Some (fun selected -> t.schedule_event (on_select selected)));
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Menu_node { title; system_image; actions } ->
+         Backend.set_menu t.view ~title ~system_image ~actions ~schedule_event:t.schedule_event;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         replace_children []
+       | Disclosure_group_node { title; is_expanded; on_change; children } ->
+         Backend.set_disclosure_group
+           t.view
+           ~title
+           ~is_expanded
+           ~on_change:(Some (fun is_expanded -> t.schedule_event (on_change is_expanded)));
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t children
        | Photo_picker_node
            { title; system_image; is_title_visible; is_enabled; wants_payload; selected; on_select } ->
          Backend.set_text t.view title;
@@ -1591,7 +2011,7 @@ module Renderer = struct
             let mounted = patch_child ~schedule_event:t.schedule_event existing content in
             next_modifier_children := { index; mounted } :: !next_modifier_children;
             Rendered_safe_area_inset_bottom { content = mounted.view }
-          | Sheet { is_presented; content; on_dismiss } ->
+          | Sheet { is_presented; content; detents; on_dismiss } ->
             let content =
               if is_presented
               then (
@@ -1605,7 +2025,25 @@ module Renderer = struct
                 Some mounted.view)
               else None
             in
-            Rendered_sheet { is_presented; content; on_dismiss }
+            Rendered_sheet { is_presented; content; detents; on_dismiss }
+          | Popover { is_presented; content; on_dismiss } ->
+            let content =
+              if is_presented
+              then (
+                Hash_set.add used index;
+                let existing =
+                  Hashtbl.find old_by_index index
+                  |> Option.map ~f:(fun child -> { key = None; mounted = child.mounted })
+                in
+                let mounted = patch_child ~schedule_event:t.schedule_event existing content in
+                next_modifier_children := { index; mounted } :: !next_modifier_children;
+                Some mounted.view)
+              else None
+            in
+            Rendered_popover { is_presented; content; on_dismiss }
+          | Confirmation_dialog { is_presented; title; message; actions; on_dismiss } ->
+            Rendered_confirmation_dialog
+              { is_presented; title; message; actions; on_dismiss }
           | Alert
               { is_presented
               ; title
@@ -1743,13 +2181,35 @@ module For_testing = struct
       ; mutable text_field_secure : bool
       ; mutable toggle_is_on : bool
       ; mutable progress_value : float option
+      ; mutable slider_value : float option
+      ; mutable slider_range : (float * float) option
+      ; mutable on_slider_change : (float -> unit) option
+      ; mutable stepper_value : int option
+      ; mutable stepper_range : (int * int) option
+      ; mutable stepper_step : int option
+      ; mutable on_stepper_change : (int -> unit) option
+      ; mutable selected_date : string option
+      ; mutable on_select_date : (string -> unit) option
+      ; mutable selected_color : string option
+      ; mutable on_select_color : (string -> unit) option
+      ; mutable menu_actions : menu_action list
+      ; mutable disclosure_is_expanded : bool
+      ; mutable on_disclosure_change : (bool -> unit) option
       ; mutable children : (string option * view) list
       ; mutable is_enabled : bool
       ; mutable on_click : (unit -> unit) option
       ; mutable on_change : (string -> unit) option
       ; mutable on_toggle : (bool -> unit) option
+      ; mutable on_list_refresh : (unit -> unit) option
+      ; mutable on_list_delete : (int -> unit) option
+      ; mutable on_list_move : (from_index:int -> to_index:int -> unit) option
+      ; mutable list_edit_mode : bool
       ; mutable on_navigation_activate : (unit -> unit) option
       ; mutable on_navigation_deactivate : (unit -> unit) option
+      ; mutable navigation_path : string list
+      ; mutable navigation_destinations : string list
+      ; mutable on_navigation_path_change : (string list -> unit) option
+      ; mutable navigation_is_active : bool
       ; mutable selected_tab : string option
       ; mutable on_select_tab : (string -> unit) option
       ; mutable tabs : rendered_tab list
@@ -1820,13 +2280,35 @@ module For_testing = struct
       ; text_field_secure = false
       ; toggle_is_on = false
       ; progress_value = None
+      ; slider_value = None
+      ; slider_range = None
+      ; on_slider_change = None
+      ; stepper_value = None
+      ; stepper_range = None
+      ; stepper_step = None
+      ; on_stepper_change = None
+      ; selected_date = None
+      ; on_select_date = None
+      ; selected_color = None
+      ; on_select_color = None
+      ; menu_actions = []
+      ; disclosure_is_expanded = false
+      ; on_disclosure_change = None
       ; children = []
       ; is_enabled = true
       ; on_click = None
       ; on_change = None
       ; on_toggle = None
+      ; on_list_refresh = None
+      ; on_list_delete = None
+      ; on_list_move = None
+      ; list_edit_mode = false
       ; on_navigation_activate = None
       ; on_navigation_deactivate = None
+      ; navigation_path = []
+      ; navigation_destinations = []
+      ; on_navigation_path_change = None
+      ; navigation_is_active = false
       ; selected_tab = None
       ; on_select_tab = None
       ; tabs = []
@@ -1921,6 +2403,14 @@ module For_testing = struct
     let set_children view ~keyed children =
       mutate ();
       view.children <- List.zip_exn keyed children
+    ;;
+
+    let set_list_behavior view ~on_refresh ~on_delete ~on_move ~edit_mode =
+      mutate ();
+      view.on_list_refresh <- on_refresh;
+      view.on_list_delete <- on_delete;
+      view.on_list_move <- on_move;
+      view.list_edit_mode <- edit_mode
     ;;
 
     let set_tabs view ~selected ~on_select tabs =
@@ -2050,6 +2540,58 @@ module For_testing = struct
       view.picker_options <- options
     ;;
 
+    let set_slider view ~title ~value ~min ~max ~on_change =
+      mutate ();
+      view.text <- Some title;
+      view.slider_value <- Some value;
+      view.slider_range <- Some (min, max);
+      view.on_slider_change <- on_change
+    ;;
+
+    let set_stepper view ~title ~value ~min ~max ~step ~on_change =
+      mutate ();
+      view.text <- Some title;
+      view.stepper_value <- Some value;
+      view.stepper_range <- Some (min, max);
+      view.stepper_step <- Some step;
+      view.on_stepper_change <- on_change
+    ;;
+
+    let set_date_picker view ~title ~selected ~on_select =
+      mutate ();
+      view.text <- Some title;
+      view.selected_date <- Some selected;
+      view.on_select_date <- on_select
+    ;;
+
+    let set_color_picker view ~title ~selected ~on_select =
+      mutate ();
+      view.text <- Some title;
+      view.selected_color <- Some selected;
+      view.on_select_color <- on_select
+    ;;
+
+    let set_menu view ~title ~system_image ~actions ~schedule_event:_ =
+      mutate ();
+      view.text <- Some title;
+      view.system_image <- system_image;
+      view.menu_actions <- actions
+    ;;
+
+    let set_disclosure_group view ~title ~is_expanded ~on_change =
+      mutate ();
+      view.text <- Some title;
+      view.disclosure_is_expanded <- is_expanded;
+      view.on_disclosure_change <- on_change
+    ;;
+
+    let set_navigation_path_stack view ~path ~on_path_change ~destinations =
+      mutate ();
+      view.navigation_path <- path;
+      view.navigation_destinations <- destinations;
+      view.on_navigation_path_change <- on_path_change
+    ;;
+
     let set_file_exporter view export =
       mutate ();
       view.file_export <- Some export
@@ -2107,9 +2649,14 @@ module For_testing = struct
       | Toggle -> "toggle"
       | Stack Vertical -> "stack(vertical)"
       | Stack Horizontal -> "stack(horizontal)"
+      | Z_stack -> "zstack"
+      | Spacer -> "spacer"
+      | Divider -> "divider"
+      | Form -> "form"
       | Scroll_view -> "scroll-view"
       | List -> "list"
       | Navigation_stack -> "navigation-stack"
+      | Navigation_path_stack -> "navigation-path-stack"
       | Navigation_link -> "navigation-link"
       | Navigation_split -> "navigation-split"
       | Adaptive_layout -> "adaptive-layout"
@@ -2119,6 +2666,12 @@ module For_testing = struct
       | List_row -> "list-row"
       | Section -> "section"
       | Picker -> "picker"
+      | Slider -> "slider"
+      | Stepper -> "stepper"
+      | Date_picker -> "date-picker"
+      | Color_picker -> "color-picker"
+      | Menu -> "menu"
+      | Disclosure_group -> "disclosure-group"
       | Photo_picker -> "photo-picker"
       | Share_link -> "share-link"
       | File_exporter -> "file-exporter"
@@ -2138,10 +2691,23 @@ module For_testing = struct
       | Rendered_tap_action _ -> "tap-action"
       | Rendered_safe_area_inset_bottom _ -> "safe-area-inset-bottom"
       | Rendered_sheet _ -> "sheet"
+      | Rendered_popover _ -> "popover"
+      | Rendered_confirmation_dialog _ -> "confirmation-dialog"
       | Rendered_alert _ -> "alert"
     ;;
 
-    let rec show_lines ?key view ~indent =
+    let rec active_navigation_destination view =
+      match view.kind, view.navigation_is_active, view.children with
+      | Navigation_link, true, [ _; (_, destination) ] -> Some destination
+      | _ ->
+        List.find_map view.children ~f:(fun (_, child) -> active_navigation_destination child)
+
+    and visible_view view =
+      match active_navigation_destination view with
+      | None -> view
+      | Some destination -> visible_view destination
+
+    and show_lines ?key view ~indent =
       let spaces = String.make indent ' ' in
       let key =
         match key with
@@ -2199,6 +2765,81 @@ module For_testing = struct
       let progress =
         match view.kind, view.progress_value with
         | Progress_view, Some value -> " progress=" ^ Float.to_string value
+        | _ -> ""
+      in
+      let list_behavior =
+        match view.kind with
+        | List ->
+          let flags =
+            List.filter_opt
+              [ (if view.list_edit_mode then Some "edit-mode" else None)
+              ; (if Option.is_some view.on_list_refresh then Some "refreshable" else None)
+              ; (if Option.is_some view.on_list_delete then Some "on-delete" else None)
+              ; (if Option.is_some view.on_list_move then Some "on-move" else None)
+              ]
+          in
+          if List.is_empty flags then "" else " " ^ String.concat ~sep:" " flags
+        | _ -> ""
+      in
+      let slider =
+        match view.kind, view.slider_value, view.slider_range with
+        | Slider, Some value, Some (min, max) ->
+          sprintf " value=%g range=%g..%g" value min max
+        | _ -> ""
+      in
+      let stepper =
+        match view.kind, view.stepper_value, view.stepper_range, view.stepper_step with
+        | Stepper, Some value, Some (min, max), Some step ->
+          sprintf " value=%d range=%d..%d step=%d" value min max step
+        | _ -> ""
+      in
+      let date_picker =
+        match view.kind, view.selected_date with
+        | Date_picker, Some selected -> " selected=" ^ selected
+        | _ -> ""
+      in
+      let color_picker =
+        match view.kind, view.selected_color with
+        | Color_picker, Some selected -> " selected=" ^ selected
+        | _ -> ""
+      in
+      let menu =
+        match view.kind, view.menu_actions with
+        | Menu, actions ->
+          let action_text =
+            actions
+            |> List.map ~f:(fun (action : menu_action) ->
+              let image = Option.value action.system_image ~default:"none" in
+              let style =
+                match action.style with
+                | Default -> "default"
+                | Destructive -> "destructive"
+              in
+              sprintf
+                "%s:%s:%s:%s:%s"
+                action.id
+                action.title
+                image
+                style
+                (if action.is_enabled then "enabled" else "disabled"))
+            |> String.concat ~sep:","
+          in
+          " actions=[" ^ action_text ^ "]"
+        | _ -> ""
+      in
+      let disclosure =
+        match view.kind with
+        | Disclosure_group -> " expanded=" ^ Bool.to_string view.disclosure_is_expanded
+        | _ -> ""
+      in
+      let navigation_path =
+        match view.kind with
+        | Navigation_path_stack ->
+          " path=["
+          ^ String.concat ~sep:"," view.navigation_path
+          ^ "] destinations=["
+          ^ String.concat ~sep:"," view.navigation_destinations
+          ^ "]"
         | _ -> ""
       in
       let photo_picker =
@@ -2361,6 +3002,67 @@ module For_testing = struct
           ^ action_text
           ^ "]"
       in
+      let sheet_detents =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_sheet { detents = _ :: _ as detents; _ } -> Some detents
+            | _ -> None)
+        with
+        | None -> ""
+        | Some detents ->
+          let detent_name = function
+            | Medium -> "medium"
+            | Large -> "large"
+            | Fraction fraction -> sprintf "fraction:%g" fraction
+            | Height height -> sprintf "height:%g" height
+          in
+          " sheet-detents=["
+          ^ String.concat ~sep:"," (List.map detents ~f:detent_name)
+          ^ "]"
+      in
+      let confirmation_dialog =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_confirmation_dialog
+                { is_presented = true; title; message; actions; _ } ->
+              Some (title, message, actions)
+            | _ -> None)
+        with
+        | None -> ""
+        | Some (title, message, actions) ->
+          let role_name = function
+            | Alert_default -> "default"
+            | Alert_cancel -> "cancel"
+            | Alert_destructive -> "destructive"
+          in
+          let action_text =
+            actions
+            |> List.map ~f:(fun (action : alert_action) ->
+              sprintf
+                "%s:%s:%s:%s"
+                action.id
+                action.title
+                (role_name action.role)
+                (if action.is_enabled then "enabled" else "disabled"))
+            |> String.concat ~sep:","
+          in
+          " confirmation-dialog="
+          ^ title
+          ^ " message="
+          ^ Sexp.to_string_hum ([%sexp_of: string option] message)
+          ^ " actions=["
+          ^ action_text
+          ^ "]"
+      in
+      let popover =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_popover { is_presented = true; _ } -> Some ()
+            | _ -> None)
+        with
+        | None -> ""
+        | Some () -> " popover=true"
+      in
       let selected =
         match view.selected_tab with
         | None -> ""
@@ -2458,11 +3160,33 @@ module For_testing = struct
       let child_lines =
         match view.kind, view.children with
         | Navigation_link, [ (_, label); _ ] ->
-          (spaces ^ "  label:")
-          :: show_lines label ~indent:(indent + 4)
+          let label_lines =
+            (spaces ^ "  label:")
+            :: show_lines label ~indent:(indent + 4)
+          in
+          if view.navigation_is_active
+          then (
+            match active_navigation_destination view with
+            | None -> label_lines
+            | Some destination ->
+              label_lines
+              @ ((spaces ^ "  active-destination:")
+                 :: show_lines destination ~indent:(indent + 4)))
+          else label_lines
         | _ ->
           List.concat_map view.children ~f:(fun (key, child) ->
+            let key =
+              match key with
+              | Some "__root__" -> None
+              | _ -> key
+            in
             show_lines ?key child ~indent:(indent + 2))
+      in
+      let popover_lines =
+        List.concat_map view.modifiers ~f:(function
+          | Rendered_popover { is_presented = true; content = Some content; _ } ->
+            (spaces ^ "  popover:") :: show_lines content ~indent:(indent + 4)
+          | _ -> [])
       in
       let sheet_lines =
         List.concat_map view.modifiers ~f:(function
@@ -2489,6 +3213,11 @@ module For_testing = struct
        ^ text_field_secure
        ^ toggle_selected
        ^ progress
+       ^ list_behavior
+       ^ slider
+       ^ stepper
+       ^ date_picker
+       ^ color_picker
        ^ photo_picker
        ^ camera_capture
        ^ share_link
@@ -2498,9 +3227,12 @@ module For_testing = struct
        ^ image_source
        ^ panel
        ^ system_image
+       ^ menu
+       ^ disclosure
        ^ button_subtitle
        ^ title_visibility
        ^ enabled
+       ^ navigation_path
        ^ selected
        ^ tabs
        ^ compact_top_bar
@@ -2512,24 +3244,44 @@ module For_testing = struct
        ^ picker
        ^ list_row
        ^ modifiers
+       ^ sheet_detents
        ^ toolbar
        ^ navigation_title
-       ^ alert)
+       ^ alert
+       ^ confirmation_dialog
+       ^ popover)
       :: safe_area_inset_lines
       @ child_lines
+      @ popover_lines
       @ sheet_lines
     ;;
 
     let show view = String.concat ~sep:"\n" (show_lines view ~indent:0)
 
-    let rec find_exn view ~path =
+    let rec find_raw_exn view ~path =
       match path with
       | [] -> view
       | index :: rest ->
         (match List.nth view.children index with
+         | Some (_, child) -> find_raw_exn child ~path:rest
+         | None -> failwithf "No child at index %d" index ())
+    ;;
+
+    let rec find_exn view ~path =
+      match path with
+      | [] -> view
+      | index :: rest ->
+        let view =
+          match view.kind, active_navigation_destination view with
+          | Navigation_stack, Some destination -> destination
+          | _ -> view
+        in
+        (match List.nth view.children index with
          | Some (_, child) -> find_exn child ~path:rest
          | None -> failwithf "No child at index %d" index ())
     ;;
+
+    let find_visible_exn view ~path = find_exn view ~path |> visible_view
 
     let show_at_path view ~path = show (find_exn view ~path)
 
@@ -2554,26 +3306,32 @@ module For_testing = struct
     ;;
 
     let click_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match view.on_click with
       | Some f -> f ()
       | None ->
         (match view.on_navigation_activate with
-         | Some f -> f ()
+         | Some f ->
+           view.navigation_is_active <- true;
+           f ()
          | None -> failwith "View has no click handler")
     ;;
 
     let activate_navigation_link_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_raw_exn view ~path in
       match view.on_navigation_activate with
-      | Some f -> f ()
+      | Some f ->
+        view.navigation_is_active <- true;
+        f ()
       | None -> failwith "View has no navigation activation handler"
     ;;
 
     let deactivate_navigation_link_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_raw_exn view ~path in
       match view.on_navigation_deactivate with
-      | Some f -> f ()
+      | Some f ->
+        view.navigation_is_active <- false;
+        f ()
       | None -> failwith "View has no navigation deactivation handler"
     ;;
 
@@ -2582,7 +3340,7 @@ module For_testing = struct
     ;;
 
     let change_text_exn view ~path ~text =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       view.text <- Some text;
       match view.on_change with
       | Some f -> f text
@@ -2596,16 +3354,98 @@ module For_testing = struct
         ~text
     ;;
 
+    let schedule_event_exn view effect =
+      match view.schedule_event with
+      | Some schedule_event -> schedule_event effect
+      | None -> failwith "View has no event scheduler"
+    ;;
+
     let change_toggle_exn view ~path ~is_on =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       view.toggle_is_on <- is_on;
       match view.on_toggle with
       | Some f -> f is_on
       | None -> failwith "View has no toggle-change handler"
     ;;
 
+    let change_slider_exn view ~path ~value =
+      let view = find_visible_exn view ~path in
+      view.slider_value <- Some value;
+      match view.on_slider_change with
+      | Some f -> f value
+      | None -> failwith "View has no slider-change handler"
+    ;;
+
+    let change_stepper_exn view ~path ~value =
+      let view = find_visible_exn view ~path in
+      view.stepper_value <- Some value;
+      match view.on_stepper_change with
+      | Some f -> f value
+      | None -> failwith "View has no stepper-change handler"
+    ;;
+
+    let select_date_exn view ~path ~selected =
+      let view = find_visible_exn view ~path in
+      view.selected_date <- Some selected;
+      match view.on_select_date with
+      | Some f -> f selected
+      | None -> failwith "View has no date selection handler"
+    ;;
+
+    let select_color_exn view ~path ~selected =
+      let view = find_visible_exn view ~path in
+      view.selected_color <- Some selected;
+      match view.on_select_color with
+      | Some f -> f selected
+      | None -> failwith "View has no color selection handler"
+    ;;
+
+    let click_menu_action_exn view ~path ~id =
+      let view = find_visible_exn view ~path in
+      match List.find view.menu_actions ~f:(fun action -> String.equal action.id id) with
+      | Some action when action.is_enabled -> schedule_event_exn view action.on_click
+      | Some _ -> failwithf "Menu action %S is disabled" id ()
+      | None -> failwithf "View has no menu action with id %S" id ()
+    ;;
+
+    let change_disclosure_group_exn view ~path ~is_expanded =
+      let view = find_visible_exn view ~path in
+      view.disclosure_is_expanded <- is_expanded;
+      match view.on_disclosure_change with
+      | Some f -> f is_expanded
+      | None -> failwith "View has no disclosure group handler"
+    ;;
+
+    let change_navigation_path_exn view ~path =
+      view.navigation_path <- path;
+      match view.on_navigation_path_change with
+      | Some f -> f path
+      | None -> failwith "View has no navigation path handler"
+    ;;
+
+    let refresh_list_exn view ~path =
+      let view = find_visible_exn view ~path in
+      match view.on_list_refresh with
+      | Some f -> f ()
+      | None -> failwith "View has no list refresh handler"
+    ;;
+
+    let delete_list_row_exn view ~path ~index =
+      let view = find_visible_exn view ~path in
+      match view.on_list_delete with
+      | Some f -> f index
+      | None -> failwith "View has no list delete handler"
+    ;;
+
+    let move_list_row_exn view ~path ~from_index ~to_index =
+      let view = find_visible_exn view ~path in
+      match view.on_list_move with
+      | Some f -> f ~from_index ~to_index
+      | None -> failwith "View has no list move handler"
+    ;;
+
     let submit_text_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match view.on_click with
       | Some f -> f ()
       | None -> failwith "View has no text-submit handler"
@@ -2618,7 +3458,7 @@ module For_testing = struct
     ;;
 
     let select_photo_exn view ~path ~image_id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       view.placeholder <- Some image_id;
       match view.on_change with
       | Some f -> f image_id
@@ -2626,7 +3466,7 @@ module For_testing = struct
     ;;
 
     let select_photo_payload_exn view ~path ~(payload : image_payload) =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       view.placeholder <- Some payload.id;
       match view.on_change with
       | Some f -> f (image_payload_to_event_text payload)
@@ -2634,7 +3474,7 @@ module For_testing = struct
     ;;
 
     let capture_camera_exn view ~path ~image_id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       view.placeholder <- Some image_id;
       match view.on_change with
       | Some f -> f image_id
@@ -2642,7 +3482,7 @@ module For_testing = struct
     ;;
 
     let capture_camera_payload_exn view ~path ~(payload : image_payload) =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       view.placeholder <- Some payload.id;
       match view.on_change with
       | Some f -> f (image_payload_to_event_text payload)
@@ -2650,7 +3490,7 @@ module For_testing = struct
     ;;
 
     let import_file_exn view ~path ~content =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match view.on_import_file with
       | Some f -> f content
       | None -> failwith "View has no file-import handler"
@@ -2668,27 +3508,27 @@ module For_testing = struct
     ;;
 
     let click_sheet_exn view ~path ~sheet_path =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       click_exn (presented_sheet_content_exn view) ~path:sheet_path
     ;;
 
     let import_sheet_file_exn view ~path ~sheet_path ~content =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       import_file_exn (presented_sheet_content_exn view) ~path:sheet_path ~content
     ;;
 
     let change_sheet_text_exn view ~path ~sheet_path ~text =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       change_text_exn (presented_sheet_content_exn view) ~path:sheet_path ~text
     ;;
 
     let change_sheet_toggle_exn view ~path ~sheet_path ~is_on =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       change_toggle_exn (presented_sheet_content_exn view) ~path:sheet_path ~is_on
     ;;
 
     let nested_sheet_host_exn view ~path ~host_path =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       presented_sheet_content_exn view |> find_exn ~path:host_path
     ;;
 
@@ -2704,29 +3544,23 @@ module For_testing = struct
     ;;
 
     let select_sheet_photo_exn view ~path ~sheet_path ~image_id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       select_photo_exn (presented_sheet_content_exn view) ~path:sheet_path ~image_id
     ;;
 
     let select_sheet_photo_payload_exn view ~path ~sheet_path ~payload =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       select_photo_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
     ;;
 
     let capture_sheet_camera_exn view ~path ~sheet_path ~image_id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       capture_camera_exn (presented_sheet_content_exn view) ~path:sheet_path ~image_id
     ;;
 
     let capture_sheet_camera_payload_exn view ~path ~sheet_path ~payload =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       capture_camera_payload_exn (presented_sheet_content_exn view) ~path:sheet_path ~payload
-    ;;
-
-    let schedule_event_exn view effect =
-      match view.schedule_event with
-      | Some schedule_event -> schedule_event effect
-      | None -> failwith "View has no event scheduler"
     ;;
 
     let change_alert_text_exn view ~text =
@@ -2752,6 +3586,29 @@ module For_testing = struct
       | None -> failwithf "Alert has no action with id %S" id ()
     ;;
 
+    let click_confirmation_dialog_action_exn view ~id =
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_confirmation_dialog { is_presented = true; actions; _ } ->
+            List.find actions ~f:(fun action -> String.equal action.id id)
+          | _ -> None)
+      with
+      | Some action when action.is_enabled -> schedule_event_exn view action.on_click
+      | Some _ -> failwithf "Confirmation dialog action %S is disabled" id ()
+      | None -> failwithf "Confirmation dialog has no action with id %S" id ()
+    ;;
+
+    let dismiss_popover_exn view =
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_popover { is_presented = true; on_dismiss = Some on_dismiss; _ } ->
+            Some on_dismiss
+          | _ -> None)
+      with
+      | Some on_dismiss -> schedule_event_exn view on_dismiss
+      | None -> failwith "View has no presented dismissible popover"
+    ;;
+
     let change_nested_sheet_alert_text_exn view ~path ~host_path ~text =
       change_alert_text_exn (nested_sheet_host_exn view ~path ~host_path) ~text
     ;;
@@ -2761,7 +3618,7 @@ module For_testing = struct
     ;;
 
     let change_search_exn view ~path ~text =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match
         List.find_map view.modifiers ~f:(function
           | Rendered_searchable { on_change; _ } -> Some on_change
@@ -2772,7 +3629,7 @@ module For_testing = struct
     ;;
 
     let click_toolbar_item_exn view ~path ~id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match
         List.find_map view.modifiers ~f:(function
           | Rendered_toolbar items ->
@@ -2787,7 +3644,7 @@ module For_testing = struct
     ;;
 
     let click_sheet_toolbar_item_exn view ~path ~id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       click_toolbar_item_exn (presented_sheet_content_exn view) ~path:[] ~id
     ;;
 
@@ -2799,7 +3656,7 @@ module For_testing = struct
     ;;
 
     let click_toolbar_menu_action_exn view ~path ~id ~title =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match
         List.find_map view.modifiers ~f:(function
           | Rendered_toolbar items ->
@@ -2822,7 +3679,7 @@ module For_testing = struct
     ;;
 
     let dismiss_sheet_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match
         List.find_map view.modifiers ~f:(function
           | Rendered_sheet { is_presented = true; on_dismiss = Some on_dismiss; _ } ->
@@ -2883,33 +3740,33 @@ module For_testing = struct
     ;;
 
     let select_picker_exn view ~path ~id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match view.on_select_picker with
       | Some f -> f id
       | None -> failwith "View has no picker selection handler"
     ;;
 
     let select_sheet_picker_exn view ~path ~sheet_path ~id =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       select_picker_exn (presented_sheet_content_exn view) ~path:sheet_path ~id
     ;;
 
     let click_row_leading_exn view ~path =
-      let view = find_exn view ~path |> navigation_link_label_or_self in
+      let view = find_visible_exn view ~path |> navigation_link_label_or_self in
       match view.row_leading_button with
       | Some leading -> leading.on_click ()
       | None -> failwith "View has no row leading button"
     ;;
 
     let click_row_action_exn view ~path ~title =
-      let view = find_exn view ~path |> navigation_link_label_or_self in
+      let view = find_visible_exn view ~path |> navigation_link_label_or_self in
       match List.find view.row_actions ~f:(fun action -> String.equal action.title title) with
       | Some action -> action.on_click ()
       | None -> failwithf "View has no row action with title %S" title ()
     ;;
 
     let click_row_menu_action_exn view ~path ~title =
-      let view = find_exn view ~path |> navigation_link_label_or_self in
+      let view = find_visible_exn view ~path |> navigation_link_label_or_self in
       match
         List.find view.row_menu_actions ~f:(fun action -> String.equal action.title title)
       with
@@ -2918,12 +3775,12 @@ module For_testing = struct
     ;;
 
     let click_sheet_row_menu_action_exn view ~path ~sheet_path ~title =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       click_row_menu_action_exn (presented_sheet_content_exn view) ~path:sheet_path ~title
     ;;
 
     let find_text_exn view ~path =
-      let view = find_exn view ~path in
+      let view = find_visible_exn view ~path in
       match view.text with
       | Some text -> text
       | None -> failwith "View has no text"

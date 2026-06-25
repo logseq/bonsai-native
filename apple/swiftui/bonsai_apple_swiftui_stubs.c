@@ -41,6 +41,12 @@ extern void bonsai_native_swiftui_set_toggle(void *node, bool is_on, int32_t eve
 extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
+extern void bonsai_native_swiftui_set_list_behavior(
+  void *node,
+  int32_t refresh_event_id,
+  int32_t delete_event_id,
+  int32_t move_event_id,
+  bool edit_mode);
 extern void bonsai_native_swiftui_set_on_click(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_navigation_link_callbacks(
   void *node,
@@ -96,7 +102,17 @@ extern void bonsai_native_swiftui_set_sheet(
   void *content,
   bool is_presented,
   int32_t dismiss_event_id);
+extern void bonsai_native_swiftui_set_sheet_detents(
+  void *node,
+  int32_t *kinds,
+  double *values,
+  int32_t count);
 extern void bonsai_native_swiftui_set_safe_area_inset_bottom(void *node, void *content);
+extern void bonsai_native_swiftui_set_popover(
+  void *node,
+  void *content,
+  bool is_presented,
+  int32_t dismiss_event_id);
 extern void bonsai_native_swiftui_set_alert(
   void *node,
   bool is_presented,
@@ -110,6 +126,20 @@ extern void bonsai_native_swiftui_set_alert_text_field(
   int32_t event_id);
 extern void bonsai_native_swiftui_clear_alert_actions(void *node);
 extern void bonsai_native_swiftui_append_alert_action(
+  void *node,
+  const char *id,
+  const char *title,
+  int32_t role,
+  bool is_enabled,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_confirmation_dialog(
+  void *node,
+  bool is_presented,
+  int32_t dismiss_event_id,
+  const char *title,
+  const char *message);
+extern void bonsai_native_swiftui_clear_confirmation_dialog_actions(void *node);
+extern void bonsai_native_swiftui_append_confirmation_dialog_action(
   void *node,
   const char *id,
   const char *title,
@@ -202,6 +232,55 @@ extern void bonsai_native_swiftui_set_file_importer(
   const char **allowed_types,
   int32_t count,
   int32_t event_id);
+extern void bonsai_native_swiftui_set_slider(
+  void *node,
+  const char *title,
+  double value,
+  double min,
+  double max,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_stepper(
+  void *node,
+  const char *title,
+  int32_t value,
+  int32_t min,
+  int32_t max,
+  int32_t step,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_date_picker(
+  void *node,
+  const char *title,
+  const char *selected,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_color_picker(
+  void *node,
+  const char *title,
+  const char *selected,
+  int32_t event_id);
+extern void bonsai_native_swiftui_clear_menu(
+  void *node,
+  const char *title,
+  const char *system_image);
+extern void bonsai_native_swiftui_append_menu_action(
+  void *node,
+  const char *id,
+  const char *title,
+  const char *system_image,
+  int32_t style,
+  bool is_enabled,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_disclosure_group(
+  void *node,
+  const char *title,
+  bool is_expanded,
+  int32_t event_id);
+extern void bonsai_native_swiftui_set_navigation_path_stack(
+  void *node,
+  const char **path,
+  int32_t path_count,
+  int32_t event_id,
+  const char **destinations,
+  int32_t destination_count);
 extern void bonsai_native_swiftui_set_image_payload_mode(void *node, bool wants_payload);
 extern void *bonsai_native_swiftui_make_controller(
   void *root,
@@ -535,6 +614,23 @@ CAMLprim value bonsai_apple_swiftui_set_children(value node, value children)
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_list_behavior(
+  value node,
+  value refresh_event_id,
+  value delete_event_id,
+  value move_event_id,
+  value edit_mode)
+{
+  CAMLparam5(node, refresh_event_id, delete_event_id, move_event_id, edit_mode);
+  bonsai_native_swiftui_set_list_behavior(
+    pointer_val(node),
+    Int_val(refresh_event_id),
+    Int_val(delete_event_id),
+    Int_val(move_event_id),
+    Bool_val(edit_mode));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_on_click(value node, value event_id)
 {
   CAMLparam2(node, event_id);
@@ -742,12 +838,59 @@ CAMLprim value bonsai_apple_swiftui_set_sheet(
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_sheet_detents(
+  value node,
+  value kinds,
+  value values)
+{
+  CAMLparam3(node, kinds, values);
+  mlsize_t count = Wosize_val(kinds);
+  int32_t *kind_values = NULL;
+  double *detent_values = NULL;
+  if (count > 0) {
+    kind_values = calloc(count, sizeof(int32_t));
+    detent_values = calloc(count, sizeof(double));
+    if (kind_values == NULL || detent_values == NULL) {
+      free(kind_values);
+      free(detent_values);
+      caml_failwith("failed to allocate sheet detents");
+    }
+    for (mlsize_t index = 0; index < count; index++) {
+      kind_values[index] = Int_val(Field(kinds, index));
+      detent_values[index] = Double_val(Field(values, index));
+    }
+  }
+  bonsai_native_swiftui_set_sheet_detents(
+    pointer_val(node),
+    kind_values,
+    detent_values,
+    (int32_t)count);
+  free(kind_values);
+  free(detent_values);
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_safe_area_inset_bottom(value node, value content)
 {
   CAMLparam2(node, content);
   bonsai_native_swiftui_set_safe_area_inset_bottom(
     pointer_val(node),
     Is_none(content) ? NULL : pointer_val(Some_val(content)));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_popover(
+  value node,
+  value content,
+  value is_presented,
+  value dismiss_event_id)
+{
+  CAMLparam4(node, content, is_presented, dismiss_event_id);
+  bonsai_native_swiftui_set_popover(
+    pointer_val(node),
+    Is_none(content) ? NULL : pointer_val(Some_val(content)),
+    Bool_val(is_presented),
+    Int_val(dismiss_event_id));
   CAMLreturn(Val_unit);
 }
 
@@ -814,6 +957,64 @@ CAMLprim value bonsai_apple_swiftui_append_alert_action_bytecode(value *argv, in
 {
   (void)argn;
   return bonsai_apple_swiftui_append_alert_action(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5]);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_confirmation_dialog(
+  value node,
+  value is_presented,
+  value dismiss_event_id,
+  value title,
+  value message)
+{
+  CAMLparam5(node, is_presented, dismiss_event_id, title, message);
+  bonsai_native_swiftui_set_confirmation_dialog(
+    pointer_val(node),
+    Bool_val(is_presented),
+    Int_val(dismiss_event_id),
+    option_string_val(title),
+    option_string_val(message));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_confirmation_dialog_actions(value node)
+{
+  CAMLparam1(node);
+  bonsai_native_swiftui_clear_confirmation_dialog_actions(pointer_val(node));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_confirmation_dialog_action(
+  value node,
+  value id,
+  value title,
+  value role,
+  value is_enabled,
+  value event_id)
+{
+  CAMLparam5(node, id, title, role, is_enabled);
+  CAMLxparam1(event_id);
+  bonsai_native_swiftui_append_confirmation_dialog_action(
+    pointer_val(node),
+    String_val(id),
+    String_val(title),
+    Int_val(role),
+    Bool_val(is_enabled),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_confirmation_dialog_action_bytecode(
+  value *argv,
+  int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_append_confirmation_dialog_action(
     argv[0],
     argv[1],
     argv[2],
@@ -1131,6 +1332,208 @@ CAMLprim value bonsai_apple_swiftui_set_file_importer(
     (int32_t)count,
     Int_val(event_id));
   free(types);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_slider(
+  value node,
+  value title,
+  value slider_value,
+  value min,
+  value max,
+  value event_id)
+{
+  CAMLparam5(node, title, slider_value, min, max);
+  CAMLxparam1(event_id);
+  bonsai_native_swiftui_set_slider(
+    pointer_val(node),
+    String_val(title),
+    Double_val(slider_value),
+    Double_val(min),
+    Double_val(max),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_slider_bytecode(value *argv, int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_set_slider(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5]);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_stepper(
+  value node,
+  value title,
+  value stepper_value,
+  value min,
+  value max,
+  value step,
+  value event_id)
+{
+  CAMLparam5(node, title, stepper_value, min, max);
+  CAMLxparam2(step, event_id);
+  bonsai_native_swiftui_set_stepper(
+    pointer_val(node),
+    String_val(title),
+    Int_val(stepper_value),
+    Int_val(min),
+    Int_val(max),
+    Int_val(step),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_stepper_bytecode(value *argv, int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_set_stepper(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5],
+    argv[6]);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_date_picker(
+  value node,
+  value title,
+  value selected,
+  value event_id)
+{
+  CAMLparam4(node, title, selected, event_id);
+  bonsai_native_swiftui_set_date_picker(
+    pointer_val(node),
+    String_val(title),
+    String_val(selected),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_color_picker(
+  value node,
+  value title,
+  value selected,
+  value event_id)
+{
+  CAMLparam4(node, title, selected, event_id);
+  bonsai_native_swiftui_set_color_picker(
+    pointer_val(node),
+    String_val(title),
+    String_val(selected),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_menu(
+  value node,
+  value title,
+  value system_image)
+{
+  CAMLparam3(node, title, system_image);
+  bonsai_native_swiftui_clear_menu(
+    pointer_val(node),
+    String_val(title),
+    option_string_val(system_image));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_menu_action(
+  value node,
+  value id,
+  value title,
+  value system_image,
+  value style,
+  value is_enabled,
+  value event_id)
+{
+  CAMLparam5(node, id, title, system_image, style);
+  CAMLxparam2(is_enabled, event_id);
+  bonsai_native_swiftui_append_menu_action(
+    pointer_val(node),
+    String_val(id),
+    String_val(title),
+    option_string_val(system_image),
+    Int_val(style),
+    Bool_val(is_enabled),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_menu_action_bytecode(value *argv, int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_append_menu_action(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5],
+    argv[6]);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_disclosure_group(
+  value node,
+  value title,
+  value is_expanded,
+  value event_id)
+{
+  CAMLparam4(node, title, is_expanded, event_id);
+  bonsai_native_swiftui_set_disclosure_group(
+    pointer_val(node),
+    String_val(title),
+    Bool_val(is_expanded),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_navigation_path_stack(
+  value node,
+  value path,
+  value event_id,
+  value destinations)
+{
+  CAMLparam4(node, path, event_id, destinations);
+  mlsize_t path_count = Wosize_val(path);
+  mlsize_t destination_count = Wosize_val(destinations);
+  const char **path_values = NULL;
+  const char **destination_values = NULL;
+  if (path_count > 0) {
+    path_values = calloc(path_count, sizeof(char *));
+    if (path_values == NULL) {
+      caml_failwith("failed to allocate navigation path array");
+    }
+  }
+  if (destination_count > 0) {
+    destination_values = calloc(destination_count, sizeof(char *));
+    if (destination_values == NULL) {
+      free(path_values);
+      caml_failwith("failed to allocate navigation destination array");
+    }
+  }
+  for (mlsize_t index = 0; index < path_count; index++) {
+    path_values[index] = String_val(Field(path, index));
+  }
+  for (mlsize_t index = 0; index < destination_count; index++) {
+    destination_values[index] = String_val(Field(destinations, index));
+  }
+  bonsai_native_swiftui_set_navigation_path_stack(
+    pointer_val(node),
+    path_values,
+    (int32_t)path_count,
+    Int_val(event_id),
+    destination_values,
+    (int32_t)destination_count);
+  free(path_values);
+  free(destination_values);
   CAMLreturn(Val_unit);
 }
 
