@@ -1,3 +1,4 @@
 (library
  (name bonsai_native)
- (public_name bonsai_native))
+ (public_name bonsai_native)
+ (modes :standard melange))

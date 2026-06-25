@@ -6,3 +6,19 @@
   (chdir
    %{workspace_root}
    (run /bin/sh scripts/check-no-bonsai-core-deps.sh))))
+
+(rule
+ (alias runtest)
+ (deps
+  (alias ../web/demo/web-demo)
+  ../web/demo/dist/web/demo/main.js
+  ../web/demo/dist/web/demo/react_runtime.js
+  ../web/demo/dist/examples/android_demo_components.js
+  web_demo_smoke.sh)
+ (action
+  (run
+   /bin/sh
+   web_demo_smoke.sh
+   ../web/demo/dist/web/demo/main.js
+   ../web/demo/dist/web/demo/react_runtime.js
+   ../web/demo/dist/examples/android_demo_components.js)))

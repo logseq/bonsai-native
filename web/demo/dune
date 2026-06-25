@@ -1,0 +1,11 @@
+(melange.emit
+ (target dist)
+ (alias web-demo)
+ (module_systems es6)
+ (modules main)
+ (preprocess
+  (pps melange.ppx))
+ (libraries bonsai_android bonsai_android_examples)
+ (runtime_deps react_runtime.js)
+ (promote
+  (until-clean)))

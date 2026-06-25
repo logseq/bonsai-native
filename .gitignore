@@ -24,3 +24,6 @@ android/.gradle/
 android/build/
 android/app/build/
 android/local.properties
+
+web/demo/dist/
+web/demo/node_modules/

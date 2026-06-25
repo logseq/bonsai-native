@@ -1,4 +1,5 @@
 (library
  (name bonsai_android)
  (public_name bonsai_android)
- (libraries bonsai_native))
+ (libraries bonsai_native)
+ (modes :standard melange))

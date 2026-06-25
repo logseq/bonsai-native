@@ -2,7 +2,8 @@
  (name bonsai_android_examples)
  (wrapped false)
  (modules android_demo_components counter_component)
- (libraries bonsai_android))
+ (libraries bonsai_android)
+ (modes :standard melange))
 
 (executables
  (names
