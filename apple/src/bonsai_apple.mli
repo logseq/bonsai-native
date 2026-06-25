@@ -21,6 +21,20 @@ type row_action_style =
   | Destructive
 [@@deriving sexp_of]
 
+type alert_action_role =
+  | Alert_default
+  | Alert_cancel
+  | Alert_destructive
+[@@deriving sexp_of]
+
+type alert_action =
+  { id : string
+  ; title : string
+  ; role : alert_action_role
+  ; is_enabled : bool
+  ; on_click : unit Effect.t
+  }
+
 type file_export =
   { filename : string
   ; content_type : string
@@ -294,6 +308,26 @@ val toolbar_item
   -> unit
   -> toolbar_item
 val toolbar : toolbar_item list -> node -> node
+val alert_action
+  :  ?role:alert_action_role
+  -> ?is_enabled:bool
+  -> id:string
+  -> title:string
+  -> on_click:unit Effect.t
+  -> unit
+  -> alert_action
+val alert
+  :  is_presented:bool
+  -> title:string
+  -> ?message:string
+  -> ?text:string
+  -> ?placeholder:string
+  -> ?on_text_change:(string -> unit Effect.t)
+  -> ?actions:alert_action list
+  -> ?on_dismiss:unit Effect.t
+  -> unit
+  -> node
+  -> node
 val sheet
   :  is_presented:bool
   -> content:node
@@ -347,6 +381,16 @@ type modifier =
       ; content : node
       ; on_dismiss : unit Effect.t option
       }
+  | Alert of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; text : string option
+      ; placeholder : string option
+      ; on_text_change : (string -> unit Effect.t) option
+      ; actions : alert_action list
+      ; on_dismiss : unit Effect.t option
+      }
 
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
@@ -360,6 +404,16 @@ type 'view rendered_modifier =
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
+      ; on_dismiss : unit Effect.t option
+      }
+  | Rendered_alert of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; text : string option
+      ; placeholder : string option
+      ; on_text_change : (string -> unit Effect.t) option
+      ; actions : alert_action list
       ; on_dismiss : unit Effect.t option
       }
 
@@ -503,6 +557,8 @@ module For_testing : sig
     val show : view -> string
     val show_at_path : view -> path:int list -> string
     val click_exn : view -> path:int list -> unit
+    val change_alert_text_exn : view -> text:string -> unit
+    val click_alert_action_exn : view -> id:string -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
     val change_toggle_exn : view -> path:int list -> is_on:bool -> unit
     val submit_text_exn : view -> path:int list -> unit

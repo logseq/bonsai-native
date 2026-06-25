@@ -21,6 +21,20 @@ type row_action_style =
   | Destructive
 [@@deriving sexp_of, equal]
 
+type alert_action_role =
+  | Alert_default
+  | Alert_cancel
+  | Alert_destructive
+[@@deriving sexp_of, equal]
+
+type alert_action =
+  { id : string
+  ; title : string
+  ; role : alert_action_role
+  ; is_enabled : bool
+  ; on_click : unit Effect.t
+  }
+
 type file_export =
   { filename : string
   ; content_type : string
@@ -351,6 +365,16 @@ and modifier =
       ; content : node
       ; on_dismiss : unit Effect.t option
       }
+  | Alert of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; text : string option
+      ; placeholder : string option
+      ; on_text_change : (string -> unit Effect.t) option
+      ; actions : alert_action list
+      ; on_dismiss : unit Effect.t option
+      }
 
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
@@ -364,6 +388,16 @@ type 'view rendered_modifier =
   | Rendered_sheet of
       { is_presented : bool
       ; content : 'view option
+      ; on_dismiss : unit Effect.t option
+      }
+  | Rendered_alert of
+      { is_presented : bool
+      ; title : string
+      ; message : string option
+      ; text : string option
+      ; placeholder : string option
+      ; on_text_change : (string -> unit Effect.t) option
+      ; actions : alert_action list
       ; on_dismiss : unit Effect.t option
       }
 
@@ -675,6 +709,36 @@ let toolbar_item ?system_image ?(is_enabled = true) ?(menu_actions = []) ~id ~ti
   { id; title; system_image; is_enabled; on_click; menu_actions }
 ;;
 let toolbar items node = Modified_node (Toolbar items, node)
+let alert_action ?(role = Alert_default) ?(is_enabled = true) ~id ~title ~on_click () =
+  { id; title; role; is_enabled; on_click }
+;;
+
+let alert
+  ~is_presented
+  ~title
+  ?message
+  ?text
+  ?placeholder
+  ?on_text_change
+  ?(actions = [])
+  ?on_dismiss
+  ()
+  node
+  =
+  Modified_node
+    ( Alert
+        { is_presented
+        ; title
+        ; message
+        ; text
+        ; placeholder
+        ; on_text_change
+        ; actions
+        ; on_dismiss
+        }
+    , node )
+;;
+
 let sidebar_action ~id ~title ?system_image ~(on_click : unit Effect.t) ()
   : sidebar_action
   =
@@ -848,7 +912,28 @@ module Renderer = struct
                    , List.length item.menu_actions ))
                  : (string * string * string option * bool * int) list) )]
           | Sheet { is_presented; content; on_dismiss = _ } ->
-            [%sexp "sheet", (is_presented : bool), (fingerprint content : string)])
+            [%sexp "sheet", (is_presented : bool), (fingerprint content : string)]
+          | Alert
+              { is_presented
+              ; title
+              ; message
+              ; text
+              ; placeholder
+              ; on_text_change = _
+              ; actions
+              ; on_dismiss = _
+              } ->
+            [%sexp
+              "alert"
+            , (is_presented : bool)
+            , (title : string)
+            , (message : string option)
+            , (text : string option)
+            , (placeholder : string option)
+            , (List.map actions ~f:(fun action ->
+                 action.id, action.title, action.role, action.is_enabled)
+               : (string * string * alert_action_role * bool) list)]
+        )
       in
       let shape =
         match node with
@@ -1379,7 +1464,27 @@ module Renderer = struct
                 Some mounted.view)
               else None
             in
-            Rendered_sheet { is_presented; content; on_dismiss })
+            Rendered_sheet { is_presented; content; on_dismiss }
+          | Alert
+              { is_presented
+              ; title
+              ; message
+              ; text
+              ; placeholder
+              ; on_text_change
+              ; actions
+              ; on_dismiss
+              } ->
+            Rendered_alert
+              { is_presented
+              ; title
+              ; message
+              ; text
+              ; placeholder
+              ; on_text_change
+              ; actions
+              ; on_dismiss
+              })
       in
       List.iter t.modifier_children ~f:(fun child ->
         if not (Hash_set.mem used child.index) then destroy child.mounted);
@@ -1854,6 +1959,7 @@ module For_testing = struct
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
       | Rendered_sheet _ -> "sheet"
+      | Rendered_alert _ -> "alert"
     ;;
 
     let rec show_lines ?key view ~indent =
@@ -2003,6 +2109,51 @@ module For_testing = struct
         | None -> ""
         | Some title -> " navigation-title=" ^ title
       in
+      let alert =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_alert
+                { is_presented = true
+                ; title
+                ; message
+                ; text
+                ; placeholder
+                ; actions
+                ; _
+                } ->
+              Some (title, message, text, placeholder, actions)
+            | _ -> None)
+        with
+        | None -> ""
+        | Some (title, message, text, placeholder, actions) ->
+          let role_name = function
+            | Alert_default -> "default"
+            | Alert_cancel -> "cancel"
+            | Alert_destructive -> "destructive"
+          in
+          let action_text =
+            actions
+            |> List.map ~f:(fun (action : alert_action) ->
+              sprintf
+                "%s:%s:%s:%s"
+                action.id
+                action.title
+                (role_name action.role)
+                (if action.is_enabled then "enabled" else "disabled"))
+            |> String.concat ~sep:","
+          in
+          " alert="
+          ^ title
+          ^ " message="
+          ^ Sexp.to_string_hum ([%sexp_of: string option] message)
+          ^ " text="
+          ^ Sexp.to_string_hum ([%sexp_of: string option] text)
+          ^ " placeholder="
+          ^ Sexp.to_string_hum ([%sexp_of: string option] placeholder)
+          ^ " actions=["
+          ^ action_text
+          ^ "]"
+      in
       let selected =
         match view.selected_tab with
         | None -> ""
@@ -2130,7 +2281,8 @@ module For_testing = struct
        ^ list_row
        ^ modifiers
        ^ toolbar
-       ^ navigation_title)
+       ^ navigation_title
+       ^ alert)
       :: child_lines
       @ sheet_lines
     ;;
@@ -2288,6 +2440,29 @@ module For_testing = struct
       match view.schedule_event with
       | Some schedule_event -> schedule_event effect
       | None -> failwith "View has no event scheduler"
+    ;;
+
+    let change_alert_text_exn view ~text =
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_alert { is_presented = true; on_text_change = Some on_text_change; _ } ->
+            Some on_text_change
+          | _ -> None)
+      with
+      | Some on_text_change -> schedule_event_exn view (on_text_change text)
+      | None -> failwith "Alert has no text-change handler"
+    ;;
+
+    let click_alert_action_exn view ~id =
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_alert { is_presented = true; actions; _ } ->
+            List.find actions ~f:(fun action -> String.equal action.id id)
+          | _ -> None)
+      with
+      | Some action when action.is_enabled -> schedule_event_exn view action.on_click
+      | Some _ -> failwithf "Alert action %S is disabled" id ()
+      | None -> failwithf "Alert has no action with id %S" id ()
     ;;
 
     let change_search_exn view ~path ~text =

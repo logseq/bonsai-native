@@ -87,6 +87,25 @@ extern void bonsai_native_swiftui_set_sheet(
   void *content,
   bool is_presented,
   int32_t dismiss_event_id);
+extern void bonsai_native_swiftui_set_alert(
+  void *node,
+  bool is_presented,
+  int32_t dismiss_event_id,
+  const char *title,
+  const char *message);
+extern void bonsai_native_swiftui_set_alert_text_field(
+  void *node,
+  const char *text,
+  const char *placeholder,
+  int32_t event_id);
+extern void bonsai_native_swiftui_clear_alert_actions(void *node);
+extern void bonsai_native_swiftui_append_alert_action(
+  void *node,
+  const char *id,
+  const char *title,
+  int32_t role,
+  bool is_enabled,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_navigation_title(void *node, const char *title);
 extern void bonsai_native_swiftui_clear_toolbar(void *node);
 extern void bonsai_native_swiftui_append_toolbar_item(
@@ -657,6 +676,77 @@ CAMLprim value bonsai_apple_swiftui_set_sheet(
     Bool_val(is_presented),
     Int_val(dismiss_event_id));
   CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_alert(
+  value node,
+  value is_presented,
+  value dismiss_event_id,
+  value title,
+  value message)
+{
+  CAMLparam5(node, is_presented, dismiss_event_id, title, message);
+  bonsai_native_swiftui_set_alert(
+    pointer_val(node),
+    Bool_val(is_presented),
+    Int_val(dismiss_event_id),
+    option_string_val(title),
+    option_string_val(message));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_alert_text_field(
+  value node,
+  value text,
+  value placeholder,
+  value event_id)
+{
+  CAMLparam4(node, text, placeholder, event_id);
+  bonsai_native_swiftui_set_alert_text_field(
+    pointer_val(node),
+    option_string_val(text),
+    option_string_val(placeholder),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_clear_alert_actions(value node)
+{
+  CAMLparam1(node);
+  bonsai_native_swiftui_clear_alert_actions(pointer_val(node));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_alert_action(
+  value node,
+  value id,
+  value title,
+  value role,
+  value is_enabled,
+  value event_id)
+{
+  CAMLparam5(node, id, title, role, is_enabled);
+  CAMLxparam1(event_id);
+  bonsai_native_swiftui_append_alert_action(
+    pointer_val(node),
+    String_val(id),
+    String_val(title),
+    Int_val(role),
+    Bool_val(is_enabled),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_alert_action_bytecode(value *argv, int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_append_alert_action(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5]);
 }
 
 CAMLprim value bonsai_apple_swiftui_set_navigation_title(value node, value title)

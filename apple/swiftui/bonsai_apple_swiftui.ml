@@ -252,6 +252,39 @@ external set_native_sheet
   -> unit
   = "bonsai_apple_swiftui_set_sheet"
 
+external set_native_alert
+  :  native
+  -> bool
+  -> int
+  -> string option
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_alert"
+
+external set_native_alert_text_field
+  :  native
+  -> string option
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_alert_text_field"
+
+external clear_native_alert_actions
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_alert_actions"
+
+external append_native_alert_action
+  :  native
+  -> string
+  -> string
+  -> int
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_alert_action_bytecode"
+    "bonsai_apple_swiftui_append_alert_action"
+
 external set_native_navigation_title
   :  native
   -> string option
@@ -469,6 +502,7 @@ module Backend = struct
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
     ; mutable sheet_dismiss_event_id : int option
+    ; mutable alert_event_ids : int list
     ; mutable toolbar_event_ids : int list
     ; mutable picker_select_event_id : int option
     ; mutable row_event_ids : int list
@@ -488,6 +522,7 @@ module Backend = struct
     ; search_event_id = None
     ; tab_select_event_id = None
     ; sheet_dismiss_event_id = None
+    ; alert_event_ids = []
     ; toolbar_event_ids = []
     ; picker_select_event_id = None
     ; row_event_ids = []
@@ -503,6 +538,7 @@ module Backend = struct
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
     clear_handler view.sheet_dismiss_event_id;
+    List.iter view.alert_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
     clear_handler view.picker_select_event_id;
     clear_handler view.sidebar_search_event_id;
@@ -915,6 +951,72 @@ module Backend = struct
     set_native_sheet view.native None false no_event
   ;;
 
+  let alert_role_id = function
+    | Apple.Alert_default -> 0
+    | Alert_cancel -> 1
+    | Alert_destructive -> 2
+  ;;
+
+  let clear_alert_events view =
+    List.iter view.alert_event_ids ~f:(Hashtbl.remove event_handlers);
+    view.alert_event_ids <- []
+  ;;
+
+  let install_alert
+    view
+    ~schedule_event
+    ~is_presented
+    ~title
+    ~message
+    ~text
+    ~placeholder
+    ~on_text_change
+    ~actions
+    ~on_dismiss
+    =
+    clear_alert_events view;
+    let install_click effect =
+      let event_id = install_handler None (Click (fun () -> schedule_event effect)) in
+      view.alert_event_ids <- event_id :: view.alert_event_ids;
+      event_id
+    in
+    let dismiss_event_id =
+      match on_dismiss with
+      | None -> no_event
+      | Some on_dismiss -> install_click on_dismiss
+    in
+    let text_event_id =
+      match text, on_text_change with
+      | Some _, Some on_text_change ->
+        let event_id =
+          install_handler
+            None
+            (Change (fun text -> schedule_event (on_text_change text)))
+        in
+        view.alert_event_ids <- event_id :: view.alert_event_ids;
+        event_id
+      | _ -> no_event
+    in
+    set_native_alert view.native is_presented dismiss_event_id (Some title) message;
+    set_native_alert_text_field view.native text placeholder text_event_id;
+    clear_native_alert_actions view.native;
+    List.iter actions ~f:(fun (action : Apple.alert_action) ->
+      append_native_alert_action
+        view.native
+        action.id
+        action.title
+        (alert_role_id action.role)
+        action.is_enabled
+        (install_click action.on_click))
+  ;;
+
+  let clear_alert view =
+    clear_alert_events view;
+    set_native_alert view.native false no_event None None;
+    set_native_alert_text_field view.native None None no_event;
+    clear_native_alert_actions view.native
+  ;;
+
   let install_toolbar view ~schedule_event items =
     List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
     view.toolbar_event_ids <- [];
@@ -955,6 +1057,7 @@ module Backend = struct
   let set_modifiers view ~schedule_event modifiers =
     let saw_searchable = ref false in
     let saw_sheet = ref false in
+    let saw_alert = ref false in
     let saw_toolbar = ref false in
     let saw_padding = ref false in
     let saw_frame = ref false in
@@ -966,6 +1069,28 @@ module Backend = struct
       | Apple.Rendered_sheet { is_presented; content; on_dismiss } ->
         saw_sheet := true;
         install_sheet view ~schedule_event ~is_presented ~content ~on_dismiss
+      | Apple.Rendered_alert
+          { is_presented
+          ; title
+          ; message
+          ; text
+          ; placeholder
+          ; on_text_change
+          ; actions
+          ; on_dismiss
+          } ->
+        saw_alert := true;
+        install_alert
+          view
+          ~schedule_event
+          ~is_presented
+          ~title
+          ~message
+          ~text
+          ~placeholder
+          ~on_text_change
+          ~actions
+          ~on_dismiss
       | Apple.Rendered_padding { top; leading; bottom; trailing } ->
         saw_padding := true;
         set_native_padding view.native top leading bottom trailing
@@ -983,6 +1108,7 @@ module Backend = struct
         install_toolbar view ~schedule_event items);
     if not !saw_searchable then clear_searchable view;
     if not !saw_sheet then clear_sheet view;
+    if not !saw_alert then clear_alert view;
     if not !saw_toolbar then clear_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
     if not !saw_frame then set_native_frame view.native (-1.) (-1.);

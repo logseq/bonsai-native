@@ -338,6 +338,51 @@ let%test_unit "navigation link renders a label and destination" =
       list-row#4 title="Add card" subtitle=() trailing=() style=Standard accessory=Disclosure_indicator strikethrough=false leading-image=plus preview-image=none leading=none actions=[] menu=[]|}
 ;;
 
+let%test_unit "alert renders text input and schedules actions" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let changes = ref [] in
+  let clicks = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.text "Settings"
+       |> Apple.alert
+            ~is_presented:true
+            ~title:"User name"
+            ~message:"Use your full name here. It does not need to be unique."
+            ~text:"Ada"
+            ~placeholder:"User name"
+            ~on_text_change:(fun text ->
+              changes := text :: !changes;
+              noop)
+            ~actions:
+              [ Apple.alert_action
+                  ~id:"cancel"
+                  ~title:"Cancel"
+                  ~role:Apple.Alert_cancel
+                  ~on_click:(Bonsai.Effect.of_thunk (fun () -> clicks := "cancel" :: !clicks))
+                  ()
+              ; Apple.alert_action
+                  ~id:"save"
+                  ~title:"Save"
+                  ~is_enabled:false
+                  ~on_click:(Bonsai.Effect.of_thunk (fun () -> clicks := "save" :: !clicks))
+                  ()
+              ]
+            ())
+  in
+  require_string_equal
+    (show mounted)
+    ~expect:
+      {|label#1 text=Settings modifiers=[alert] alert=User name message=("Use your full name here. It does not need to be unique.") text=(Ada) placeholder=("User name") actions=[cancel:Cancel:cancel:enabled,save:Save:default:disabled]|};
+  Backend.change_alert_text_exn (Renderer.view mounted) ~text:"Grace";
+  Backend.click_alert_action_exn (Renderer.view mounted) ~id:"cancel";
+  [%test_result: int] !scheduled ~expect:2;
+  [%test_result: string list] !changes ~expect:[ "Grace" ];
+  [%test_result: string list] !clicks ~expect:[]
+;;
+
 let%test_unit "text editor renders multiline text and schedules changes" =
   Backend.reset ();
   let scheduled = ref 0 in

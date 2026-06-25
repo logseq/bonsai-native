@@ -143,6 +143,14 @@ private struct BonsaiNativePickerOption: Identifiable {
   let title: String
 }
 
+private struct BonsaiNativeAlertAction: Identifiable {
+  let id: String
+  let title: String
+  let role: Int32
+  let isEnabled: Bool
+  let eventId: Int32?
+}
+
 private final class BonsaiNativeNode: ObservableObject, Identifiable {
   let id = UUID()
   let kind: NodeKind
@@ -167,6 +175,14 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var sheetContent: BonsaiNativeNode?
   @Published var isSheetPresented = false
   @Published var dismissEventId: Int32?
+  @Published var isAlertPresented = false
+  @Published var alertTitle = ""
+  @Published var alertMessage: String?
+  @Published var alertText: String?
+  @Published var alertPlaceholder: String?
+  @Published var alertTextEventId: Int32?
+  @Published var alertDismissEventId: Int32?
+  @Published var alertActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
@@ -438,6 +454,43 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
       .frame(width: node.frameWidth, height: node.frameHeight)
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
+      .alert(
+        node.alertTitle,
+        isPresented: Binding(
+          get: { node.isAlertPresented },
+          set: { presented in
+            node.isAlertPresented = presented
+            if !presented {
+              model.sendClick(node.alertDismissEventId)
+            }
+          }
+        )
+      ) {
+        if node.alertText != nil {
+          TextField(
+            node.alertPlaceholder ?? "",
+            text: Binding(
+              get: { node.alertText ?? "" },
+              set: { value in
+                node.alertText = value
+                model.sendChange(node.alertTextEventId, text: value)
+              }
+            )
+          )
+        }
+        ForEach(node.alertActions) { action in
+          Button(role: alertButtonRole(action.role)) {
+            model.sendClick(action.eventId)
+          } label: {
+            Text(action.title)
+          }
+          .disabled(!action.isEnabled)
+        }
+      } message: {
+        if let message = node.alertMessage {
+          Text(message)
+        }
+      }
       .sheet(
         isPresented: Binding(
           get: { node.isSheetPresented },
@@ -453,6 +506,14 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
           BonsaiNativeNodeView(node: sheetContent, model: model)
         }
       }
+  }
+}
+
+private func alertButtonRole(_ rawRole: Int32) -> ButtonRole? {
+  switch rawRole {
+  case 1: return .cancel
+  case 2: return .destructive
+  default: return nil
   }
 }
 
@@ -2215,6 +2276,63 @@ public func bonsai_native_swiftui_set_sheet(
   node.sheetContent = nativeNode(from: contentPointer)
   node.isSheetPresented = isPresented
   node.dismissEventId = dismissEventId < 0 ? nil : dismissEventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_alert")
+public func bonsai_native_swiftui_set_alert(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isPresented: Bool,
+  _ dismissEventId: Int32,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ messagePointer: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.isAlertPresented = isPresented
+  node.alertDismissEventId = dismissEventId < 0 ? nil : dismissEventId
+  node.alertTitle = titlePointer.map(String.init(cString:)) ?? ""
+  node.alertMessage = messagePointer.map(String.init(cString:))
+}
+
+@_cdecl("bonsai_native_swiftui_set_alert_text_field")
+public func bonsai_native_swiftui_set_alert_text_field(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ textPointer: UnsafePointer<CChar>?,
+  _ placeholderPointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.alertText = textPointer.map(String.init(cString:))
+  node.alertPlaceholder = placeholderPointer.map(String.init(cString:))
+  node.alertTextEventId = eventId < 0 ? nil : eventId
+}
+
+@_cdecl("bonsai_native_swiftui_clear_alert_actions")
+public func bonsai_native_swiftui_clear_alert_actions(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.alertActions = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_alert_action")
+public func bonsai_native_swiftui_append_alert_action(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ role: Int32,
+  _ isEnabled: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let idPointer,
+        let titlePointer else { return }
+  node.alertActions.append(
+    BonsaiNativeAlertAction(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      role: role,
+      isEnabled: isEnabled,
+      eventId: eventId < 0 ? nil : eventId
+    )
+  )
 }
 
 @_cdecl("bonsai_native_swiftui_set_navigation_title")
