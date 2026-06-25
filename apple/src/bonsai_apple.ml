@@ -2465,6 +2465,14 @@ module For_testing = struct
       | None -> failwithf "Alert has no action with id %S" id ()
     ;;
 
+    let change_nested_sheet_alert_text_exn view ~path ~host_path ~text =
+      change_alert_text_exn (nested_sheet_host_exn view ~path ~host_path) ~text
+    ;;
+
+    let click_nested_sheet_alert_action_exn view ~path ~host_path ~id =
+      click_alert_action_exn (nested_sheet_host_exn view ~path ~host_path) ~id
+    ;;
+
     let change_search_exn view ~path ~text =
       let view = find_exn view ~path in
       match

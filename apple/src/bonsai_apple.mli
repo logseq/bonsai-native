@@ -559,6 +559,18 @@ module For_testing : sig
     val click_exn : view -> path:int list -> unit
     val change_alert_text_exn : view -> text:string -> unit
     val click_alert_action_exn : view -> id:string -> unit
+    val change_nested_sheet_alert_text_exn
+      :  view
+      -> path:int list
+      -> host_path:int list
+      -> text:string
+      -> unit
+    val click_nested_sheet_alert_action_exn
+      :  view
+      -> path:int list
+      -> host_path:int list
+      -> id:string
+      -> unit
     val change_text_exn : view -> path:int list -> text:string -> unit
     val change_toggle_exn : view -> path:int list -> is_on:bool -> unit
     val submit_text_exn : view -> path:int list -> unit

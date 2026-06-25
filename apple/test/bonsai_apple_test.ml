@@ -383,6 +383,50 @@ let%test_unit "alert renders text input and schedules actions" =
   [%test_result: string list] !clicks ~expect:[]
 ;;
 
+let%test_unit "nested sheet alert schedules text input and actions" =
+  Backend.reset ();
+  let scheduled = ref 0 in
+  let changes = ref [] in
+  let mounted =
+    Renderer.mount
+      ~schedule_event:(fun _ -> Int.incr scheduled)
+      (Apple.text "Root"
+       |> Apple.sheet
+            ~is_presented:true
+            ~content:
+              (Apple.text "Settings"
+               |> Apple.alert
+                    ~is_presented:true
+                    ~title:"User name"
+                    ~text:"Ada"
+                    ~placeholder:"User name"
+                    ~on_text_change:(fun text ->
+                      changes := text :: !changes;
+                      noop)
+                    ~actions:
+                      [ Apple.alert_action
+                          ~id:"save"
+                          ~title:"Save"
+                          ~on_click:noop
+                          ()
+                      ]
+                    ())
+            )
+  in
+  Backend.change_nested_sheet_alert_text_exn
+    (Renderer.view mounted)
+    ~path:[]
+    ~host_path:[]
+    ~text:"Grace";
+  Backend.click_nested_sheet_alert_action_exn
+    (Renderer.view mounted)
+    ~path:[]
+    ~host_path:[]
+    ~id:"save";
+  [%test_result: int] !scheduled ~expect:2;
+  [%test_result: string list] !changes ~expect:[ "Grace" ]
+;;
+
 let%test_unit "text editor renders multiline text and schedules changes" =
   Backend.reset ();
   let scheduled = ref 0 in
