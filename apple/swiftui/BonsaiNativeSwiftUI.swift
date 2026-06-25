@@ -818,11 +818,13 @@ private struct BonsaiNativeNodeView: View {
           .background(bonsaiHomeBodyBackground.ignoresSafeArea())
           .opacity(progress)
 
-        VStack(spacing: 0) {
-          compactSidebarTopBar
-
+        ZStack(alignment: .top) {
           selectedRouteDetail
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .padding(.top, 48)
+
+          compactSidebarTopBar
+            .offset(y: -12)
         }
         .frame(width: proxy.size.width, height: proxy.size.height)
         .background(bonsaiHomeBodyBackground)
