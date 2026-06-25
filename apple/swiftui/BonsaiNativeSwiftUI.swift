@@ -86,10 +86,13 @@ private var bonsaiHomeBodyBackground: Color {
 
 private struct BonsaiHeaderIconChrome: ViewModifier {
   func body(content: Content) -> some View {
-    content
-      .frame(width: 34, height: 34)
-      .contentShape(Circle())
-      .bonsaiLiquidGlassPanel(cornerRadius: 17, isInteractive: true, isTransparent: true)
+    ZStack {
+      Color.clear
+        .bonsaiLiquidGlassPanel(cornerRadius: 17, isInteractive: true, isTransparent: true)
+      content
+    }
+    .frame(width: 34, height: 34)
+    .contentShape(Circle())
   }
 }
 
@@ -1504,6 +1507,7 @@ private struct BonsaiNativeNodeView: View {
             .frame(width: 17, height: 2.2)
         }
         .modifier(BonsaiHeaderIconChrome())
+        .environment(\.isEnabled, true)
       }
       .buttonStyle(.plain)
 
