@@ -5,7 +5,7 @@ module Effect = struct
   let of_thunk f = f
 
   let many effects () =
-    List.iter (fun effect -> effect ()) effects
+    List.iter (fun action -> action ()) effects
   ;;
 end
 
@@ -347,7 +347,7 @@ module Bridge = struct
               "dismissEventId"
               (match on_dismiss with
                | None -> "null"
-               | Some effect -> register (Click effect) |> string_of_int)
+               | Some action -> register (Click action) |> string_of_int)
           ]
     in
     { json = render_node node; schedule_event; handlers }
@@ -355,13 +355,13 @@ module Bridge = struct
 
   let dispatch_click t id =
     match Hashtbl.find_opt t.handlers id with
-    | Some (Click effect) -> t.schedule_event effect
+    | Some (Click action) -> t.schedule_event action
     | Some (Change _) | None -> ()
   ;;
 
   let dispatch_change t id ~text =
     match Hashtbl.find_opt t.handlers id with
-    | Some (Change effect) -> t.schedule_event (effect text)
+    | Some (Change action) -> t.schedule_event (action text)
     | Some (Click _) | None -> ()
   ;;
 end
@@ -404,18 +404,18 @@ module App_driver = struct
 
   let flush t =
     if t.dirty
-    then render_current_result t ~schedule_event:(fun effect -> effect ())
+    then render_current_result t ~schedule_event:(fun action -> action ())
   ;;
 
   let rec flush_and_render t =
     render_current_result t ~schedule_event:(schedule_event_and_render t)
 
-  and schedule_event_and_render t effect =
-    effect ();
+  and schedule_event_and_render t action =
+    action ();
     if t.dirty then flush_and_render t
   ;;
 
-  let schedule_event _t effect = effect ()
+  let schedule_event _t action = action ()
 end
 
 module App = struct

@@ -11,7 +11,7 @@ Build Jane Street OCaml packages for the opam-cross-ios target toolchain and
 install them into the switch's ios-sysroot findlib tree.
 
 Options:
-  --switch NAME        Opam switch to use. Default: simulator
+  --switch NAME        Opam switch to use. Default: simulator-5.4.1
   --workspace PATH     Dune workspace to use. Default: dune-workspace.basement-flags
   --clean              Run dune clean before each package build
   --continue-from PKG  Skip packages before PKG in the selected package list
@@ -27,7 +27,7 @@ Run this after installing the host package dependencies with:
 EOF
 }
 
-switch_name=${BONSAI_APPLE_IOS_SWITCH:-${BONSAI_NATIVE_IOS_SWITCH:-simulator}}
+switch_name=${BONSAI_APPLE_IOS_SWITCH:-${BONSAI_NATIVE_IOS_SWITCH:-simulator-5.4.1}}
 workspace=${BONSAI_APPLE_IOS_WORKSPACE:-${BONSAI_NATIVE_IOS_WORKSPACE:-dune-workspace.basement-flags}}
 clean=false
 dry_run=false
@@ -380,7 +380,6 @@ copy_if_exists() {
 
 build_ppxlib() {
   local source=$1
-  local patch_file=$repo_root/apple/patches/ppxlib-ios-generated-sources.patch
 
   echo "==> ppxlib (target build with host-generated sources)"
   (
@@ -390,9 +389,6 @@ build_ppxlib() {
     rm -f src/ast_pattern_generated.ml src/ast_builder_generated.ml
     cp _build/default/src/ast_pattern_generated.ml src/ast_pattern_generated.ml
     cp _build/default/src/ast_builder_generated.ml src/ast_builder_generated.ml
-    if grep -q "gen/gen_ast_pattern.exe" src/dune; then
-      patch -p0 < "$patch_file"
-    fi
     DUNE_WORKSPACE="$workspace" opam exec --switch="$switch_name" -- \
       dune build -p ppxlib -x ios @install --display short
   )
@@ -494,19 +490,6 @@ package "ui_effect" (
 EOF
 }
 
-apply_package_patches() {
-  local package=$1
-  local source=$2
-
-  case "$package" in
-    core_unix)
-      if ! grep -q "JSC_TARGET_IOS" "$source/core_unix/src/core_unix_stubs.c"; then
-        (cd "$source" && patch -p0 < "$repo_root/apple/patches/core_unix-ios.patch")
-      fi
-      ;;
-  esac
-}
-
 build_and_install_package() {
   local package=$1
   local source
@@ -525,7 +508,6 @@ build_and_install_package() {
   fi
 
   source=$(find_source_dir "$package")
-  apply_package_patches "$package" "$source"
 
   if [[ $package == ppxlib ]]; then
     build_ppxlib "$source"

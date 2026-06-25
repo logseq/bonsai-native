@@ -2,7 +2,7 @@
 
 (context
  (opam
-  (switch device)
+  (switch device-5.4.1)
   (name device)
   (targets ios)
   (merlin)

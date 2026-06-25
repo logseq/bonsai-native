@@ -38,7 +38,7 @@ let () =
       ; custom_view ~key:"native-map" ~kind:"map" ()
       ]
   in
-  let bridge = Bridge.render ~schedule_event:(fun effect -> effect ()) node in
+  let bridge = Bridge.render ~schedule_event:(fun action -> action ()) node in
   let json = Bridge.json bridge in
   List.iter
     (assert_contains json)

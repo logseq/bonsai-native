@@ -5,7 +5,7 @@ module Effect = struct
   let of_thunk f = f
 
   let many effects () =
-    Stdlib.List.iter (fun effect -> Stdlib.ignore (effect ())) effects
+    Stdlib.List.iter (fun action -> Stdlib.ignore (action ())) effects
   ;;
 end
 
@@ -1695,7 +1695,7 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_list_behavior
            t.view
-           ~on_refresh:(Option.map on_refresh ~f:(fun effect -> fun () -> t.schedule_event effect))
+           ~on_refresh:(Option.map on_refresh ~f:(fun action -> fun () -> t.schedule_event action))
            ~on_delete:
              (Option.map on_delete ~f:(fun on_delete ->
                 fun index -> t.schedule_event (on_delete index)))
@@ -1724,9 +1724,9 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_navigation_link_callbacks
            t.view
-           ~on_activate:(Option.map on_activate ~f:(fun effect -> fun () -> t.schedule_event effect))
+           ~on_activate:(Option.map on_activate ~f:(fun action -> fun () -> t.schedule_event action))
            ~on_deactivate:
-             (Option.map on_deactivate ~f:(fun effect -> fun () -> t.schedule_event effect));
+             (Option.map on_deactivate ~f:(fun action -> fun () -> t.schedule_event action));
          reconcile_positional t [ label; destination ]
        | Navigation_split_node { sidebar; content; detail } ->
          Backend.set_on_click t.view None;
@@ -3429,9 +3429,9 @@ module For_testing = struct
         ~text
     ;;
 
-    let schedule_event_exn view effect =
+    let schedule_event_exn view action =
       match view.schedule_event with
-      | Some schedule_event -> schedule_event effect
+      | Some schedule_event -> schedule_event action
       | None -> failwith "View has no event scheduler"
     ;;
 

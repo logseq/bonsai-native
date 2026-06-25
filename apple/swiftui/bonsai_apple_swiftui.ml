@@ -1535,8 +1535,8 @@ module Backend = struct
     ~on_dismiss
     =
     clear_alert_events view;
-    let install_click effect =
-      let event_id = install_handler None (Click (fun () -> schedule_event effect)) in
+    let install_click action =
+      let event_id = install_handler None (Click (fun () -> schedule_event action)) in
       view.alert_event_ids <- event_id :: view.alert_event_ids;
       event_id
     in
@@ -1588,8 +1588,8 @@ module Backend = struct
     =
     List.iter view.confirmation_dialog_event_ids ~f:(Hashtbl.remove event_handlers);
     view.confirmation_dialog_event_ids <- [];
-    let install_click effect =
-      let event_id = install_handler None (Click (fun () -> schedule_event effect)) in
+    let install_click action =
+      let event_id = install_handler None (Click (fun () -> schedule_event action)) in
       view.confirmation_dialog_event_ids <- event_id :: view.confirmation_dialog_event_ids;
       event_id
     in
