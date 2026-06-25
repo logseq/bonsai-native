@@ -121,6 +121,9 @@ let create kind =
   let native, controller =
     match kind with
     | Apple.Navigation_stack -> navigation_controller ()
+    | Apple.Navigation_link ->
+      let native = init_stack Apple.Vertical in
+      native, host_controller native
     | Apple.Navigation_split ->
       let native = init_stack Apple.Vertical in
       native, host_controller native
@@ -367,6 +370,7 @@ let set_list_row
   ~subtitle:_
   ~trailing_text:_
   ~leading_system_image:_
+  ~preview_image_path:_
   ~content_style:_
   ~accessory:_
   ~title_strikethrough:_
@@ -375,6 +379,28 @@ let set_list_row
   ~menu_actions:_
   =
   failwith "Apple.list_row is only supported by the SwiftUI backend"
+;;
+
+let set_sidebar_shell
+  _view
+  ~header_action:_
+  ~actions:_
+  ~bottom_search_placeholder:_
+  ~bottom_search_text:_
+  ~bottom_search_on_change:_
+  ~bottom_action:_
+  =
+  failwith "unimplemented"
+;;
+
+let refresh_list_row_callbacks
+  _view
+  ~on_click:_
+  ~leading_button:_
+  ~swipe_actions:_
+  ~menu_actions:_
+  =
+  failwith "unimplemented"
 ;;
 
 let nsarray values =
@@ -592,6 +618,7 @@ let set_modifiers view ~schedule_event modifiers =
     | Apple.Rendered_toolbar items -> install_toolbar view ~schedule_event items
     | Apple.Rendered_sheet { is_presented; content; on_dismiss = _ } ->
       install_sheet view ~is_presented ~content
+    | Apple.Rendered_alert _ -> failwith "unimplemented"
     | Apple.Rendered_navigation_title title ->
       saw_navigation_title := true;
       set_navigation_title view title);
@@ -613,7 +640,9 @@ module Backend = struct
   let set_spacing = set_spacing
   let set_children = set_children
   let set_tabs = set_tabs
+  let set_sidebar_shell = set_sidebar_shell
   let set_list_row = set_list_row
+  let refresh_list_row_callbacks = refresh_list_row_callbacks
   let set_section = set_section
   let set_picker = set_picker
   let set_file_exporter = set_file_exporter
