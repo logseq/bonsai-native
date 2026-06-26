@@ -28,6 +28,6 @@
  (description
   "A SwiftUI-like declarative native Apple UI framework for OCaml.")
  (depends
-  (ocaml (and (>= 5.1.0) (< 5.3.0)))
+  (ocaml (>= 5.1.0))
   dune
   bonsai_native))
