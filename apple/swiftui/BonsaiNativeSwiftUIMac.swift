@@ -149,6 +149,7 @@ private enum NodeKind: Int32 {
   case menu = 35
   case disclosureGroup = 36
   case movableRows = 37
+  case grid = 38
 }
 
 private func bonsaiNativeSemanticColor(_ color: Int32) -> Color? {
@@ -334,6 +335,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var liquidGlassPanelIsTransparent = false
   @Published var liquidGlassPanelTintColor: Int32 = -1
   @Published var liquidGlassPanelTintOpacity: Double = 0
+  @Published var gridColumns: Int = 2
+  @Published var gridSpacing: CGFloat = 10
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
   @Published var tabs: [BonsaiNativeTab] = []
@@ -656,6 +659,17 @@ private struct BonsaiNativeNodeView: View {
       HStack(alignment: .center, spacing: node.spacing) { childViews }
     case .zStack:
       ZStack { childViews }
+    case .grid:
+      LazyVGrid(
+        columns: Array(
+          repeating: GridItem(.flexible(), spacing: node.gridSpacing),
+          count: max(1, node.gridColumns)
+        ),
+        alignment: .leading,
+        spacing: node.gridSpacing
+      ) {
+        childViews
+      }
     case .spacer:
       Spacer()
     case .divider:
@@ -1687,6 +1701,17 @@ public func bonsai_native_swiftui_set_toggle(_ pointer: UnsafeMutableRawPointer?
 @_cdecl("bonsai_native_swiftui_set_spacing")
 public func bonsai_native_swiftui_set_spacing(_ pointer: UnsafeMutableRawPointer?, _ spacing: Double) {
   nativeNode(from: pointer)?.spacing = spacing < 0 ? nil : CGFloat(spacing)
+}
+
+@_cdecl("bonsai_native_swiftui_set_grid")
+public func bonsai_native_swiftui_set_grid(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ columns: Int32,
+  _ spacing: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.gridColumns = max(1, Int(columns))
+  node.gridSpacing = CGFloat(spacing)
 }
 
 @_cdecl("bonsai_native_swiftui_set_children")

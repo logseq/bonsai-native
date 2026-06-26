@@ -285,6 +285,7 @@ val congrats_effect : unit -> node
 val vstack : ?spacing:float -> node list -> node
 val hstack : ?spacing:float -> node list -> node
 val zstack : node list -> node
+val grid : ?columns:int -> ?spacing:float -> node list -> node
 val spacer : unit -> node
 val divider : unit -> node
 val form : node list -> node
@@ -595,6 +596,7 @@ type backend_kind =
   | Toggle
   | Stack of axis
   | Z_stack
+  | Grid
   | Spacer
   | Divider
   | Form
@@ -800,6 +802,7 @@ module Renderer : sig
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
+    val set_grid : view -> columns:int -> spacing:float -> unit
     val set_children : view -> keyed:string option list -> view list -> unit
 
     val set_list_behavior

@@ -296,6 +296,13 @@ external set_native_spacing
   -> unit
   = "bonsai_apple_swiftui_set_spacing"
 
+external set_native_grid
+  :  native
+  -> int
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_grid"
+
 external set_native_children
   :  native
   -> native array
@@ -912,6 +919,7 @@ let node_kind_id = function
   | Apple.Spacer -> 27
   | Apple.Divider -> 28
   | Apple.Form -> 29
+  | Apple.Grid -> 38
   | Apple.Scroll_view -> 6
   | Apple.List -> 7
   | Apple.Movable_rows -> 37
@@ -1158,6 +1166,7 @@ module Backend = struct
 
   let set_progress view ~value = set_native_progress view.native value
   let set_spacing view spacing = set_native_spacing view.native spacing
+  let set_grid view ~columns ~spacing = set_native_grid view.native columns spacing
 
   let set_children view ~keyed:_ children =
     set_native_children

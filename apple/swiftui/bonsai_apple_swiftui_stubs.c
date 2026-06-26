@@ -54,6 +54,7 @@ extern void bonsai_native_swiftui_set_text_field_secure(void *node, bool is_secu
 extern void bonsai_native_swiftui_set_toggle(void *node, bool is_on, int32_t event_id);
 extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
+extern void bonsai_native_swiftui_set_grid(void *node, int32_t columns, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
 extern void bonsai_native_swiftui_set_list_behavior(
   void *node,
@@ -751,6 +752,16 @@ CAMLprim value bonsai_apple_swiftui_set_spacing(value node, value spacing)
   bonsai_native_swiftui_set_spacing(
     pointer_val(node),
     Is_none(spacing) ? -1.0 : Double_val(Some_val(spacing)));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_grid(value node, value columns, value spacing)
+{
+  CAMLparam3(node, columns, spacing);
+  bonsai_native_swiftui_set_grid(
+    pointer_val(node),
+    Int_val(columns),
+    Double_val(spacing));
   CAMLreturn(Val_unit);
 }
 

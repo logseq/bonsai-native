@@ -243,6 +243,7 @@ private enum NodeKind: Int32 {
   case menu = 35
   case disclosureGroup = 36
   case movableRows = 37
+  case grid = 38
 }
 
 private let bonsaiLightBackgroundComponent: CGFloat = 0.965
@@ -527,6 +528,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var scrollDismissesKeyboard = false
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
+  @Published var gridColumns: Int = 2
+  @Published var gridSpacing: CGFloat = 10
   @Published var children: [BonsaiNativeNode] = []
   @Published var clickEventId: Int32?
   @Published var navigationActivateEventId: Int32?
@@ -1500,6 +1503,18 @@ private struct BonsaiNativeNodeView: View {
 
     case .zStack:
       ZStack {
+        childViews
+      }
+
+    case .grid:
+      LazyVGrid(
+        columns: Array(
+          repeating: GridItem(.flexible(), spacing: node.gridSpacing),
+          count: max(1, node.gridColumns)
+        ),
+        alignment: .leading,
+        spacing: node.gridSpacing
+      ) {
         childViews
       }
 
@@ -3420,6 +3435,17 @@ public func bonsai_native_swiftui_set_spacing(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.spacing = spacing < 0 ? nil : CGFloat(spacing)
+}
+
+@_cdecl("bonsai_native_swiftui_set_grid")
+public func bonsai_native_swiftui_set_grid(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ columns: Int32,
+  _ spacing: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.gridColumns = max(1, Int(columns))
+  node.gridSpacing = CGFloat(spacing)
 }
 
 @_cdecl("bonsai_native_swiftui_set_children")

@@ -490,6 +490,7 @@ type backend_kind =
   | Toggle
   | Stack of axis
   | Z_stack
+  | Grid
   | Spacer
   | Divider
   | Form
@@ -567,6 +568,11 @@ type node =
       ; children : node list
       }
   | Z_stack_node of node list
+  | Grid_node of
+      { columns : int
+      ; spacing : float
+      ; children : node list
+      }
   | Spacer_node
   | Divider_node
   | Form_node of node list
@@ -996,6 +1002,7 @@ let congrats_effect () = Congrats_effect_node
 let vstack ?spacing children = Stack_node { axis = Vertical; spacing; children }
 let hstack ?spacing children = Stack_node { axis = Horizontal; spacing; children }
 let zstack children = Z_stack_node children
+let grid ?(columns = 2) ?(spacing = 10.) children = Grid_node { columns; spacing; children }
 let spacer () = Spacer_node
 let divider () = Divider_node
 let form children = Form_node children
@@ -1537,6 +1544,7 @@ let backend_kind = function
   | Progress_view_node _ -> Progress_view
   | Stack_node { axis; _ } -> Stack axis
   | Z_stack_node _ -> Z_stack
+  | Grid_node _ -> Grid
   | Spacer_node -> Spacer
   | Divider_node -> Divider
   | Form_node _ -> Form
@@ -1600,6 +1608,7 @@ module Renderer = struct
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
+    val set_grid : view -> columns:int -> spacing:float -> unit
     val set_children : view -> keyed:string option list -> view list -> unit
 
     val set_list_behavior
@@ -1965,6 +1974,13 @@ module Renderer = struct
           ^ opt (Option.map spacing ~f:float)
           ^ ":"
           ^ list (List.map children ~f:fingerprint)
+        | Grid_node { columns; spacing; children } ->
+          "grid:"
+          ^ string_of_int columns
+          ^ ":"
+          ^ float spacing
+          ^ ":"
+          ^ list (List.map children ~f:fingerprint)
         | Z_stack_node children -> "zstack:" ^ list (List.map children ~f:fingerprint)
         | Spacer_node -> "spacer"
         | Divider_node -> "divider"
@@ -2232,6 +2248,7 @@ module Renderer = struct
       | Toggle_node _
       | Text_editor_node _
       | Stack_node _
+      | Grid_node _
       | Z_stack_node _
       | Form_node _
       | Scroll_view_node _
@@ -2351,6 +2368,11 @@ module Renderer = struct
          replace_children []
        | Stack_node { spacing; children; _ } ->
          Backend.set_spacing t.view spacing;
+         Backend.set_on_click t.view None;
+         Backend.set_on_change t.view None;
+         reconcile_positional t children
+       | Grid_node { columns; spacing; children } ->
+         Backend.set_grid t.view ~columns ~spacing;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
@@ -2978,6 +3000,8 @@ module For_testing = struct
       ; mutable text_field_secure : bool
       ; mutable toggle_is_on : bool
       ; mutable progress_value : float option
+      ; mutable grid_columns : int option
+      ; mutable grid_spacing : float option
       ; mutable slider_value : float option
       ; mutable slider_range : (float * float) option
       ; mutable on_slider_change : (float -> unit) option
@@ -3093,6 +3117,8 @@ module For_testing = struct
       ; text_field_secure = false
       ; toggle_is_on = false
       ; progress_value = None
+      ; grid_columns = None
+      ; grid_spacing = None
       ; slider_value = None
       ; slider_range = None
       ; on_slider_change = None
@@ -3235,6 +3261,12 @@ module For_testing = struct
     ;;
 
     let set_spacing _view _spacing = mutate ()
+
+    let set_grid view ~columns ~spacing =
+      mutate ();
+      view.grid_columns <- Some columns;
+      view.grid_spacing <- Some spacing
+    ;;
 
     let set_enabled view is_enabled =
       mutate ();
@@ -3505,6 +3537,7 @@ module For_testing = struct
       | Stack Vertical -> "stack(vertical)"
       | Stack Horizontal -> "stack(horizontal)"
       | Z_stack -> "zstack"
+      | Grid -> "grid"
       | Spacer -> "spacer"
       | Divider -> "divider"
       | Form -> "form"
@@ -3669,6 +3702,11 @@ module For_testing = struct
       let progress =
         match view.kind, view.progress_value with
         | Progress_view, Some value -> " progress=" ^ Float.to_string value
+        | _ -> ""
+      in
+      let grid =
+        match view.kind, view.grid_columns, view.grid_spacing with
+        | Grid, Some columns, Some spacing -> sprintf " columns=%d spacing=%g" columns spacing
         | _ -> ""
       in
       let list_behavior =
@@ -4266,6 +4304,7 @@ module For_testing = struct
         ^ text_field_secure
         ^ toggle_selected
         ^ progress
+        ^ grid
         ^ list_behavior
         ^ slider
         ^ stepper
