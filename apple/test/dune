@@ -1,3 +1,4 @@
 (test
  (name bonsai_apple_test)
+ (deps ../swiftui/BonsaiNativeSwiftUI.swift)
  (libraries bonsai_apple))

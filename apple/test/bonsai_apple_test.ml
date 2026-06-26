@@ -17,6 +17,45 @@ let contains text ~substring =
   substring_length = 0 || loop 0
 ;;
 
+let count_substrings text ~substring =
+  let text_length = String.length text in
+  let substring_length = String.length substring in
+  let rec loop index count =
+    if substring_length = 0 || index + substring_length > text_length
+    then count
+    else if String.sub text index substring_length = substring
+    then loop (index + substring_length) (count + 1)
+    else loop (index + 1) count
+  in
+  loop 0 0
+;;
+
+let read_file path =
+  let channel = open_in path in
+  Fun.protect
+    ~finally:(fun () -> close_in channel)
+    (fun () ->
+       let length = in_channel_length channel in
+       really_input_string channel length)
+;;
+
+let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
+
+let test_compact_sidebar_close_paths_share_swift_animation () =
+  let source = read_file swiftui_source_path in
+  let expected_close_paths = 6 in
+  require
+    (count_substrings source ~substring:"setCompactSidebarOpen(false)"
+     >= expected_close_paths)
+    "compact sidebar close paths should go through setCompactSidebarOpen(false) so \
+     row taps, menu actions, header taps, overlay taps, and drag endings share the \
+     Swift drawer animation, keyboard dismissal, haptic, and drag-state reset";
+  require
+    (count_substrings source ~substring:"isCompactSidebarOpen = false" = 1)
+    "compact sidebar close paths should not mutate isCompactSidebarOpen directly \
+     outside its @State initial value"
+;;
+
 let counter graph =
   let count, set_count = Apple.state graph ~key:"count" 0 in
   Apple.vstack
@@ -771,6 +810,7 @@ let () =
   test_tab_selection_updates_state ();
   test_sidebar_history_actions_are_separate_and_clickable ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
+  test_compact_sidebar_close_paths_share_swift_animation ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
   test_button_renders_bordered_prominent_style ();

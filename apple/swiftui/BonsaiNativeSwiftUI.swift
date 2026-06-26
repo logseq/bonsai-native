@@ -2214,9 +2214,7 @@ private struct BonsaiNativeNodeView: View {
         Button {
           node.selectedTabId = tab.id
           model.sendChange(node.tabSelectEventId, text: tab.id)
-          withAnimation(.easeOut(duration: 0.18)) {
-            isCompactSidebarOpen = false
-          }
+          setCompactSidebarOpen(false)
         } label: {
           sidebarRowLabel(
             title: tab.title,
@@ -2257,9 +2255,7 @@ private struct BonsaiNativeNodeView: View {
         if let eventId = action.eventId {
           model.sendClick(eventId)
         }
-        withAnimation(.easeOut(duration: 0.18)) {
-          isCompactSidebarOpen = false
-        }
+        setCompactSidebarOpen(false)
       } label: {
         sidebarRowLabel(
           title: action.title,
@@ -2275,9 +2271,7 @@ private struct BonsaiNativeNodeView: View {
           if let eventId = action.eventId {
             model.sendClick(eventId)
           }
-          withAnimation(.easeOut(duration: 0.18)) {
-            isCompactSidebarOpen = false
-          }
+          setCompactSidebarOpen(false)
         } label: {
           sidebarRowLabel(
             title: action.title,
@@ -2313,9 +2307,7 @@ private struct BonsaiNativeNodeView: View {
         if let eventId = menuAction.eventId {
           model.sendClick(eventId)
         }
-        withAnimation(.easeOut(duration: 0.18)) {
-          isCompactSidebarOpen = false
-        }
+        setCompactSidebarOpen(false)
       } label: {
         if let systemImage = menuAction.systemImage {
           Label(menuAction.title, systemImage: systemImage)
@@ -2393,9 +2385,7 @@ private struct BonsaiNativeNodeView: View {
       }
     } else {
       Button {
-        withAnimation(.easeOut(duration: 0.18)) {
-          isCompactSidebarOpen = false
-        }
+        setCompactSidebarOpen(false)
       } label: {
         Image(systemName: "xmark")
           .font(.headline.weight(.semibold))
@@ -2409,9 +2399,7 @@ private struct BonsaiNativeNodeView: View {
     if let eventId = action.eventId {
       model.sendClick(eventId)
     }
-    withAnimation(.easeOut(duration: 0.18)) {
-      isCompactSidebarOpen = false
-    }
+    setCompactSidebarOpen(false)
   }
 
   @ViewBuilder
@@ -2484,9 +2472,7 @@ private struct BonsaiNativeNodeView: View {
       if let eventId = action.eventId {
         model.sendClick(eventId)
       }
-      withAnimation(.easeOut(duration: 0.18)) {
-        isCompactSidebarOpen = false
-      }
+      setCompactSidebarOpen(false)
     } label: {
       if action.chrome == 2 {
         Image(systemName: action.systemImage ?? "xmark")
