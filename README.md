@@ -51,7 +51,7 @@ updates stay shared above the platform renderer.
 - `android/`: Gradle/Compose demo app.
 - `android/examples/`: Android demo components, native entrypoint, and asset
   export helpers.
-- `jni/`: Android JNI bridge into OCaml.
+- `android/jni/`: Android JNI bridge into OCaml.
 - `apple/`: Apple OCaml package, SwiftUI backend, and iOS/macOS examples.
 - `web/demo/`: browser demo for the shared Android demo components.
 - `scripts/`: Android and iOS bootstrap/build helpers.

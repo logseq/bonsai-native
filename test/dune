@@ -1,6 +1,15 @@
 (rule
  (alias runtest)
  (deps
+  ../scripts/check-android-jni-layout.sh)
+ (action
+  (chdir
+   %{workspace_root}
+   (run /bin/sh scripts/check-android-jni-layout.sh))))
+
+(rule
+ (alias runtest)
+ (deps
   (source_tree ..))
  (action
   (chdir

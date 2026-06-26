@@ -11,7 +11,7 @@ That shared library contains:
 - the OCaml runtime
 - the local OCaml graph runtime built for Android
 - the OCaml Android demo entrypoint
-- JNI functions from `jni/bonsai_android_jni.c`
+- JNI functions from `android/jni/bonsai_android_jni.c`
 
 ## Cross Compiler
 

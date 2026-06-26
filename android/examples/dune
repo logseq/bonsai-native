@@ -27,7 +27,7 @@
   (language c)
   (names bonsai_android_jni_wrapper)
   (include_dirs
-   ../../jni
+   ../jni
    %{env:JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}/include
    %{env:JAVA_HOME=/opt/homebrew/opt/openjdk/libexec/openjdk.jdk/Contents/Home}/include/darwin))
  (flags :standard -linkall))
