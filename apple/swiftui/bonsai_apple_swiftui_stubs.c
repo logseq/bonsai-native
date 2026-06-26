@@ -204,6 +204,9 @@ extern void bonsai_native_swiftui_set_padding(
 extern void bonsai_native_swiftui_set_regular_material_panel(
   void *node,
   double corner_radius);
+extern void bonsai_native_swiftui_set_secondary_system_grouped_panel(
+  void *node,
+  double corner_radius);
 extern void bonsai_native_swiftui_set_secondary_fill_panel(
   void *node,
   double corner_radius,
@@ -1353,6 +1356,17 @@ CAMLprim value bonsai_apple_swiftui_set_regular_material_panel(
 {
   CAMLparam2(node, corner_radius);
   bonsai_native_swiftui_set_regular_material_panel(
+    pointer_val(node),
+    Double_val(corner_radius));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_secondary_system_grouped_panel(
+  value node,
+  value corner_radius)
+{
+  CAMLparam2(node, corner_radius);
+  bonsai_native_swiftui_set_secondary_system_grouped_panel(
     pointer_val(node),
     Double_val(corner_radius));
   CAMLreturn(Val_unit);

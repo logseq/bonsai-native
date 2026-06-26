@@ -499,6 +499,7 @@ val list_row : list_row -> node
 val custom_view : ?key:string -> kind:string -> unit -> node
 val padding : ?insets:edge_insets -> node -> node
 val regular_material_panel : ?corner_radius:float -> node -> node
+val secondary_system_grouped_panel : ?corner_radius:float -> node -> node
 val secondary_fill_panel : ?corner_radius:float -> ?opacity:float -> node -> node
 
 val liquid_glass_panel
@@ -629,6 +630,7 @@ type backend_kind =
 type modifier =
   | Padding of edge_insets
   | Regular_material_panel of { corner_radius : float }
+  | Secondary_system_grouped_panel of { corner_radius : float }
   | Secondary_fill_panel of
       { corner_radius : float
       ; opacity : float
@@ -685,6 +687,7 @@ type modifier =
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
   | Rendered_regular_material_panel of { corner_radius : float }
+  | Rendered_secondary_system_grouped_panel of { corner_radius : float }
   | Rendered_secondary_fill_panel of
       { corner_radius : float
       ; opacity : float

@@ -563,6 +563,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
+  @Published var secondarySystemGroupedPanelCornerRadius: CGFloat?
   @Published var secondaryFillPanelCornerRadius: CGFloat?
   @Published var secondaryFillPanelOpacity: Double = 0.12
   @Published var liquidGlassPanelCornerRadius: CGFloat?
@@ -927,11 +928,13 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
         tapAction(
           contextMenu(
             regularMaterialPanel(
-              secondaryFillPanel(
-                liquidGlassPanel(
-                  content
-                    .padding(node.padding ?? EdgeInsets())
-                    .frame(width: node.frameWidth, height: node.frameHeight)
+              secondarySystemGroupedPanel(
+                secondaryFillPanel(
+                  liquidGlassPanel(
+                    content
+                      .padding(node.padding ?? EdgeInsets())
+                      .frame(width: node.frameWidth, height: node.frameHeight)
+                  )
                 )
               )
             )
@@ -1071,6 +1074,18 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
     if let cornerRadius = node.regularMaterialPanelCornerRadius {
       content.background(
         .regularMaterial,
+        in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+      )
+    } else {
+      content
+    }
+  }
+
+  @ViewBuilder
+  private func secondarySystemGroupedPanel<PanelContent: View>(_ content: PanelContent) -> some View {
+    if let cornerRadius = node.secondarySystemGroupedPanelCornerRadius {
+      content.background(
+        Color(uiColor: .secondarySystemGroupedBackground),
         in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
       )
     } else {
@@ -3180,6 +3195,15 @@ public func bonsai_native_swiftui_set_regular_material_panel(
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.regularMaterialPanelCornerRadius = cornerRadius < 0 ? nil : CGFloat(cornerRadius)
+}
+
+@_cdecl("bonsai_native_swiftui_set_secondary_system_grouped_panel")
+public func bonsai_native_swiftui_set_secondary_system_grouped_panel(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ cornerRadius: Double
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.secondarySystemGroupedPanelCornerRadius = cornerRadius < 0 ? nil : CGFloat(cornerRadius)
 }
 
 @_cdecl("bonsai_native_swiftui_set_secondary_fill_panel")

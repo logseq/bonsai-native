@@ -725,6 +725,7 @@ and tab =
 and modifier =
   | Padding of edge_insets
   | Regular_material_panel of { corner_radius : float }
+  | Secondary_system_grouped_panel of { corner_radius : float }
   | Secondary_fill_panel of
       { corner_radius : float
       ; opacity : float
@@ -781,6 +782,7 @@ and modifier =
 type 'view rendered_modifier =
   | Rendered_padding of edge_insets
   | Rendered_regular_material_panel of { corner_radius : float }
+  | Rendered_secondary_system_grouped_panel of { corner_radius : float }
   | Rendered_secondary_fill_panel of
       { corner_radius : float
       ; opacity : float
@@ -1389,6 +1391,10 @@ let regular_material_panel ?(corner_radius = 8.) node =
   Modified_node (Regular_material_panel { corner_radius }, node)
 ;;
 
+let secondary_system_grouped_panel ?(corner_radius = 8.) node =
+  Modified_node (Secondary_system_grouped_panel { corner_radius }, node)
+;;
+
 let secondary_fill_panel ?(corner_radius = 8.) ?(opacity = 0.12) node =
   Modified_node (Secondary_fill_panel { corner_radius; opacity }, node)
 ;;
@@ -1837,6 +1843,8 @@ module Renderer = struct
           ^ float insets.trailing
         | Regular_material_panel { corner_radius } ->
           "regular-material-panel:" ^ float corner_radius
+        | Secondary_system_grouped_panel { corner_radius } ->
+          "secondary-system-grouped-panel:" ^ float corner_radius
         | Secondary_fill_panel { corner_radius; opacity } ->
           "secondary-fill-panel:" ^ float corner_radius ^ ":" ^ float opacity
         | Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity }
@@ -2766,6 +2774,8 @@ module Renderer = struct
           | Padding insets -> Rendered_padding insets
           | Regular_material_panel { corner_radius } ->
             Rendered_regular_material_panel { corner_radius }
+          | Secondary_system_grouped_panel { corner_radius } ->
+            Rendered_secondary_system_grouped_panel { corner_radius }
           | Secondary_fill_panel { corner_radius; opacity } ->
             Rendered_secondary_fill_panel { corner_radius; opacity }
           | Liquid_glass_panel { corner_radius; is_transparent; tint_color; tint_opacity }
@@ -3531,6 +3541,7 @@ module For_testing = struct
     let modifier_name = function
       | Rendered_padding _ -> "padding"
       | Rendered_regular_material_panel _ -> "panel"
+      | Rendered_secondary_system_grouped_panel _ -> "panel"
       | Rendered_secondary_fill_panel _ -> "panel"
       | Rendered_liquid_glass_panel _ -> "panel"
       | Rendered_context_menu _ -> "context-menu"
@@ -3818,6 +3829,9 @@ module For_testing = struct
                    tint_opacity)
             | Rendered_regular_material_panel { corner_radius } ->
               Some (sprintf " panel=regular-material corner-radius=%g" corner_radius)
+            | Rendered_secondary_system_grouped_panel { corner_radius } ->
+              Some
+                (sprintf " panel=secondary-system-grouped corner-radius=%g" corner_radius)
             | Rendered_secondary_fill_panel { corner_radius; opacity } ->
               Some
                 (sprintf

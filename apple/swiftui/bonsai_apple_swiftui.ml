@@ -268,6 +268,12 @@ external set_native_regular_material_panel
   -> unit
   = "bonsai_apple_swiftui_set_regular_material_panel"
 
+external set_native_secondary_system_grouped_panel
+  :  native
+  -> float
+  -> unit
+  = "bonsai_apple_swiftui_set_secondary_system_grouped_panel"
+
 external set_native_secondary_fill_panel
   :  native
   -> float
@@ -2002,6 +2008,7 @@ module Backend = struct
     let saw_toolbar = ref false in
     let saw_padding = ref false in
     let saw_regular_material_panel = ref false in
+    let saw_secondary_system_grouped_panel = ref false in
     let saw_secondary_fill_panel = ref false in
     let saw_liquid_glass_panel = ref false in
     let saw_context_menu = ref false in
@@ -2063,6 +2070,9 @@ module Backend = struct
       | Apple.Rendered_regular_material_panel { corner_radius } ->
         saw_regular_material_panel := true;
         set_native_regular_material_panel view.native corner_radius
+      | Apple.Rendered_secondary_system_grouped_panel { corner_radius } ->
+        saw_secondary_system_grouped_panel := true;
+        set_native_secondary_system_grouped_panel view.native corner_radius
       | Apple.Rendered_secondary_fill_panel { corner_radius; opacity } ->
         saw_secondary_fill_panel := true;
         set_native_secondary_fill_panel view.native corner_radius opacity
@@ -2112,6 +2122,8 @@ module Backend = struct
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
     if not !saw_regular_material_panel
     then set_native_regular_material_panel view.native (-1.);
+    if not !saw_secondary_system_grouped_panel
+    then set_native_secondary_system_grouped_panel view.native (-1.);
     if not !saw_secondary_fill_panel
     then set_native_secondary_fill_panel view.native (-1.) 0.;
     if not !saw_liquid_glass_panel
