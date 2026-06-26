@@ -1659,20 +1659,12 @@ private struct BonsaiNativeNodeView: View {
       }
       .pickerStyle(.segmented)
     } else {
-      HStack {
-        Text(node.text)
-          .foregroundStyle(.primary)
-        Spacer(minLength: 12)
-        Picker(node.text, selection: pickerSelection) {
-          ForEach(node.pickerOptions) { option in
-            Text(option.title).tag(option.id)
-          }
+      Picker(node.text, selection: pickerSelection) {
+        ForEach(node.pickerOptions) { option in
+          Text(option.title).tag(option.id)
         }
-        .labelsHidden()
-        .pickerStyle(.menu)
       }
-      .frame(minHeight: 52)
-      .padding(.horizontal, 16)
+      .pickerStyle(.menu)
     }
   }
 
