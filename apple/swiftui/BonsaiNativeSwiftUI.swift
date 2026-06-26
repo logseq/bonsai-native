@@ -1441,7 +1441,7 @@ private struct BonsaiNativeNodeView: View {
     case .navigationLink:
       if let navigationValue = node.navigationLinkValue {
         NavigationLink(value: navigationValue) {
-          navigationLinkLabel
+          navigationLinkLabel(suppressRowActions: false)
         }
         .simultaneousGesture(
           TapGesture().onEnded {
@@ -1462,7 +1462,7 @@ private struct BonsaiNativeNodeView: View {
             EmptyView()
           }
         } label: {
-          navigationLinkLabel
+          navigationLinkLabel(suppressRowActions: true)
         }
         .simultaneousGesture(
           TapGesture().onEnded {
@@ -1617,12 +1617,12 @@ private struct BonsaiNativeNodeView: View {
   }
 
   @ViewBuilder
-  private var navigationLinkLabel: some View {
+  private func navigationLinkLabel(suppressRowActions: Bool) -> some View {
     if node.children.indices.contains(0) {
       BonsaiNativeNodeView(
         node: node.children[0],
         model: model,
-        suppressListRowActions: true
+        suppressListRowActions: suppressRowActions
       )
     } else {
       EmptyView()
