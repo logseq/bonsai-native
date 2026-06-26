@@ -34,6 +34,7 @@ extern void bonsai_native_swiftui_set_button_subtitle(void *node, const char *su
 extern void bonsai_native_swiftui_set_button_style(void *node, int32_t style);
 extern void bonsai_native_swiftui_set_title_visible(void *node, bool is_visible);
 extern void bonsai_native_swiftui_set_keyboard_dismiss_controls(void *node, bool is_enabled);
+extern void bonsai_native_swiftui_set_scroll_dismisses_keyboard(void *node, bool is_enabled);
 extern void bonsai_native_swiftui_set_image_source(void *node, int32_t source);
 extern void bonsai_native_swiftui_set_image_color(void *node, int32_t color);
 extern void bonsai_native_swiftui_set_image_style(
@@ -630,6 +631,15 @@ CAMLprim value bonsai_apple_swiftui_set_keyboard_dismiss_controls(value node, va
 {
   CAMLparam2(node, is_enabled);
   bonsai_native_swiftui_set_keyboard_dismiss_controls(
+    pointer_val(node),
+    Bool_val(is_enabled));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_scroll_dismisses_keyboard(value node, value is_enabled)
+{
+  CAMLparam2(node, is_enabled);
+  bonsai_native_swiftui_set_scroll_dismisses_keyboard(
     pointer_val(node),
     Bool_val(is_enabled));
   CAMLreturn(Val_unit);

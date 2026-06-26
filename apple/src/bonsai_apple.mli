@@ -497,6 +497,7 @@ val toolbar_item
 val toolbar : toolbar_item list -> node -> node
 val tap_action : on_click:unit Action.t -> node -> node
 val keyboard_dismiss_controls : node -> node
+val scroll_dismisses_keyboard : node -> node
 val safe_area_inset_bottom : node -> node -> node
 val alert_action
   :  ?role:alert_action_role
@@ -605,6 +606,7 @@ type modifier =
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
   | Keyboard_dismiss_controls
+  | Scroll_dismisses_keyboard
   | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
@@ -659,6 +661,7 @@ type 'view rendered_modifier =
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_keyboard_dismiss_controls
+  | Rendered_scroll_dismisses_keyboard
   | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool

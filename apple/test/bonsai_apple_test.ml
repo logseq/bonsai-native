@@ -499,6 +499,27 @@ let test_keyboard_dismiss_controls_renders () =
     "keyboard dismiss controls should be visible to native renderers"
 ;;
 
+let test_scroll_dismisses_keyboard_renders () =
+  Backend.reset ();
+  let component _graph =
+    Apple.scroll_view (Apple.text "Transcript") |> Apple.scroll_dismisses_keyboard
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered ~substring:"modifiers=[scroll-dismisses-keyboard]")
+    "scroll-only keyboard dismissal should render without keyboard toolbar controls";
+  require
+    (not (contains rendered ~substring:"keyboard-dismiss-controls"))
+    "scroll-only keyboard dismissal should not add keyboard toolbar controls"
+;;
+
 let test_secondary_fill_panel_renders () =
   Backend.reset ();
   let component _graph =
@@ -754,6 +775,7 @@ let () =
   test_plain_text_field_renders_plain_style ();
   test_file_image_can_render_swift_card_image_style ();
   test_keyboard_dismiss_controls_renders ();
+  test_scroll_dismisses_keyboard_renders ();
   test_secondary_fill_panel_renders ();
   test_context_menu_renders_and_clicks_actions ();
   test_copy_text_to_clipboard_action_updates_test_clipboard ();

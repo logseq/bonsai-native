@@ -524,6 +524,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var imageMaxHeight: CGFloat?
   @Published var imageCornerRadius: CGFloat?
   @Published var keyboardDismissControls = false
+  @Published var scrollDismissesKeyboard = false
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
@@ -853,6 +854,23 @@ private struct BonsaiNativeKeyboardDismissControlsModifier: ViewModifier {
   }
 }
 
+private struct BonsaiNativeScrollDismissesKeyboardModifier: ViewModifier {
+  @ObservedObject var node: BonsaiNativeNode
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+#if os(iOS)
+    if node.scrollDismissesKeyboard {
+      content.scrollDismissesKeyboard(.interactively)
+    } else {
+      content
+    }
+#else
+    content
+#endif
+  }
+}
+
 private struct BonsaiNativeSearchModifier: ViewModifier {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
@@ -919,6 +937,7 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
       )
     )
       .modifier(BonsaiNativeKeyboardDismissControlsModifier(node: node))
+      .modifier(BonsaiNativeScrollDismissesKeyboardModifier(node: node))
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
       .alert(
@@ -3229,6 +3248,14 @@ public func bonsai_native_swiftui_set_keyboard_dismiss_controls(
   _ isEnabled: Bool
 ) {
   nativeNode(from: pointer)?.keyboardDismissControls = isEnabled
+}
+
+@_cdecl("bonsai_native_swiftui_set_scroll_dismisses_keyboard")
+public func bonsai_native_swiftui_set_scroll_dismisses_keyboard(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isEnabled: Bool
+) {
+  nativeNode(from: pointer)?.scrollDismissesKeyboard = isEnabled
 }
 
 @_cdecl("bonsai_native_swiftui_set_image_source")

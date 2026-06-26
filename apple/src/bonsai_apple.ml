@@ -747,6 +747,7 @@ and modifier =
   | Toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
   | Keyboard_dismiss_controls
+  | Scroll_dismisses_keyboard
   | Safe_area_inset_bottom of { content : node }
   | Sheet of
       { is_presented : bool
@@ -801,6 +802,7 @@ type 'view rendered_modifier =
   | Rendered_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_keyboard_dismiss_controls
+  | Rendered_scroll_dismisses_keyboard
   | Rendered_safe_area_inset_bottom of { content : 'view }
   | Rendered_sheet of
       { is_presented : bool
@@ -1399,6 +1401,7 @@ let toolbar_item
 let toolbar items node = Modified_node (Toolbar items, node)
 let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
 let keyboard_dismiss_controls node = Modified_node (Keyboard_dismiss_controls, node)
+let scroll_dismisses_keyboard node = Modified_node (Scroll_dismisses_keyboard, node)
 let safe_area_inset_bottom content node =
   Modified_node (Safe_area_inset_bottom { content }, node)
 ;;
@@ -1768,6 +1771,7 @@ module Renderer = struct
         | Toolbar items -> "toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
         | Tap_action _ -> "tap-action"
         | Keyboard_dismiss_controls -> "keyboard-dismiss-controls"
+        | Scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
         | Safe_area_inset_bottom { content } -> "safe-area-inset-bottom:" ^ fingerprint content
         | Sheet { is_presented; content; detents; on_dismiss = _ } ->
           "sheet:" ^ bool is_presented ^ ":" ^ fingerprint content ^ ":" ^ int (List.length detents)
@@ -2510,6 +2514,7 @@ module Renderer = struct
           | Toolbar items -> Rendered_toolbar items
           | Tap_action { on_click } -> Rendered_tap_action { on_click }
           | Keyboard_dismiss_controls -> Rendered_keyboard_dismiss_controls
+          | Scroll_dismisses_keyboard -> Rendered_scroll_dismisses_keyboard
           | Safe_area_inset_bottom { content } ->
             Hash_set.add used index;
             let existing =
@@ -3258,6 +3263,7 @@ module For_testing = struct
       | Rendered_toolbar _ -> "toolbar"
       | Rendered_tap_action _ -> "tap-action"
       | Rendered_keyboard_dismiss_controls -> "keyboard-dismiss-controls"
+      | Rendered_scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
       | Rendered_safe_area_inset_bottom _ -> "safe-area-inset-bottom"
       | Rendered_sheet _ -> "sheet"
       | Rendered_popover _ -> "popover"
