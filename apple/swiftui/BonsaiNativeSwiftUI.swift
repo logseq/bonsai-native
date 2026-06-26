@@ -612,6 +612,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var navigationPath: [String] = []
   @Published var navigationPathEventId: Int32?
   @Published var navigationDestinationIds: [String] = []
+  @Published var navigationLinkValue: String?
   @Published var listRefreshEventId: Int32?
   @Published var listDeleteEventId: Int32?
   @Published var listMoveEventId: Int32?
@@ -1438,34 +1439,37 @@ private struct BonsaiNativeNodeView: View {
       navigationPathStack
 
     case .navigationLink:
-      NavigationLink {
-        if node.children.indices.contains(1) {
-          BonsaiNativeNodeView(node: node.children[1], model: model)
-            .onAppear {
-              model.sendClick(node.navigationActivateEventId)
-            }
-            .onDisappear {
-              model.sendClick(node.navigationDeactivateEventId)
-            }
-        } else {
-          EmptyView()
+      if let navigationValue = node.navigationLinkValue {
+        NavigationLink(value: navigationValue) {
+          navigationLinkLabel
         }
-      } label: {
-        if node.children.indices.contains(0) {
-          BonsaiNativeNodeView(
-            node: node.children[0],
-            model: model,
-            suppressListRowActions: true
-          )
-        } else {
-          EmptyView()
+        .simultaneousGesture(
+          TapGesture().onEnded {
+            model.sendClick(node.navigationActivateEventId)
+          }
+        )
+      } else {
+        NavigationLink {
+          if node.children.indices.contains(1) {
+            BonsaiNativeNodeView(node: node.children[1], model: model)
+              .onAppear {
+                model.sendClick(node.navigationActivateEventId)
+              }
+              .onDisappear {
+                model.sendClick(node.navigationDeactivateEventId)
+              }
+          } else {
+            EmptyView()
+          }
+        } label: {
+          navigationLinkLabel
         }
+        .simultaneousGesture(
+          TapGesture().onEnded {
+            model.sendClick(node.navigationActivateEventId)
+          }
+        )
       }
-      .simultaneousGesture(
-        TapGesture().onEnded {
-          model.sendClick(node.navigationActivateEventId)
-        }
-      )
 
     case .navigationSplit:
       navigationSplitView
@@ -1609,6 +1613,19 @@ private struct BonsaiNativeNodeView: View {
           EmptyView()
         }
       }
+    }
+  }
+
+  @ViewBuilder
+  private var navigationLinkLabel: some View {
+    if node.children.indices.contains(0) {
+      BonsaiNativeNodeView(
+        node: node.children[0],
+        model: model,
+        suppressListRowActions: true
+      )
+    } else {
+      EmptyView()
     }
   }
 
@@ -3312,6 +3329,15 @@ public func bonsai_native_swiftui_set_navigation_link_callbacks(
   guard let node = nativeNode(from: pointer) else { return }
   node.navigationActivateEventId = activateEventId < 0 ? nil : activateEventId
   node.navigationDeactivateEventId = deactivateEventId < 0 ? nil : deactivateEventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_navigation_link_value")
+public func bonsai_native_swiftui_set_navigation_link_value(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ value: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.navigationLinkValue = value.map { String(cString: $0) }
 }
 
 @_cdecl("bonsai_native_swiftui_set_tap_action")

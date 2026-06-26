@@ -373,6 +373,12 @@ val navigation_link
   -> destination:node
   -> node
   -> node
+val navigation_value_link
+  :  ?on_activate:unit Action.t
+  -> ?on_deactivate:unit Action.t
+  -> value:string
+  -> node
+  -> node
 val navigation_split : sidebar:node -> content:node -> detail:node -> node
 val adaptive_layout : compact:node -> regular:node -> node
 val tab : id:string -> title:string -> ?system_image:string -> ?role:tab_role -> node -> tab
@@ -783,6 +789,7 @@ module Renderer : sig
       -> on_activate:(unit -> unit) option
       -> on_deactivate:(unit -> unit) option
       -> unit
+    val set_navigation_link_value : view -> string option -> unit
     val set_section : view -> title:string option -> unit
     val set_picker
       :  view

@@ -380,6 +380,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var navigationPath: [String] = []
   @Published var navigationPathEventId: Int32?
   @Published var navigationDestinationIds: [String] = []
+  @Published var navigationLinkValue: String?
   @Published var listRefreshEventId: Int32?
   @Published var listDeleteEventId: Int32?
   @Published var listMoveEventId: Int32?
@@ -669,16 +670,22 @@ private struct BonsaiNativeNodeView: View {
     case .navigationPathStack:
       navigationPathStack
     case .navigationLink:
-      NavigationLink {
-        child(at: 1)
-          .onAppear {
-            model.sendClick(node.navigationActivateEventId)
-          }
-          .onDisappear {
-            model.sendClick(node.navigationDeactivateEventId)
-          }
-      } label: {
-        child(at: 0)
+      if let navigationValue = node.navigationLinkValue {
+        NavigationLink(value: navigationValue) {
+          child(at: 0)
+        }
+      } else {
+        NavigationLink {
+          child(at: 1)
+            .onAppear {
+              model.sendClick(node.navigationActivateEventId)
+            }
+            .onDisappear {
+              model.sendClick(node.navigationDeactivateEventId)
+            }
+        } label: {
+          child(at: 0)
+        }
       }
     case .navigationSplit:
       NavigationSplitView {
@@ -1688,6 +1695,15 @@ public func bonsai_native_swiftui_set_navigation_link_callbacks(
   guard let node = nativeNode(from: pointer) else { return }
   node.navigationActivateEventId = activateEventId < 0 ? nil : activateEventId
   node.navigationDeactivateEventId = deactivateEventId < 0 ? nil : deactivateEventId
+}
+
+@_cdecl("bonsai_native_swiftui_set_navigation_link_value")
+public func bonsai_native_swiftui_set_navigation_link_value(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ value: UnsafePointer<CChar>?
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.navigationLinkValue = value.map { String(cString: $0) }
 }
 
 @_cdecl("bonsai_native_swiftui_set_tap_action")

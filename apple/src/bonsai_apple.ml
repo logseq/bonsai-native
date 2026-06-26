@@ -590,7 +590,8 @@ type node =
       }
   | Navigation_link_node of
       { label : node
-      ; destination : node
+      ; destination : node option
+      ; value : string option
       ; on_activate : unit Action.t option
       ; on_deactivate : unit Action.t option
       }
@@ -1088,7 +1089,13 @@ let navigation_path_stack ~path ~on_path_change ~root ~destinations =
 ;;
 
 let navigation_link ?on_activate ?on_deactivate ~destination label =
-  Navigation_link_node { label; destination; on_activate; on_deactivate }
+  Navigation_link_node
+    { label; destination = Some destination; value = None; on_activate; on_deactivate }
+;;
+
+let navigation_value_link ?on_activate ?on_deactivate ~value label =
+  Navigation_link_node
+    { label; destination = None; value = Some value; on_activate; on_deactivate }
 ;;
 
 let navigation_split ~sidebar ~content ~detail =
@@ -1573,6 +1580,7 @@ module Renderer = struct
       -> on_activate:(unit -> unit) option
       -> on_deactivate:(unit -> unit) option
       -> unit
+    val set_navigation_link_value : view -> string option -> unit
     val set_section : view -> title:string option -> unit
     val set_picker
       :  view
@@ -1788,8 +1796,19 @@ module Renderer = struct
         | Navigation_stack_node children -> "navigation-stack:" ^ list (List.map children ~f:fingerprint)
         | Navigation_path_stack_node { path; root; destinations; on_path_change = _ } ->
           "navigation-path-stack:" ^ list path ^ ":" ^ fingerprint root ^ ":" ^ list (List.map destinations ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
-        | Navigation_link_node { label; destination; on_activate = _; on_deactivate = _ } ->
-          "navigation-link:" ^ fingerprint label ^ ":" ^ fingerprint destination
+        | Navigation_link_node
+            { label; destination; value; on_activate = _; on_deactivate = _ } ->
+          let destination_signature =
+            match destination with
+            | Some destination -> fingerprint destination
+            | None -> ""
+          in
+          "navigation-link:"
+          ^ opt value
+          ^ ":"
+          ^ fingerprint label
+          ^ ":"
+          ^ destination_signature
         | Navigation_split_node { sidebar; content; detail } ->
           "navigation-split:" ^ fingerprint sidebar ^ ":" ^ fingerprint content ^ ":" ^ fingerprint detail
         | Adaptive_layout_node { compact; regular } ->
@@ -2092,15 +2111,16 @@ module Renderer = struct
              (Some (fun path -> t.schedule_event (on_path_change path)))
            ~destinations:(List.map destinations ~f:(fun destination -> destination.key));
          reconcile_keyed t ({ key = "__root__"; node = root } :: destinations)
-       | Navigation_link_node { label; destination; on_activate; on_deactivate } ->
+       | Navigation_link_node { label; destination; value; on_activate; on_deactivate } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
+         Backend.set_navigation_link_value t.view value;
          Backend.set_navigation_link_callbacks
            t.view
            ~on_activate:(Option.map on_activate ~f:(fun action -> fun () -> t.schedule_event action))
            ~on_deactivate:
              (Option.map on_deactivate ~f:(fun action -> fun () -> t.schedule_event action));
-         reconcile_positional t [ label; destination ]
+         reconcile_positional t (label :: Option.to_list destination)
        | Navigation_split_node { sidebar; content; detail } ->
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
@@ -3009,6 +3029,8 @@ module For_testing = struct
       view.on_navigation_deactivate <- on_deactivate
     ;;
 
+    let set_navigation_link_value _view _value = ()
+
     let set_section view ~title =
       mutate ();
       view.section_title <- title
@@ -3189,16 +3211,44 @@ module For_testing = struct
       | Rendered_alert _ -> "alert"
     ;;
 
+    let navigation_path_stack_root view =
+      match view.children with
+      | (_, root) :: _ -> Some root
+      | [] -> None
+    ;;
+
+    let navigation_path_stack_destination view =
+      match List.rev view.navigation_path with
+      | destination_id :: _ ->
+        List.find_map view.children ~f:(fun (key, child) ->
+          match key with
+          | Some key when String.equal key destination_id -> Some child
+          | _ -> None)
+      | [] -> None
+    ;;
+
     let rec active_navigation_destination view =
       match view.kind, view.navigation_is_active, view.children with
       | Navigation_link, true, [ _; (_, destination) ] -> Some destination
+      | Navigation_path_stack, _, _ -> navigation_path_stack_destination view
       | _ ->
         List.find_map view.children ~f:(fun (_, child) -> active_navigation_destination child)
 
     and visible_view view =
-      match active_navigation_destination view with
-      | None -> view
-      | Some destination -> visible_view destination
+      match view.kind with
+      | Navigation_path_stack ->
+        let visible_child =
+          match navigation_path_stack_destination view with
+          | Some destination -> Some destination
+          | None -> navigation_path_stack_root view
+        in
+        (match visible_child with
+         | Some destination -> visible_view destination
+         | None -> view)
+      | _ ->
+        (match active_navigation_destination view with
+         | None -> view
+         | Some destination -> visible_view destination)
 
     and show_lines ?key view ~indent =
       let spaces = String.make indent ' ' in
@@ -3806,6 +3856,18 @@ module For_testing = struct
               @ ((spaces ^ "  active-destination:")
                  :: show_lines destination ~indent:(indent + 4)))
           else label_lines
+        | Navigation_path_stack, _ ->
+          let root_lines =
+            match navigation_path_stack_root view with
+            | None -> []
+            | Some root -> show_lines root ~indent:(indent + 2)
+          in
+          (match navigation_path_stack_destination view with
+           | None -> root_lines
+           | Some destination ->
+             root_lines
+             @ ((spaces ^ "  active-destination:")
+                :: show_lines destination ~indent:(indent + 4)))
         | _ ->
           List.concat_map view.children ~f:(fun (key, child) ->
             let key =
@@ -3915,7 +3977,8 @@ module For_testing = struct
       | index :: rest ->
         let view =
           match view.kind, active_navigation_destination view with
-          | Navigation_stack, Some destination -> destination
+          | Navigation_stack, Some destination
+          | Navigation_path_stack, Some destination -> destination
           | _ -> view
         in
         (match List.nth view.children index with
@@ -3938,7 +4001,7 @@ module For_testing = struct
     ;;
 
     let show_safe_area_inset_bottom_exn view ~path =
-      show (safe_area_inset_bottom_content_exn (find_exn view ~path))
+      show (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
     ;;
 
     let navigation_link_label_or_self view =
@@ -3978,7 +4041,9 @@ module For_testing = struct
     ;;
 
     let click_safe_area_inset_bottom_exn view ~path ~inset_path =
-      click_exn (safe_area_inset_bottom_content_exn (find_exn view ~path)) ~path:inset_path
+      click_exn
+        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
+        ~path:inset_path
     ;;
 
     let change_text_exn view ~path ~text =
@@ -3991,7 +4056,7 @@ module For_testing = struct
 
     let change_safe_area_inset_bottom_text_exn view ~path ~inset_path ~text =
       change_text_exn
-        (safe_area_inset_bottom_content_exn (find_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
         ~path:inset_path
         ~text
     ;;
@@ -4097,7 +4162,7 @@ module For_testing = struct
 
     let submit_safe_area_inset_bottom_text_exn view ~path ~inset_path =
       submit_text_exn
-        (safe_area_inset_bottom_content_exn (find_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
         ~path:inset_path
     ;;
 
@@ -4111,7 +4176,7 @@ module For_testing = struct
 
     let select_safe_area_inset_bottom_photo_exn view ~path ~inset_path ~image_id =
       select_photo_exn
-        (safe_area_inset_bottom_content_exn (find_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
         ~path:inset_path
         ~image_id
     ;;

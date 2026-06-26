@@ -291,6 +291,12 @@ external set_native_navigation_link_callbacks
   -> unit
   = "bonsai_apple_swiftui_set_navigation_link_callbacks"
 
+external set_native_navigation_link_value
+  :  native
+  -> string option
+  -> unit
+  = "bonsai_apple_swiftui_set_navigation_link_value"
+
 external set_native_tap_action
   :  native
   -> int
@@ -1510,6 +1516,10 @@ module Backend = struct
       view.native
       native_activate_event_id
       native_deactivate_event_id
+  ;;
+
+  let set_navigation_link_value view value =
+    set_native_navigation_link_value view.native value
   ;;
 
   let set_tap_action view handler =
