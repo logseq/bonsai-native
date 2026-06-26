@@ -169,6 +169,7 @@ private extension View {
   @ViewBuilder
   func bonsaiLiquidGlassPanel(
     cornerRadius: CGFloat,
+    isInteractive: Bool = false,
     isTransparent: Bool = false,
     tint: Color? = nil
   ) -> some View {
@@ -177,11 +178,18 @@ private extension View {
     if #available(macOS 26.0, *) {
       if let tint {
         self.glassEffect(
-          isTransparent ? .clear.tint(tint) : .regular.tint(tint),
+          isTransparent
+            ? (isInteractive ? .clear.tint(tint).interactive() : .clear.tint(tint))
+            : (isInteractive ? .regular.tint(tint).interactive() : .regular.tint(tint)),
           in: shape
         )
       } else {
-        self.glassEffect(isTransparent ? .clear : .regular, in: shape)
+        self.glassEffect(
+          isTransparent
+            ? (isInteractive ? .clear.interactive() : .clear)
+            : (isInteractive ? .regular.interactive() : .regular),
+          in: shape
+        )
       }
     } else if let tint {
       self.background(AnyShapeStyle(tint), in: shape)
@@ -832,7 +840,6 @@ private struct BonsaiNativeNodeView: View {
       guard let fromIndex = source.first else { return }
       model.sendChange(node.listMoveEventId, text: "\(fromIndex):\(destination)")
     }
-    .environment(\.editMode, .constant(node.isListEditMode ? .active : .inactive))
   }
 
   private var navigationPathBinding: Binding<[String]> {

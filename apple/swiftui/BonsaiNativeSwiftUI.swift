@@ -2540,11 +2540,15 @@ private struct BonsaiNativeListRowView: View {
   @ViewBuilder
   private var rowContent: some View {
     if node.rowMenuActions.isEmpty {
-      rowBody
-        .contentShape(.rect)
-        .onTapGesture {
-          model.sendClick(node.clickEventId)
-        }
+      if node.clickEventId == nil {
+        rowBody
+      } else {
+        rowBody
+          .contentShape(.rect)
+          .onTapGesture {
+            model.sendClick(node.clickEventId)
+          }
+      }
     } else {
       Menu {
         rowMenuButtons
