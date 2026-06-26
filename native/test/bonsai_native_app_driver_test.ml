@@ -156,9 +156,27 @@ let test_subscription_starts_once_updates_and_cancels_when_unused () =
     "stale subscription emit should not revive canceled subscription"
 ;;
 
+let test_state_update_during_render_triggers_follow_up_render () =
+  let component graph =
+    let value, set_value = Native.Graph.state graph ~key:"value" "initial" in
+    let (_ : unit) =
+      Native.Graph.subscribe graph ~key:"load" ~default:() (fun ~emit:_ ->
+        set_value "loaded" ();
+        fun () -> ())
+    in
+    Native.text value
+  in
+  let app = Native.App.create component in
+  let rendered = Native.App.render_json app in
+  require
+    (contains rendered ~substring:{|"text":"loaded"|})
+    "state updates during render should trigger a follow-up render"
+;;
+
 let () =
   test_event_rerenders_component_state ();
   test_scoped_state_is_independent ();
   test_change_event_updates_component_state ();
   test_derived_reuses_cached_value_until_input_changes ();
-  test_subscription_starts_once_updates_and_cancels_when_unused ()
+  test_subscription_starts_once_updates_and_cancels_when_unused ();
+  test_state_update_during_render_triggers_follow_up_render ()

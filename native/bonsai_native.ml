@@ -495,6 +495,7 @@ module App_driver = struct
   ;;
 
   let render_current_result t ~schedule_event =
+    t.dirty <- false;
     t.generation <- t.generation + 1;
     let result = t.component (graph t) in
     t.rendered
@@ -503,16 +504,18 @@ module App_driver = struct
           | None -> t.render ~schedule_event result
           | Some rendered -> t.update rendered ~schedule_event result);
     cleanup_unused_subscriptions t;
-    t.dirty <- false
   ;;
 
-  let flush t =
+  let rec flush t =
     if t.dirty
-    then render_current_result t ~schedule_event:(fun action -> action ())
+    then (
+      render_current_result t ~schedule_event:(fun action -> action ());
+      flush t)
   ;;
 
   let rec flush_and_render t =
-    render_current_result t ~schedule_event:(schedule_event_and_render t)
+    render_current_result t ~schedule_event:(schedule_event_and_render t);
+    if t.dirty then flush_and_render t
 
   and schedule_event_and_render t action =
     action ();

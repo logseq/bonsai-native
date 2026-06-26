@@ -2681,7 +2681,10 @@ private struct BonsaiNativeListRowView: View {
   private var rowSwipeButtons: some View {
     ForEach(node.rowActions) { action in
       Button(role: action.style == 1 ? .destructive : nil) {
-        model.sendClick(action.eventId)
+        let eventId = action.eventId
+        DispatchQueue.main.async {
+          model.sendClick(eventId)
+        }
       } label: {
         if let systemImage = action.systemImage {
           Label(action.title, systemImage: systemImage)
