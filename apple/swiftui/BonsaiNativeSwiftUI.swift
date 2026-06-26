@@ -1257,6 +1257,7 @@ private struct BonsaiNativeNodeView: View {
   @Environment(\.bonsaiCompactSidebarToolbar) private var compactSidebarToolbar
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
+  var suppressListRowActions = false
   @State private var isCompactSidebarOpen = false
   @State private var compactSidebarDragOffset: CGFloat = 0
   @State private var compactSidebarDragAxis: DragAxis?
@@ -1451,7 +1452,11 @@ private struct BonsaiNativeNodeView: View {
         }
       } label: {
         if node.children.indices.contains(0) {
-          BonsaiNativeNodeView(node: node.children[0], model: model)
+          BonsaiNativeNodeView(
+            node: node.children[0],
+            model: model,
+            suppressListRowActions: true
+          )
         } else {
           EmptyView()
         }
@@ -1473,7 +1478,11 @@ private struct BonsaiNativeNodeView: View {
       BonsaiNativeImageView(node: node)
 
     case .listRow:
-      BonsaiNativeListRowView(node: node, model: model)
+      BonsaiNativeListRowView(
+        node: node,
+        model: model,
+        suppressRowActions: suppressListRowActions
+      )
 
     case .section:
       section
@@ -2529,11 +2538,16 @@ private struct BonsaiNativeNodeView: View {
 private struct BonsaiNativeListRowView: View {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
+  var suppressRowActions = false
 
   var body: some View {
-    rowContent
-      .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-        rowSwipeButtons
+    if suppressRowActions {
+      rowContent
+    } else {
+      rowContent
+        .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+          rowSwipeButtons
+        }
       }
   }
 
