@@ -7,4 +7,6 @@
   (pps melange.ppx))
  (libraries bonsai_android bonsai_android_examples)
  (runtime_deps react_runtime.js)
- (promote (until-clean)))
+ (promote (until-clean))
+(enabled_if
+  (= %{context_name} default)))
