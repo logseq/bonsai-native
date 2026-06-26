@@ -178,6 +178,12 @@ external set_native_title_visible
   -> unit
   = "bonsai_apple_swiftui_set_title_visible"
 
+external set_native_keyboard_dismiss_controls
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_keyboard_dismiss_controls"
+
 external set_native_image_source
   :  native
   -> int
@@ -1962,6 +1968,7 @@ module Backend = struct
     let saw_frame = ref false in
     let saw_navigation_title = ref false in
     let saw_tap_action = ref false in
+    let saw_keyboard_dismiss_controls = ref false in
     List.iter modifiers ~f:(function
       | Apple.Rendered_searchable { text; prompt; on_change } ->
         saw_searchable := true;
@@ -2043,7 +2050,10 @@ module Backend = struct
         install_toolbar view ~schedule_event items
       | Apple.Rendered_tap_action { on_click } ->
         saw_tap_action := true;
-        set_tap_action view (Some (fun () -> schedule_event on_click)));
+        set_tap_action view (Some (fun () -> schedule_event on_click))
+      | Apple.Rendered_keyboard_dismiss_controls ->
+        saw_keyboard_dismiss_controls := true;
+        set_native_keyboard_dismiss_controls view.native true);
     if not !saw_searchable then clear_searchable view;
     if not !saw_sheet then clear_sheet view;
     if not !saw_popover then clear_popover view;
@@ -2061,7 +2071,9 @@ module Backend = struct
     if not !saw_context_menu then install_context_menu view ~schedule_event ~actions:[];
     if not !saw_frame then set_native_frame view.native (-1.) (-1.);
     if not !saw_navigation_title then set_native_navigation_title view.native None;
-    if not !saw_tap_action then set_tap_action view None
+    if not !saw_tap_action then set_tap_action view None;
+    if not !saw_keyboard_dismiss_controls
+    then set_native_keyboard_dismiss_controls view.native false
   ;;
 end
 

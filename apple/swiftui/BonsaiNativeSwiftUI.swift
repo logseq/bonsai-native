@@ -523,6 +523,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var imageColor: Int32 = -1
   @Published var imageMaxHeight: CGFloat?
   @Published var imageCornerRadius: CGFloat?
+  @Published var keyboardDismissControls = false
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
   @Published var children: [BonsaiNativeNode] = []
@@ -826,6 +827,32 @@ private func recognizeText(in data: Data) async -> String? {
   }
 }
 
+private struct BonsaiNativeKeyboardDismissControlsModifier: ViewModifier {
+  @ObservedObject var node: BonsaiNativeNode
+
+  @ViewBuilder
+  func body(content: Content) -> some View {
+#if os(iOS)
+    if node.keyboardDismissControls {
+      content
+        .scrollDismissesKeyboard(.interactively)
+        .toolbar {
+          ToolbarItemGroup(placement: .keyboard) {
+            Spacer()
+            Button("Done") {
+              bonsaiDismissKeyboard()
+            }
+          }
+        }
+    } else {
+      content
+    }
+#else
+    content
+#endif
+  }
+}
+
 private struct BonsaiNativeSearchModifier: ViewModifier {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
@@ -891,6 +918,7 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
         )
       )
     )
+      .modifier(BonsaiNativeKeyboardDismissControlsModifier(node: node))
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
       .modifier(BonsaiNativeNavigationTitleModifier(node: node))
       .alert(
@@ -3190,6 +3218,14 @@ public func bonsai_native_swiftui_set_button_style(_ pointer: UnsafeMutableRawPo
 @_cdecl("bonsai_native_swiftui_set_title_visible")
 public func bonsai_native_swiftui_set_title_visible(_ pointer: UnsafeMutableRawPointer?, _ isVisible: Bool) {
   nativeNode(from: pointer)?.isTitleVisible = isVisible
+}
+
+@_cdecl("bonsai_native_swiftui_set_keyboard_dismiss_controls")
+public func bonsai_native_swiftui_set_keyboard_dismiss_controls(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ isEnabled: Bool
+) {
+  nativeNode(from: pointer)?.keyboardDismissControls = isEnabled
 }
 
 @_cdecl("bonsai_native_swiftui_set_image_source")
