@@ -69,7 +69,96 @@ let test_change_event_updates_component_state () =
   require (contains after ~substring:{|"text":"tasks"|}) "change should rerender text"
 ;;
 
+let test_derived_reuses_cached_value_until_input_changes () =
+  let computations = ref 0 in
+  let component graph =
+    let value, set_value = Native.Graph.state graph ~key:"value" 1 in
+    let tick, set_tick = Native.Graph.state graph ~key:"tick" 0 in
+    let doubled =
+      Native.Graph.derived graph ~key:"doubled" ~input:value ~f:(fun value ->
+        incr computations;
+        value * 2)
+    in
+    Native.vstack
+      [ Native.text (Printf.sprintf "%d:%d" doubled tick)
+      ; Native.button "Increment value" ~on_click:(set_value (value + 1))
+      ; Native.button "Rerender" ~on_click:(set_tick (tick + 1))
+      ]
+  in
+  let app = Native.App.create component in
+  let before = Native.App.render_json app in
+  require (contains before ~substring:{|"text":"2:0"|}) "initial derived value should render";
+  require (!computations = 1) "derived should compute initial value once";
+  Native.App.dispatch_click app 2;
+  let after_unrelated = Native.App.render_json app in
+  require
+    (contains after_unrelated ~substring:{|"text":"2:1"|})
+    "unrelated state should rerender";
+  require (!computations = 1) "derived should not recompute when input is unchanged";
+  Native.App.dispatch_click app 1;
+  let after_input_change = Native.App.render_json app in
+  require
+    (contains after_input_change ~substring:{|"text":"4:1"|})
+    "input state should update derived value";
+  require (!computations = 2) "derived should recompute after input changes"
+;;
+
+let test_subscription_starts_once_updates_and_cancels_when_unused () =
+  let starts = ref 0 in
+  let cancels = ref 0 in
+  let emit_value = ref (fun (_value : int) -> ()) in
+  let component graph =
+    let show, set_show = Native.Graph.state graph ~key:"show" true in
+    let tick, set_tick = Native.Graph.state graph ~key:"tick" 0 in
+    let children =
+      if show
+      then (
+        let value =
+          Native.Graph.subscribe graph ~key:"external" ~default:0 (fun ~emit ->
+            incr starts;
+            emit_value := emit;
+            fun () -> incr cancels)
+        in
+        [ Native.text (Printf.sprintf "value:%d tick:%d" value tick)
+        ; Native.button "Hide" ~on_click:(set_show false)
+        ; Native.button "Rerender" ~on_click:(set_tick (tick + 1))
+        ])
+      else [ Native.text "hidden" ]
+    in
+    Native.vstack children
+  in
+  let app = Native.App.create component in
+  let before = Native.App.render_json app in
+  require
+    (contains before ~substring:{|"text":"value:0 tick:0"|})
+    "subscription default should render";
+  require (!starts = 1) "subscription should start on first render";
+  (!emit_value) 2;
+  let after_emit = Native.App.render_json app in
+  require
+    (contains after_emit ~substring:{|"text":"value:2 tick:0"|})
+    "subscription emit should update rendered value";
+  Native.App.dispatch_click app 2;
+  let after_unrelated = Native.App.render_json app in
+  require
+    (contains after_unrelated ~substring:{|"text":"value:2 tick:1"|})
+    "unrelated rerender should keep subscription value";
+  require (!starts = 1) "subscription should not restart across rerenders";
+  require (!cancels = 0) "active subscription should not be canceled";
+  Native.App.dispatch_click app 1;
+  let after_hide = Native.App.render_json app in
+  require (contains after_hide ~substring:{|"text":"hidden"|}) "hidden branch should render";
+  require (!cancels = 1) "subscription should cancel when component stops using it";
+  (!emit_value) 3;
+  let after_stale_emit = Native.App.render_json app in
+  require
+    (not (contains after_stale_emit ~substring:"value:3"))
+    "stale subscription emit should not revive canceled subscription"
+;;
+
 let () =
   test_event_rerenders_component_state ();
   test_scoped_state_is_independent ();
-  test_change_event_updates_component_state ()
+  test_change_event_updates_component_state ();
+  test_derived_reuses_cached_value_until_input_changes ();
+  test_subscription_starts_once_updates_and_cancels_when_unused ()

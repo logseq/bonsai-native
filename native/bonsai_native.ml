@@ -1,18 +1,21 @@
-module Effect = struct
+module Action = struct
   type t = unit -> unit
 
   let ignore () = ()
   let of_thunk f = f
 
-  let many effects () =
-    List.iter (fun action -> action ()) effects
+  let many actions () =
+    List.iter (fun action -> action ()) actions
   ;;
 end
 
 type graph =
   { cells : (string, cell) Hashtbl.t
+  ; derived_cells : (string, derived_cell) Hashtbl.t
+  ; subscriptions : (string, subscription) Hashtbl.t
   ; mutable path : string list
   ; invalidate : unit -> unit
+  ; generation : int
   }
 
 and cell =
@@ -20,11 +23,25 @@ and cell =
   ; equal : Obj.t -> Obj.t -> bool
   }
 
-module Component = struct
-  let full_key graph key =
-    String.concat "/" (List.rev (key :: graph.path))
-  ;;
+and derived_cell =
+  { mutable input : Obj.t
+  ; input_equal : Obj.t -> Obj.t -> bool
+  ; mutable derived_value : Obj.t
+  }
 
+and subscription =
+  { mutable subscription_value : Obj.t
+  ; subscription_equal : Obj.t -> Obj.t -> bool
+  ; mutable cancel : unit -> unit
+  ; mutable canceled : bool
+  ; mutable last_seen_generation : int
+  }
+
+let full_key graph key =
+  String.concat "/" (List.rev (key :: graph.path))
+;;
+
+module Graph = struct
   let state ?(equal = ( = )) graph ~key initial =
     let key = full_key graph key in
     let initial_value = Obj.repr initial in
@@ -49,13 +66,69 @@ module Component = struct
 
   let scope graph ~key f =
     let old_path = graph.path in
-    graph.path <- key :: graph.path;
-    Fun.protect ~finally:(fun () -> graph.path <- old_path) (fun () -> f graph)
+      graph.path <- key :: graph.path;
+      Fun.protect ~finally:(fun () -> graph.path <- old_path) (fun () -> f graph)
+  ;;
+
+  let derived ?(equal = ( = )) graph ~key ~input ~f =
+    let key = full_key graph key in
+    let input_value = Obj.repr input in
+    let input_equal left right = equal (Obj.obj left) (Obj.obj right) in
+    match Hashtbl.find_opt graph.derived_cells key with
+    | Some cell when cell.input_equal cell.input input_value ->
+      Obj.obj cell.derived_value
+    | Some cell ->
+      let next_value = f input in
+      cell.input <- input_value;
+      cell.derived_value <- Obj.repr next_value;
+      next_value
+    | None ->
+      let derived_value = f input in
+      let cell =
+        { input = input_value; input_equal; derived_value = Obj.repr derived_value }
+      in
+      Hashtbl.add graph.derived_cells key cell;
+      derived_value
+  ;;
+
+  let subscribe ?(equal = ( = )) graph ~key ~default start =
+    let key = full_key graph key in
+    let equal_obj left right = equal (Obj.obj left) (Obj.obj right) in
+    match Hashtbl.find_opt graph.subscriptions key with
+    | Some subscription ->
+      subscription.last_seen_generation <- graph.generation;
+      Obj.obj subscription.subscription_value
+    | None ->
+      let subscription =
+        { subscription_value = Obj.repr default
+        ; subscription_equal = equal_obj
+        ; cancel = (fun () -> ())
+        ; canceled = false
+        ; last_seen_generation = graph.generation
+        }
+      in
+      let emit next =
+        if not subscription.canceled
+        then (
+          let next_value = Obj.repr next in
+          if not (subscription.subscription_equal subscription.subscription_value next_value)
+          then (
+            subscription.subscription_value <- next_value;
+            graph.invalidate ()))
+      in
+      subscription.cancel <- start ~emit;
+      Hashtbl.add graph.subscriptions key subscription;
+      Obj.obj subscription.subscription_value
   ;;
 end
 
-let state = Component.state
-let scope = Component.scope
+module Component = struct
+  let state = Graph.state
+  let scope = Graph.scope
+end
+
+let state = Graph.state
+let scope = Graph.scope
 
 type edge_insets =
   { top : float
@@ -72,7 +145,7 @@ type frame =
 type toolbar_item =
   { id : string
   ; title : string
-  ; on_click : Effect.t
+  ; on_click : Action.t
   }
 
 type node =
@@ -80,12 +153,12 @@ type node =
   | Button of
       { title : string
       ; is_enabled : bool
-      ; on_click : Effect.t
+      ; on_click : Action.t
       }
   | Text_field of
       { text : string
       ; placeholder : string option
-      ; on_change : string -> Effect.t
+      ; on_change : string -> Action.t
       }
   | Stack of
       { axis : [ `Vertical | `Horizontal ]
@@ -112,13 +185,13 @@ and modifier =
   | Frame of frame
   | Searchable of
       { text : string
-      ; on_change : string -> Effect.t
+      ; on_change : string -> Action.t
       }
   | Toolbar of toolbar_item list
   | Sheet of
       { is_presented : bool
       ; content : node
-      ; on_dismiss : Effect.t option
+      ; on_dismiss : Action.t option
       }
 
 let text value = Text value
@@ -161,12 +234,12 @@ let sheet ~is_presented ~content ?on_dismiss node =
 
 module Bridge = struct
   type event_handler =
-    | Click of Effect.t
-    | Change of (string -> Effect.t)
+    | Click of Action.t
+    | Change of (string -> Action.t)
 
   type t =
     { json : string
-    ; schedule_event : Effect.t -> unit
+    ; schedule_event : Action.t -> unit
     ; handlers : (int, event_handler) Hashtbl.t
     }
 
@@ -369,36 +442,67 @@ end
 module App_driver = struct
   type ('result, 'rendered) t =
     { cells : (string, cell) Hashtbl.t
+    ; derived_cells : (string, derived_cell) Hashtbl.t
+    ; subscriptions : (string, subscription) Hashtbl.t
     ; component : graph -> 'result
     ; mutable rendered : 'rendered option
-    ; render : schedule_event:(Effect.t -> unit) -> 'result -> 'rendered
-    ; update : 'rendered -> schedule_event:(Effect.t -> unit) -> 'result -> 'rendered
+    ; render : schedule_event:(Action.t -> unit) -> 'result -> 'rendered
+    ; update : 'rendered -> schedule_event:(Action.t -> unit) -> 'result -> 'rendered
     ; mutable dirty : bool
+    ; mutable generation : int
     }
 
   let create component ~render ~update =
     { cells = Hashtbl.create 16
+    ; derived_cells = Hashtbl.create 16
+    ; subscriptions = Hashtbl.create 16
     ; component
     ; rendered = None
     ; render
     ; update
     ; dirty = true
+    ; generation = 0
     }
   ;;
 
   let rendered t = t.rendered
 
   let graph t =
-    { cells = t.cells; path = []; invalidate = (fun () -> t.dirty <- true) }
+    { cells = t.cells
+    ; derived_cells = t.derived_cells
+    ; subscriptions = t.subscriptions
+    ; path = []
+    ; invalidate = (fun () -> t.dirty <- true)
+    ; generation = t.generation
+    }
+  ;;
+
+  let cleanup_unused_subscriptions t =
+    let unused = ref [] in
+    Hashtbl.iter
+      (fun key subscription ->
+        if subscription.last_seen_generation <> t.generation then unused := key :: !unused)
+      t.subscriptions;
+    List.iter
+      (fun key ->
+        match Hashtbl.find_opt t.subscriptions key with
+        | None -> ()
+        | Some subscription ->
+          subscription.canceled <- true;
+          subscription.cancel ();
+          Hashtbl.remove t.subscriptions key)
+      !unused
   ;;
 
   let render_current_result t ~schedule_event =
+    t.generation <- t.generation + 1;
     let result = t.component (graph t) in
     t.rendered
     <- Some
          (match t.rendered with
           | None -> t.render ~schedule_event result
           | Some rendered -> t.update rendered ~schedule_event result);
+    cleanup_unused_subscriptions t;
     t.dirty <- false
   ;;
 
