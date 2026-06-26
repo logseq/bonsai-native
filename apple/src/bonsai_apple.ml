@@ -3485,7 +3485,9 @@ module For_testing = struct
                 menu)
             |> String.concat ~sep:","
           in
-          " toolbar=[" ^ item_text ^ "]"
+          " toolbar=["
+          ^ item_text
+          ^ "] toolbar-presentation=system-toolbaritem toolbaritem-chrome=system-default"
       in
       let context_menu =
         match
@@ -3661,8 +3663,14 @@ module For_testing = struct
           " sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title="
           ^ title
           ^ " sidebar-primary-row-height=52 sidebar-selected-corner-radius=12"
+          ^ " sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 bottom=max-safe-area-or-34"
+          ^ " sidebar-bottom-controls=safe-area-inset top-padding=10"
+          ^ " sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging"
+          ^ " sidebar-edge-gesture=enabled-when-compact-top-bar-visible"
+          ^ " sidebar-open-close=swift-interactive-spring keyboard-dismiss haptic-on-change"
           ^ " sidebar-search-style=liquid-glass compact-top-bar=system-toolbar"
           ^ " toolbaritem-leading=sidebar-toggle toolbaritem-title=navigation-title"
+          ^ " toolbaritem-leading-chrome=liquid-glass"
         | Sidebar_split -> " compact-top-bar=hidden"
         | _ -> ""
       in

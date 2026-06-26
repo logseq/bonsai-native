@@ -160,7 +160,7 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
     "history action menu click should run"
 ;;
 
-let test_compact_sidebar_top_bar_uses_swift_action_chrome () =
+let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
   Backend.reset ();
   let component graph =
     let selected, set_selected = Apple.state graph ~key:"selected" "decks" in
@@ -184,6 +184,42 @@ let test_compact_sidebar_top_bar_uses_swift_action_chrome () =
        ~substring:
          "compact-top-bar=system-toolbar toolbaritem-leading=sidebar-toggle toolbaritem-title=navigation-title")
     "compact top bar should use system toolbar items like the Swift header"
+  ;
+  require
+    (contains rendered ~substring:"toolbaritem-leading-chrome=liquid-glass")
+    "compact sidebar leading toolbar item should use the same liquid glass chrome as Swift"
+  ;
+  require
+    (contains
+       rendered
+       ~substring:
+         "sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 bottom=max-safe-area-or-34")
+    "compact sidebar should use the same safe-area padding as the Swift drawer"
+  ;
+  require
+    (contains
+       rendered
+       ~substring:"sidebar-bottom-controls=safe-area-inset top-padding=10")
+    "compact sidebar bottom controls should match the Swift safe-area inset layout"
+  ;
+  require
+    (contains
+       rendered
+       ~substring:"sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging")
+    "compact sidebar should disable scroll during the same drawer states as Swift"
+  ;
+  require
+    (contains
+       rendered
+       ~substring:"sidebar-edge-gesture=enabled-when-compact-top-bar-visible")
+    "compact sidebar edge gesture should follow the same route gating as Swift"
+  ;
+  require
+    (contains
+       rendered
+       ~substring:
+         "sidebar-open-close=swift-interactive-spring keyboard-dismiss haptic-on-change")
+    "compact sidebar should use the same open and close interaction behavior as Swift"
 ;;
 
 let test_image_semantic_color_renders () =
@@ -560,6 +596,18 @@ let test_toolbar_item_can_render_share_link () =
        ~substring:
          "toolbar=[share:Share:enabled:image=square.and.arrow.up:title-hidden:share-url=file:///tmp/photo.png]")
     "toolbar share items should expose the ShareLink URL"
+  ;
+  require
+    (contains
+       (Backend.show root)
+       ~substring:"toolbar-presentation=system-toolbaritem")
+    "toolbar actions should render through system ToolbarItem chrome"
+  ;
+  require
+    (contains
+       (Backend.show root)
+       ~substring:"toolbaritem-chrome=system-default")
+    "toolbar actions should keep the system ToolbarItem button chrome"
 ;;
 
 let test_movable_rows_move_only_the_group_children () =
@@ -651,7 +699,7 @@ let () =
   test_scoped_state_is_independent ();
   test_tab_selection_updates_state ();
   test_sidebar_history_actions_are_separate_and_clickable ();
-  test_compact_sidebar_top_bar_uses_swift_action_chrome ();
+  test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
   test_button_renders_bordered_prominent_style ();

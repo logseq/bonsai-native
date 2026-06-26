@@ -271,6 +271,29 @@ private var bonsaiHomeBodyBackground: Color {
   })
 }
 
+private func bonsaiDrawerSidebarTopInset(_ inset: CGFloat) -> CGFloat {
+  max(inset + 5, 54)
+}
+
+private func bonsaiDrawerSidebarBottomInset(_ inset: CGFloat) -> CGFloat {
+  inset > 100 ? 34 : max(inset, 34)
+}
+
+private func bonsaiDismissKeyboard() {
+  UIApplication.shared.sendAction(
+    #selector(UIResponder.resignFirstResponder),
+    to: nil,
+    from: nil,
+    for: nil
+  )
+}
+
+private func bonsaiPerformLightHapticFeedback() {
+  let generator = UIImpactFeedbackGenerator(style: .light)
+  generator.prepare()
+  generator.impactOccurred(intensity: 0.65)
+}
+
 private func bonsaiNativeSemanticColor(_ color: Int32) -> Color? {
   switch color {
   case 0: return .primary
@@ -325,8 +348,7 @@ private struct BonsaiCompactSidebarToolbarModifier: ViewModifier {
               .frame(width: 34, height: 34)
               .contentShape(Circle())
             }
-            .buttonStyle(.plain)
-            .controlSize(.small)
+            .bonsaiLiquidGlassButtonStyle()
             .buttonBorderShape(.circle)
           }
         }
@@ -339,6 +361,19 @@ private struct BonsaiCompactSidebarToolbarModifier: ViewModifier {
 }
 
 private extension View {
+  @ViewBuilder
+  func bonsaiLiquidGlassButtonStyle() -> some View {
+    if #available(iOS 26.0, *) {
+      self
+        .buttonStyle(.plain)
+        .controlSize(.small)
+    } else {
+      self
+        .buttonStyle(.plain)
+        .background(Color.clear, in: Circle())
+    }
+  }
+
   @ViewBuilder
   func bonsaiLiquidGlassPanel(
     cornerRadius: CGFloat,
@@ -1225,6 +1260,7 @@ private struct BonsaiNativeNodeView: View {
   @State private var isCompactSidebarOpen = false
   @State private var compactSidebarDragOffset: CGFloat = 0
   @State private var compactSidebarDragAxis: DragAxis?
+  @State private var isCompactSidebarDragging = false
   @State private var toolbarExportFilename = "Export.txt"
   @State private var toolbarExportContentType = "public.plain-text"
   @State private var toolbarExportContent = ""
@@ -1810,15 +1846,20 @@ private struct BonsaiNativeNodeView: View {
       let revealWidth = proxy.size.width
       let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
       let progress = revealWidth > 0 ? visibleWidth / revealWidth : 0
+      let sidebarTopInset = bonsaiDrawerSidebarTopInset(proxy.safeAreaInsets.top)
+      let sidebarBottomInset = bonsaiDrawerSidebarBottomInset(proxy.safeAreaInsets.bottom)
 
       ZStack(alignment: .leading) {
         bonsaiHomeBodyBackground
           .ignoresSafeArea()
 
         compactSidebarContent
+          .padding(.top, sidebarTopInset)
+          .padding(.bottom, sidebarBottomInset)
           .frame(width: revealWidth, height: proxy.size.height, alignment: .topLeading)
           .background(bonsaiHomeBodyBackground.ignoresSafeArea())
           .opacity(progress)
+          .scrollDisabled(isCompactSidebarDragging)
 
         ZStack(alignment: .top) {
           if node.sidebarCompactTopBarVisible {
@@ -1829,9 +1870,7 @@ private struct BonsaiNativeNodeView: View {
                 BonsaiCompactSidebarToolbar(
                   title: selectedRouteTitle,
                   openSidebar: {
-                    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
-                      isCompactSidebarOpen = true
-                    }
+                    setCompactSidebarOpen(true)
                   }
                 )
               )
@@ -1843,6 +1882,7 @@ private struct BonsaiNativeNodeView: View {
         .frame(width: proxy.size.width, height: proxy.size.height)
         .background(bonsaiHomeBodyBackground)
         .offset(x: visibleWidth)
+        .scrollDisabled(isCompactSidebarOpen || isCompactSidebarDragging)
         .disabled(isCompactSidebarOpen)
         .clipShape(RoundedRectangle(cornerRadius: 28 * progress, style: .continuous))
 
@@ -1891,12 +1931,13 @@ private struct BonsaiNativeNodeView: View {
       }
 
       Spacer()
-
-      sidebarBottomControls
     }
-    .padding(.top, 54)
-    .padding(.bottom, 34)
     .padding(.horizontal, 12)
+    .safeAreaInset(edge: .bottom, spacing: 0) {
+      sidebarBottomControls
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+    }
     .frame(maxHeight: .infinity, alignment: .topLeading)
   }
 
@@ -1905,10 +1946,15 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private func setCompactSidebarOpen(_ isOpen: Bool) {
-    withAnimation(.spring(response: 0.28, dampingFraction: 0.86)) {
+    bonsaiDismissKeyboard()
+    if isOpen != isCompactSidebarOpen {
+      bonsaiPerformLightHapticFeedback()
+    }
+    withAnimation(.interactiveSpring(response: 0.24, dampingFraction: 0.92, blendDuration: 0.08)) {
       isCompactSidebarOpen = isOpen
       compactSidebarDragOffset = 0
       compactSidebarDragAxis = nil
+      isCompactSidebarDragging = false
     }
   }
 
@@ -1916,12 +1962,17 @@ private struct BonsaiNativeNodeView: View {
     _ value: DragGesture.Value,
     revealWidth: CGFloat
   ) {
+    guard node.sidebarCompactTopBarVisible || isCompactSidebarOpen else { return }
     let horizontal = value.translation.width
     let vertical = value.translation.height
     if compactSidebarDragAxis == nil, abs(horizontal) > 5 || abs(vertical) > 5 {
       compactSidebarDragAxis = abs(horizontal) >= abs(vertical) ? .horizontal : .vertical
     }
     guard compactSidebarDragAxis == .horizontal else { return }
+    if !isCompactSidebarDragging {
+      bonsaiDismissKeyboard()
+    }
+    isCompactSidebarDragging = true
     let baseWidth = isCompactSidebarOpen ? revealWidth : 0
     compactSidebarDragOffset = max(-baseWidth, min(revealWidth - baseWidth, horizontal))
   }
@@ -1932,6 +1983,11 @@ private struct BonsaiNativeNodeView: View {
   ) {
     defer {
       compactSidebarDragAxis = nil
+      isCompactSidebarDragging = false
+    }
+    guard node.sidebarCompactTopBarVisible || isCompactSidebarOpen else {
+      compactSidebarDragOffset = 0
+      return
     }
     guard compactSidebarDragAxis == .horizontal else {
       compactSidebarDragOffset = 0
@@ -1952,37 +2008,31 @@ private struct BonsaiNativeNodeView: View {
     setCompactSidebarOpen(shouldOpen)
   }
 
+  @ViewBuilder
   private func toolbarActionLabel(_ item: BonsaiNativeToolbarItem) -> some View {
-    Group {
-      if let systemImage = item.systemImage {
-        Image(systemName: systemImage)
-          .font(.system(size: 16, weight: .semibold))
-          .accessibilityLabel(item.title)
-          .frame(width: 34, height: 34)
-          .contentShape(Circle())
+    if let systemImage = item.systemImage {
+      if item.isTitleVisible {
+        Label(item.title, systemImage: systemImage)
       } else {
-        Text(item.title)
-          .font(.body.weight(.semibold))
-          .frame(width: 34, height: 34)
-          .contentShape(Circle())
+        Image(systemName: systemImage)
+          .accessibilityLabel(item.title)
       }
+    } else {
+      Text(item.title)
     }
   }
 
+  @ViewBuilder
   private func toolbarMenuLabel(_ item: BonsaiNativeToolbarItem) -> some View {
-    Group {
-      if let systemImage = item.systemImage {
-        Image(systemName: systemImage)
-          .font(.system(size: 16, weight: .semibold))
-          .accessibilityLabel(item.title)
-          .frame(width: 34, height: 34)
-          .contentShape(Circle())
+    if let systemImage = item.systemImage {
+      if item.isTitleVisible {
+        Label(item.title, systemImage: systemImage)
       } else {
-        Text(item.title)
-          .font(.body.weight(.semibold))
-          .frame(width: 34, height: 34)
-          .contentShape(Circle())
+        Image(systemName: systemImage)
+          .accessibilityLabel(item.title)
       }
+    } else {
+      Text(item.title)
     }
   }
 
@@ -2286,7 +2336,6 @@ private struct BonsaiNativeNodeView: View {
           sidebarBottomActionButton(action)
         }
       }
-      .padding(.bottom, 8)
     }
   }
 
@@ -2452,9 +2501,6 @@ private struct BonsaiNativeNodeView: View {
           ShareLink(item: url) {
             toolbarActionLabel(item)
           }
-          .buttonStyle(.plain)
-          .controlSize(.small)
-          .buttonBorderShape(.circle)
           .disabled(!item.isEnabled)
         } else if item.menuActions.isEmpty {
           Button {
@@ -2464,9 +2510,6 @@ private struct BonsaiNativeNodeView: View {
           } label: {
             toolbarActionLabel(item)
           }
-          .buttonStyle(.plain)
-          .controlSize(.small)
-          .buttonBorderShape(.circle)
           .disabled(!item.isEnabled)
         } else {
           Menu {
@@ -2476,8 +2519,6 @@ private struct BonsaiNativeNodeView: View {
           } label: {
             toolbarMenuLabel(item)
           }
-          .buttonStyle(.plain)
-          .controlSize(.small)
           .disabled(!item.isEnabled)
         }
       }
