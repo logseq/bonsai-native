@@ -420,6 +420,7 @@ val sidebar_action
   -> ?avatar_image:string
   -> ?avatar_initial:string
   -> ?chrome:sidebar_action_chrome
+  -> ?closes_sidebar:bool
   -> on_click:unit Action.t
   -> ?menu_actions:row_action list
   -> unit
@@ -766,6 +767,7 @@ type rendered_sidebar_action =
   ; avatar_image : string option
   ; avatar_initial : string option
   ; chrome : sidebar_action_chrome
+  ; closes_sidebar : bool
   ; on_click : unit -> unit
   ; menu_actions : rendered_row_action list
   }

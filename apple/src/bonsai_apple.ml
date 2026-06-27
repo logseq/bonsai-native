@@ -416,6 +416,7 @@ type sidebar_action =
   ; avatar_image : string option
   ; avatar_initial : string option
   ; chrome : sidebar_action_chrome
+  ; closes_sidebar : bool
   ; on_click : unit Action.t
   ; menu_actions : row_action list
   }
@@ -865,6 +866,7 @@ type rendered_sidebar_action =
   ; avatar_image : string option
   ; avatar_initial : string option
   ; chrome : sidebar_action_chrome
+  ; closes_sidebar : bool
   ; on_click : unit -> unit
   ; menu_actions : rendered_row_action list
   }
@@ -1496,6 +1498,7 @@ let sidebar_action
       ?avatar_image
       ?avatar_initial
       ?(chrome = Default_chrome)
+      ?(closes_sidebar = true)
       ~(on_click : unit Action.t)
       ?(menu_actions = [])
       ()
@@ -1508,6 +1511,7 @@ let sidebar_action
   ; avatar_image
   ; avatar_initial
   ; chrome
+  ; closes_sidebar
   ; on_click
   ; menu_actions
   }
@@ -2484,6 +2488,7 @@ module Renderer = struct
            ; avatar_image = action.avatar_image
            ; avatar_initial = action.avatar_initial
            ; chrome = action.chrome
+           ; closes_sidebar = action.closes_sidebar
            ; on_click = (fun () -> t.schedule_event action.on_click)
            ; menu_actions =
                List.map action.menu_actions ~f:(fun menu_action ->
@@ -4157,7 +4162,8 @@ module For_testing = struct
                    menu_action.title ^ image ^ ":" ^ style))
             ^ "]"
         in
-        action.id ^ ":" ^ action.title ^ subtitle ^ avatar ^ menu
+        let close_policy = if action.closes_sidebar then "" else ":keeps-sidebar" in
+        action.id ^ ":" ^ action.title ^ subtitle ^ avatar ^ menu ^ close_policy
       in
       let sidebar_header_action =
         match view.kind, view.sidebar_header_action with

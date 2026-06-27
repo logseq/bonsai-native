@@ -763,6 +763,7 @@ external set_native_sidebar_header_action
   -> string option
   -> string option
   -> int
+  -> int
   -> unit
   = "bonsai_apple_swiftui_set_sidebar_header_action_byte"
     "bonsai_apple_swiftui_set_sidebar_header_action"
@@ -773,6 +774,7 @@ external append_native_sidebar_action
   -> string
   -> string option
   -> string option
+  -> int
   -> int
   -> unit
   = "bonsai_apple_swiftui_append_sidebar_action_byte"
@@ -818,6 +820,7 @@ external set_native_sidebar_bottom_action
   -> string option
   -> string option
   -> string option
+  -> int
   -> int
   -> int
   -> unit
@@ -1292,7 +1295,7 @@ module Backend = struct
     set_native_sidebar_history_title view.native history_title;
     (match header_action with
      | None ->
-       set_native_sidebar_header_action view.native None None None None None no_event
+       set_native_sidebar_header_action view.native None None None None None no_event 1
      | Some action ->
        set_native_sidebar_header_action
          view.native
@@ -1301,7 +1304,8 @@ module Backend = struct
          action.system_image
          action.avatar_image
          action.avatar_initial
-         (install_sidebar_action action));
+         (install_sidebar_action action)
+         (Bool.to_int action.closes_sidebar));
     List.iter actions ~f:(fun action ->
       append_native_sidebar_action
         view.native
@@ -1309,7 +1313,8 @@ module Backend = struct
         action.title
         action.subtitle
         action.system_image
-        (install_sidebar_action action);
+        (install_sidebar_action action)
+        (Bool.to_int action.closes_sidebar);
       List.iter action.menu_actions ~f:(fun menu_action ->
         let event_id = install_handler None (Click menu_action.on_click) in
         view.sidebar_event_ids <- event_id :: view.sidebar_event_ids;
@@ -1347,7 +1352,7 @@ module Backend = struct
           style_id
           event_id));
     match bottom_action with
-    | None -> set_native_sidebar_bottom_action view.native None None None no_event 0
+    | None -> set_native_sidebar_bottom_action view.native None None None no_event 0 1
     | Some action ->
       set_native_sidebar_bottom_action
         view.native
@@ -1356,6 +1361,7 @@ module Backend = struct
         action.system_image
         (install_sidebar_action action)
         (sidebar_action_chrome_id action.chrome)
+        (Bool.to_int action.closes_sidebar)
   ;;
 
   let set_section view ~title = set_native_section view.native title

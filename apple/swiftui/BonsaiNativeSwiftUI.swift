@@ -438,6 +438,7 @@ private struct BonsaiNativeSidebarAction: Identifiable {
   let avatarInitial: String?
   let chrome: Int32
   let eventId: Int32?
+  let closesSidebar: Bool
   var menuActions: [BonsaiNativeRowAction]
 }
 
@@ -2255,7 +2256,7 @@ private struct BonsaiNativeNodeView: View {
         if let eventId = action.eventId {
           model.sendClick(eventId)
         }
-        setCompactSidebarOpen(false)
+        closeCompactSidebarIfNeeded(action)
       } label: {
         sidebarRowLabel(
           title: action.title,
@@ -2271,7 +2272,7 @@ private struct BonsaiNativeNodeView: View {
           if let eventId = action.eventId {
             model.sendClick(eventId)
           }
-          setCompactSidebarOpen(false)
+          closeCompactSidebarIfNeeded(action)
         } label: {
           sidebarRowLabel(
             title: action.title,
@@ -2297,6 +2298,12 @@ private struct BonsaiNativeNodeView: View {
         }
         .buttonStyle(.plain)
       }
+    }
+  }
+
+  private func closeCompactSidebarIfNeeded(_ action: BonsaiNativeSidebarAction) {
+    if action.closesSidebar {
+      setCompactSidebarOpen(false)
     }
   }
 
@@ -2399,7 +2406,7 @@ private struct BonsaiNativeNodeView: View {
     if let eventId = action.eventId {
       model.sendClick(eventId)
     }
-    setCompactSidebarOpen(false)
+    closeCompactSidebarIfNeeded(action)
   }
 
   @ViewBuilder
@@ -2472,7 +2479,7 @@ private struct BonsaiNativeNodeView: View {
       if let eventId = action.eventId {
         model.sendClick(eventId)
       }
-      setCompactSidebarOpen(false)
+      closeCompactSidebarIfNeeded(action)
     } label: {
       if action.chrome == 2 {
         Image(systemName: action.systemImage ?? "xmark")
@@ -4210,7 +4217,8 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
   _ headerActionSystemImagePointer: UnsafePointer<CChar>?,
   _ headerActionAvatarImagePointer: UnsafePointer<CChar>?,
   _ headerActionAvatarInitialPointer: UnsafePointer<CChar>?,
-  _ headerActionEventId: Int32
+  _ headerActionEventId: Int32,
+  _ headerActionClosesSidebar: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   if let headerActionIdPointer, let headerActionTitlePointer {
@@ -4223,6 +4231,7 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
       avatarInitial: headerActionAvatarInitialPointer.map(String.init(cString:)),
       chrome: 0,
       eventId: headerActionEventId < 0 ? nil : headerActionEventId,
+      closesSidebar: headerActionClosesSidebar != 0,
       menuActions: []
     )
   } else {
@@ -4237,7 +4246,8 @@ public func bonsai_native_swiftui_append_sidebar_action(
   _ titlePointer: UnsafePointer<CChar>?,
   _ subtitlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
-  _ eventId: Int32
+  _ eventId: Int32,
+  _ closesSidebar: Int32
 ) {
   guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
   node.sidebarActions.append(
@@ -4250,6 +4260,7 @@ public func bonsai_native_swiftui_append_sidebar_action(
       avatarInitial: nil,
       chrome: 0,
       eventId: eventId < 0 ? nil : eventId,
+      closesSidebar: closesSidebar != 0,
       menuActions: []
     )
   )
@@ -4310,6 +4321,7 @@ public func bonsai_native_swiftui_append_sidebar_history_action(
       avatarInitial: nil,
       chrome: 0,
       eventId: eventId < 0 ? nil : eventId,
+      closesSidebar: true,
       menuActions: []
     )
   )
@@ -4348,7 +4360,8 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
   _ titlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
   _ eventId: Int32,
-  _ chrome: Int32
+  _ chrome: Int32,
+  _ closesSidebar: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   guard let idPointer, let titlePointer else {
@@ -4364,6 +4377,7 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
     avatarInitial: nil,
     chrome: chrome,
     eventId: eventId < 0 ? nil : eventId,
+    closesSidebar: closesSidebar != 0,
     menuActions: []
   )
 }

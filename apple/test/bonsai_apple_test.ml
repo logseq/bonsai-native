@@ -43,13 +43,16 @@ let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
 
 let test_compact_sidebar_close_paths_share_swift_animation () =
   let source = read_file swiftui_source_path in
-  let expected_close_paths = 6 in
+  let expected_direct_close_paths = 3 in
   require
     (count_substrings source ~substring:"setCompactSidebarOpen(false)"
-     >= expected_close_paths)
-    "compact sidebar close paths should go through setCompactSidebarOpen(false) so \
-     row taps, menu actions, header taps, overlay taps, and drag endings share the \
-     Swift drawer animation, keyboard dismissal, haptic, and drag-state reset";
+     >= expected_direct_close_paths)
+    "compact sidebar overlay and drag close paths should go through \
+     setCompactSidebarOpen(false) for the Swift drawer animation, keyboard dismissal, \
+     haptic, and drag-state reset";
+  require
+    (count_substrings source ~substring:"closeCompactSidebarIfNeeded(action)" >= 4)
+    "compact sidebar action close paths should share the data-driven close helper";
   require
     (count_substrings source ~substring:"isCompactSidebarOpen = false" = 1)
     "compact sidebar close paths should not mutate isCompactSidebarOpen directly \
@@ -196,6 +199,66 @@ let test_sidebar_history_actions_are_separate_and_clickable () =
   require
     (Backend.find_text_exn root ~path:[ 0 ] = "rename")
     "history action menu click should run"
+;;
+
+let test_sidebar_actions_can_keep_compact_drawer_open () =
+  Backend.reset ();
+  let component graph =
+    let selected, set_selected = Apple.state graph ~key:"selected" "decks" in
+    let event, set_event = Apple.state graph ~key:"event" "none" in
+    Apple.sidebar_split
+      ~title:"Lulala"
+      ~header_action:
+        (Apple.sidebar_action
+           ~id:"account"
+           ~title:"Account"
+           ~avatar_initial:"?"
+           ~closes_sidebar:false
+           ~on_click:(set_event "settings")
+           ())
+      ~actions:
+        [ Apple.sidebar_action
+            ~id:"decks"
+            ~title:"Decks"
+            ~system_image:"rectangle.stack"
+            ~on_click:(set_event "decks")
+            ()
+        ; Apple.sidebar_action
+            ~id:"practice-cards"
+            ~title:"Practice"
+            ~system_image:"rectangle.stack.badge.play"
+            ~closes_sidebar:false
+            ~on_click:(set_event "practice")
+            ()
+        ]
+      ~selected
+      ~on_select:set_selected
+      [ Apple.tab ~id:"decks" ~title:"Decks" (Apple.text event) ]
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered ~substring:"sidebar-header-action=account:Account:avatar=?:keeps-sidebar")
+    "header action should expose that it keeps the compact sidebar open";
+  require
+    (contains
+       rendered
+       ~substring:"practice-cards:Practice:rectangle.stack.badge.play:keeps-sidebar")
+    "sheet-style sidebar actions should expose that they keep the compact sidebar open";
+  Backend.click_sidebar_header_action_exn root ~id:"account";
+  require
+    (String.equal (Backend.find_text_exn root ~path:[ 0 ]) "settings")
+    "header action click should still run";
+  Backend.click_sidebar_action_exn root ~id:"practice-cards";
+  require
+    (String.equal (Backend.find_text_exn root ~path:[ 0 ]) "practice")
+    "non-closing sidebar action click should still run"
 ;;
 
 let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
@@ -809,6 +872,7 @@ let () =
   test_scoped_state_is_independent ();
   test_tab_selection_updates_state ();
   test_sidebar_history_actions_are_separate_and_clickable ();
+  test_sidebar_actions_can_keep_compact_drawer_open ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_image_semantic_color_renders ();

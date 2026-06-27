@@ -243,14 +243,16 @@ extern void bonsai_native_swiftui_set_sidebar_header_action(
   const char *header_action_system_image,
   const char *header_action_avatar_image,
   const char *header_action_avatar_initial,
-  int32_t header_action_event_id);
+  int32_t header_action_event_id,
+  int32_t header_action_closes_sidebar);
 extern void bonsai_native_swiftui_append_sidebar_action(
   void *node,
   const char *id,
   const char *title,
   const char *subtitle,
   const char *system_image,
-  int32_t event_id);
+  int32_t event_id,
+  int32_t closes_sidebar);
 extern void bonsai_native_swiftui_append_sidebar_action_menu_action(
   void *node,
   const char *title,
@@ -279,7 +281,8 @@ extern void bonsai_native_swiftui_set_sidebar_bottom_action(
   const char *title,
   const char *system_image,
   int32_t event_id,
-  int32_t chrome);
+  int32_t chrome,
+  int32_t closes_sidebar);
 extern void bonsai_native_swiftui_set_section(void *node, const char *title);
 extern void bonsai_native_swiftui_clear_picker(
   void *node,
@@ -1476,10 +1479,11 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action(
   value system_image,
   value avatar_image,
   value avatar_initial,
-  value event_id)
+  value event_id,
+  value closes_sidebar)
 {
   CAMLparam5(node, id, title, system_image, avatar_image);
-  CAMLxparam2(avatar_initial, event_id);
+  CAMLxparam3(avatar_initial, event_id, closes_sidebar);
   bonsai_native_swiftui_set_sidebar_header_action(
     pointer_val(node),
     Is_none(id) ? NULL : String_val(Some_val(id)),
@@ -1487,7 +1491,8 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action(
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
     Is_none(avatar_image) ? NULL : String_val(Some_val(avatar_image)),
     Is_none(avatar_initial) ? NULL : String_val(Some_val(avatar_initial)),
-    Int_val(event_id));
+    Int_val(event_id),
+    Int_val(closes_sidebar));
   CAMLreturn(Val_unit);
 }
 
@@ -1501,7 +1506,8 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action_byte(value *argv, 
     argv[3],
     argv[4],
     argv[5],
-    argv[6]);
+    argv[6],
+    argv[7]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_sidebar_action(
@@ -1510,17 +1516,19 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_action(
   value title,
   value subtitle,
   value system_image,
-  value event_id)
+  value event_id,
+  value closes_sidebar)
 {
   CAMLparam5(node, id, title, subtitle, system_image);
-  CAMLxparam1(event_id);
+  CAMLxparam2(event_id, closes_sidebar);
   bonsai_native_swiftui_append_sidebar_action(
     pointer_val(node),
     String_val(id),
     String_val(title),
     Is_none(subtitle) ? NULL : String_val(Some_val(subtitle)),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
-    Int_val(event_id));
+    Int_val(event_id),
+    Int_val(closes_sidebar));
   CAMLreturn(Val_unit);
 }
 
@@ -1533,7 +1541,8 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_action_byte(value *argv, int 
     argv[2],
     argv[3],
     argv[4],
-    argv[5]);
+    argv[5],
+    argv[6]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_sidebar_action_menu_action(
@@ -1617,17 +1626,19 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_bottom_action(
   value title,
   value system_image,
   value event_id,
-  value chrome)
+  value chrome,
+  value closes_sidebar)
 {
   CAMLparam5(node, id, title, system_image, event_id);
-  CAMLxparam1(chrome);
+  CAMLxparam2(chrome, closes_sidebar);
   bonsai_native_swiftui_set_sidebar_bottom_action(
     pointer_val(node),
     Is_none(id) ? NULL : String_val(Some_val(id)),
     Is_none(title) ? NULL : String_val(Some_val(title)),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
     Int_val(event_id),
-    Int_val(chrome));
+    Int_val(chrome),
+    Int_val(closes_sidebar));
   CAMLreturn(Val_unit);
 }
 
@@ -1640,7 +1651,8 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_bottom_action_byte(value *argv, 
     argv[2],
     argv[3],
     argv[4],
-    argv[5]);
+    argv[5],
+    argv[6]);
 }
 
 CAMLprim value bonsai_apple_swiftui_set_section(value node, value title)
