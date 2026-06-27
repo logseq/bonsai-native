@@ -1058,10 +1058,23 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
         )
       ) {
         if let sheetContent = node.sheetContent {
-          BonsaiNativeNodeView(node: sheetContent, model: model)
+          bonsaiSheetContentHost {
+            BonsaiNativeNodeView(node: sheetContent, model: model)
+          }
             .presentationDetents(sheetPresentationDetents)
         }
       }
+  }
+
+  private func bonsaiSheetContentHost<Content: View>(
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      content()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
   }
 
   private var sheetPresentationDetents: Set<PresentationDetent> {
@@ -1335,10 +1348,13 @@ private struct BonsaiNativeTextFieldView: View {
             get: { node.text },
             set: { value in
               node.text = value
-              model.sendChange(node.changeEventId, text: value)
             }
           ),
           isFocused: node.isTextFieldFocused,
+          onChange: { value in
+            node.text = value
+            model.sendChange(node.changeEventId, text: value)
+          },
           onSubmit: {
             model.sendClick(node.clickEventId)
           },
@@ -1451,6 +1467,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
   let placeholder: String
   @Binding var text: String
   let isFocused: Bool
+  let onChange: (String) -> Void
   let onSubmit: () -> Void
   let onDeleteBackwardAtStart: () -> Void
 
@@ -1462,6 +1479,11 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
     let textField = BonsaiNativeDeleteAwareUITextField(frame: .zero)
     textField.borderStyle = .none
     textField.delegate = context.coordinator
+    textField.addTarget(
+      context.coordinator,
+      action: #selector(Coordinator.textFieldEditingChanged(_:)),
+      for: .editingChanged
+    )
     textField.onDeleteBackwardAtStart = onDeleteBackwardAtStart
     textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return textField
@@ -1496,10 +1518,18 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
       self.parent = parent
     }
 
+    @objc func textFieldEditingChanged(_ textField: UITextField) {
+      updateText(textField.text ?? "")
+    }
+
     func textFieldDidChangeSelection(_ textField: UITextField) {
-      let text = textField.text ?? ""
+      updateText(textField.text ?? "")
+    }
+
+    private func updateText(_ text: String) {
       if parent.text != text {
         parent.text = text
+        parent.onChange(text)
       }
     }
 
@@ -1613,8 +1643,10 @@ private struct BonsaiNativeNodeView: View {
         Button {
           model.sendClick(node.clickEventId)
         } label: {
-          ForEach(node.children) { child in
-            BonsaiNativeNodeView(node: child, model: model)
+          customButtonLabelHitTarget {
+            ForEach(node.children) { child in
+              BonsaiNativeNodeView(node: child, model: model)
+            }
           }
         }
         .buttonStyle(.plain)
@@ -1828,6 +1860,13 @@ private struct BonsaiNativeNodeView: View {
           .foregroundStyle(.secondary)
       }
     }
+  }
+
+  private func customButtonLabelHitTarget<Content: View>(
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    content()
+      .contentShape(Rectangle())
   }
 
   private var childViews: some View {

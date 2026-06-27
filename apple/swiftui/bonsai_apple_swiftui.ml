@@ -2089,13 +2089,21 @@ module Backend = struct
     let saw_on_appear = ref false in
     let saw_keyboard_dismiss_controls = ref false in
     let saw_scroll_dismisses_keyboard = ref false in
+    let pending_sheet = ref None in
+    let install_pending_sheet () =
+      match !pending_sheet with
+      | Some (is_presented, content, detents, on_dismiss) ->
+        install_sheet view ~schedule_event ~is_presented ~content ~detents ~on_dismiss
+      | None -> clear_sheet view
+    in
     List.iter modifiers ~f:(function
       | Apple.Rendered_searchable { text; prompt; on_change } ->
         saw_searchable := true;
         install_searchable view ~schedule_event ~text ~prompt ~on_change
       | Apple.Rendered_sheet { is_presented; content; detents; on_dismiss } ->
         saw_sheet := true;
-        install_sheet view ~schedule_event ~is_presented ~content ~detents ~on_dismiss
+        if is_presented && Option.is_none !pending_sheet
+        then pending_sheet := Some (is_presented, content, detents, on_dismiss)
       | Apple.Rendered_popover { is_presented; content; on_dismiss } ->
         saw_popover := true;
         install_popover view ~schedule_event ~is_presented ~content ~on_dismiss
@@ -2184,7 +2192,7 @@ module Backend = struct
         saw_scroll_dismisses_keyboard := true;
         set_native_scroll_dismisses_keyboard view.native true);
     if not !saw_searchable then clear_searchable view;
-    if not !saw_sheet then clear_sheet view;
+    if !saw_sheet then install_pending_sheet () else clear_sheet view;
     if not !saw_popover then clear_popover view;
     if not !saw_confirmation_dialog then clear_confirmation_dialog view;
     if not !saw_safe_area_inset_bottom then set_safe_area_inset_bottom view None;

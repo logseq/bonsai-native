@@ -597,8 +597,10 @@ private struct BonsaiNativeNodeView: View {
         Button {
           model.sendClick(node.clickEventId)
         } label: {
-          ForEach(node.children) { child in
-            BonsaiNativeNodeView(node: child, model: model)
+          customButtonLabelHitTarget {
+            ForEach(node.children) { child in
+              BonsaiNativeNodeView(node: child, model: model)
+            }
           }
         }
           .disabled(!node.isEnabled)
@@ -624,10 +626,13 @@ private struct BonsaiNativeNodeView: View {
               get: { node.text },
               set: { value in
                 node.text = value
-                model.sendChange(node.changeEventId, text: value)
               }
             ),
             isFocused: node.isTextFieldFocused,
+            onChange: { value in
+              node.text = value
+              model.sendChange(node.changeEventId, text: value)
+            },
             onSubmit: {
               model.sendClick(node.clickEventId)
             },
@@ -1453,7 +1458,9 @@ private struct BonsaiNativeNodeView: View {
           .searchable(text: text, placement: .toolbar, prompt: Text(prompt))
           .sheet(isPresented: sheetBinding) {
             if let sheetContent = node.sheetContent {
-              BonsaiNativeNodeView(node: sheetContent, model: model)
+              bonsaiSheetContentHost {
+                BonsaiNativeNodeView(node: sheetContent, model: model)
+              }
             }
           }
       } else {
@@ -1461,7 +1468,9 @@ private struct BonsaiNativeNodeView: View {
           .searchable(text: text, placement: .toolbar)
           .sheet(isPresented: sheetBinding) {
           if let sheetContent = node.sheetContent {
-            BonsaiNativeNodeView(node: sheetContent, model: model)
+            bonsaiSheetContentHost {
+              BonsaiNativeNodeView(node: sheetContent, model: model)
+            }
           }
         }
       }
@@ -1469,10 +1478,30 @@ private struct BonsaiNativeNodeView: View {
       base
         .sheet(isPresented: sheetBinding) {
           if let sheetContent = node.sheetContent {
-            BonsaiNativeNodeView(node: sheetContent, model: model)
+            bonsaiSheetContentHost {
+              BonsaiNativeNodeView(node: sheetContent, model: model)
+            }
           }
       }
     }
+  }
+
+  private func bonsaiSheetContentHost<Content: View>(
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    ZStack(alignment: .topLeading) {
+      content()
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+      .background(Color(nsColor: .windowBackgroundColor))
+  }
+
+  private func customButtonLabelHitTarget<Content: View>(
+    @ViewBuilder content: () -> Content
+  ) -> some View {
+    content()
+      .contentShape(Rectangle())
   }
 
   @ViewBuilder
@@ -1602,6 +1631,7 @@ private struct BonsaiNativeDeleteAwareTextField: NSViewRepresentable {
   let placeholder: String
   @Binding var text: String
   let isFocused: Bool
+  let onChange: (String) -> Void
   let onSubmit: () -> Void
   let onDeleteBackwardAtStart: () -> Void
 
@@ -1647,7 +1677,10 @@ private struct BonsaiNativeDeleteAwareTextField: NSViewRepresentable {
 
     func controlTextDidChange(_ notification: Notification) {
       guard let textField = notification.object as? NSTextField else { return }
-      parent.text = textField.stringValue
+      if parent.text != textField.stringValue {
+        parent.text = textField.stringValue
+        parent.onChange(textField.stringValue)
+      }
     }
 
     func control(

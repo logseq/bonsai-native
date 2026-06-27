@@ -55,6 +55,7 @@ let read_file path =
 ;;
 
 let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
+let swiftui_backend_source_path = "../swiftui/bonsai_apple_swiftui.ml"
 
 let test_navigation_value_links_keep_primary_tap_for_link () =
   let source = read_file swiftui_source_path in
@@ -436,6 +437,68 @@ let test_compact_sidebar_keeps_presented_sheets_interactive () =
     "compact sidebar should not disable the selected route subtree because app-level \
      sheets are attached there in the OCaml backend; disabling that subtree makes \
      practice/settings sheets open but not respond to taps"
+;;
+
+let test_multiple_sheet_modifiers_install_only_presented_sheet () =
+  let source = read_file swiftui_backend_source_path in
+  require
+    (contains source ~substring:"pending_sheet")
+    "SwiftUI backend should arbitrate multiple sheet modifiers through a pending sheet \
+     instead of letting a later false sheet overwrite an earlier presented one";
+  require
+    (contains source ~substring:"install_pending_sheet")
+    "SwiftUI backend should install the chosen sheet once after scanning modifiers"
+;;
+
+let test_sheet_content_host_fills_sheet_background () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"bonsaiSheetContentHost")
+    "SwiftUI sheets should wrap native content in a common host container";
+  require
+    (contains
+       source
+       ~substring:".frame(maxWidth: .infinity, maxHeight: .infinity")
+    "SwiftUI sheet host should fill the sheet instead of letting intrinsic-width content \
+     leave uncovered side gutters";
+  require
+    (contains source ~substring:".background(bonsaiHomeBodyBackground")
+    "SwiftUI sheet host should paint the app body background across the full sheet"
+;;
+
+let test_sheet_content_host_preserves_leading_content_alignment () =
+  let source = read_file swiftui_source_path in
+  let host_start =
+    match substring_index source ~substring:"private func bonsaiSheetContentHost" ~from:0 with
+    | Some index -> index
+    | None -> failwith "bonsaiSheetContentHost not found"
+  in
+  let detents_start =
+    match substring_index source ~substring:"private var sheetPresentationDetents" ~from:host_start with
+    | Some index -> index
+    | None -> failwith "sheetPresentationDetents not found after bonsaiSheetContentHost"
+  in
+  let host_source = String.sub source host_start (detents_start - host_start) in
+  require
+    (contains host_source ~substring:"ZStack(alignment: .topLeading)")
+    "SwiftUI sheet host should paint a full-width background without forcing sheet \
+     content into the horizontal center";
+  require
+    (contains host_source ~substring:"alignment: .topLeading")
+    "SwiftUI sheet host should keep sheet content leading-aligned while the host \
+     background fills the sheet"
+;;
+
+let test_custom_label_buttons_use_full_label_hit_target () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"customButtonLabelHitTarget")
+    "custom label buttons should wrap their label content in a shared full-frame hit \
+     target";
+  require
+    (contains source ~substring:".contentShape(Rectangle())")
+    "custom label buttons should use the whole label frame as the tappable area instead \
+     of only the visible glyphs"
 ;;
 
 let test_image_semantic_color_renders () =
@@ -1082,6 +1145,10 @@ let () =
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_compact_sidebar_bottom_search_tracks_keyboard ();
   test_compact_sidebar_keeps_presented_sheets_interactive ();
+  test_multiple_sheet_modifiers_install_only_presented_sheet ();
+  test_sheet_content_host_fills_sheet_background ();
+  test_sheet_content_host_preserves_leading_content_alignment ();
+  test_custom_label_buttons_use_full_label_hit_target ();
   test_navigation_value_links_do_not_preempt_system_push ();
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_navigation_value_links_keep_primary_tap_for_link ();
