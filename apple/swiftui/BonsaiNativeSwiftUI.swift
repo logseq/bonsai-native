@@ -1728,7 +1728,7 @@ private struct BonsaiNativeNodeView: View {
     case .navigationLink:
       if let navigationValue = node.navigationLinkValue {
         NavigationLink(value: navigationValue) {
-          navigationLinkLabel(suppressRowActions: false)
+          navigationLinkLabel(suppressRowActions: true)
         }
         .simultaneousGesture(
           TapGesture().onEnded {

@@ -41,6 +41,17 @@ let read_file path =
 
 let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
 
+let test_navigation_value_links_keep_primary_tap_for_link () =
+  let source = read_file swiftui_source_path in
+  require
+    (count_substrings
+       source
+       ~substring:"navigationLinkLabel(suppressRowActions: true)"
+     >= 2)
+    "both value-based and destination-based NavigationLink labels should suppress \
+     nested row actions so the primary tap opens the link"
+;;
+
 let test_compact_sidebar_close_paths_share_swift_animation () =
   let source = read_file swiftui_source_path in
   let expected_direct_close_paths = 3 in
@@ -943,6 +954,7 @@ let () =
   test_sidebar_actions_can_keep_compact_drawer_open ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_compact_sidebar_close_paths_share_swift_animation ();
+  test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
   test_text_field_delete_backward_at_start_event ();
