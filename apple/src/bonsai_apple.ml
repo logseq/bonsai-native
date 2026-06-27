@@ -3665,6 +3665,14 @@ module For_testing = struct
       | Custom_view kind -> "custom(" ^ kind ^ ")"
     ;;
 
+    let rendered_frame_value ({ width; height } : frame) =
+      let value = function
+        | None -> "_"
+        | Some value -> string_of_float value
+      in
+      value width ^ "x" ^ value height
+    ;;
+
     let modifier_name = function
       | Rendered_padding _ -> "padding"
       | Rendered_regular_material_panel _ -> "panel"
@@ -3672,7 +3680,7 @@ module For_testing = struct
       | Rendered_secondary_fill_panel _ -> "panel"
       | Rendered_liquid_glass_panel _ -> "panel"
       | Rendered_context_menu _ -> "context-menu"
-      | Rendered_frame _ -> "frame"
+      | Rendered_frame frame -> "frame:" ^ rendered_frame_value frame
       | Rendered_navigation_title _ -> "navigation-title"
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
