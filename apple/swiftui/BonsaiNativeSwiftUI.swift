@@ -581,6 +581,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var liquidGlassPanelTintOpacity: Double = 0
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
+  @Published var frameMaxWidth: CGFloat?
   @Published var tabs: [BonsaiNativeTab] = []
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
@@ -957,7 +958,11 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
                   liquidGlassPanel(
                     content
                       .padding(node.padding ?? EdgeInsets())
-                      .frame(width: node.frameWidth, height: node.frameHeight)
+                      .frame(
+                        width: node.frameWidth,
+                        height: node.frameHeight
+                      )
+                      .frame(maxWidth: node.frameMaxWidth)
                   )
                 )
               )
@@ -3508,11 +3513,13 @@ public func bonsai_native_swiftui_set_padding(
 public func bonsai_native_swiftui_set_frame(
   _ pointer: UnsafeMutableRawPointer?,
   _ width: Double,
-  _ height: Double
+  _ height: Double,
+  _ maxWidth: Double
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.frameWidth = width < 0 ? nil : CGFloat(width)
   node.frameHeight = height < 0 ? nil : CGFloat(height)
+  node.frameMaxWidth = maxWidth < 0 ? nil : CGFloat(maxWidth)
 }
 
 @_cdecl("bonsai_native_swiftui_set_regular_material_panel")

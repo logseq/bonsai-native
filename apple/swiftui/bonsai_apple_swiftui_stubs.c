@@ -228,7 +228,11 @@ extern void bonsai_native_swiftui_set_liquid_glass_panel(
   bool is_transparent,
   int32_t tint_color,
   double tint_opacity);
-extern void bonsai_native_swiftui_set_frame(void *node, double width, double height);
+extern void bonsai_native_swiftui_set_frame(
+  void *node,
+  double width,
+  double height,
+  double max_width);
 extern void bonsai_native_swiftui_clear_tabs(
   void *node,
   const char *selected,
@@ -1411,10 +1415,18 @@ CAMLprim value bonsai_apple_swiftui_set_padding(
   CAMLreturn(Val_unit);
 }
 
-CAMLprim value bonsai_apple_swiftui_set_frame(value node, value width, value height)
+CAMLprim value bonsai_apple_swiftui_set_frame(
+  value node,
+  value width,
+  value height,
+  value max_width)
 {
-  CAMLparam3(node, width, height);
-  bonsai_native_swiftui_set_frame(pointer_val(node), Double_val(width), Double_val(height));
+  CAMLparam4(node, width, height, max_width);
+  bonsai_native_swiftui_set_frame(
+    pointer_val(node),
+    Double_val(width),
+    Double_val(height),
+    Double_val(max_width));
   CAMLreturn(Val_unit);
 }
 

@@ -50,6 +50,7 @@ type edge_insets =
 type frame =
   { width : float option
   ; height : float option
+  ; max_width : float option
   }
 
 type row_action_style =
@@ -522,7 +523,7 @@ val liquid_glass_panel
   -> node
 
 val context_menu : row_action list -> node -> node
-val frame : ?width:float -> ?height:float -> node -> node
+val frame : ?width:float -> ?height:float -> ?max_width:float -> node -> node
 val navigation_title : string -> node -> node
 
 val searchable

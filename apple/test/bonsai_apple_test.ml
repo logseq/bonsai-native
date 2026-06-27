@@ -883,6 +883,24 @@ let test_plain_text_field_renders_plain_style () =
     "plain text fields should expose SwiftUI plain text field style"
 ;;
 
+let test_frame_renders_max_width () =
+  Backend.reset ();
+  let component _graph =
+    Apple.text "Full width" |> Apple.frame ~max_width:infinity
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered ~substring:"frame:_x_:inf")
+    "frame should expose max width for SwiftUI maxWidth layout"
+;;
+
 let test_file_image_can_render_swift_image_file_style () =
   Backend.reset ();
   let component _graph =
@@ -1240,6 +1258,7 @@ let () =
   test_liquid_glass_panel_renders ();
   test_pill_text_field_uses_liquid_glass_chrome ();
   test_plain_text_field_renders_plain_style ();
+  test_frame_renders_max_width ();
   test_file_image_can_render_swift_image_file_style ();
   test_keyboard_dismiss_controls_renders ();
   test_scroll_dismisses_keyboard_renders ();

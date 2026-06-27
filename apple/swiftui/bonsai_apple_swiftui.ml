@@ -749,6 +749,7 @@ external set_native_frame
   :  native
   -> float
   -> float
+  -> float
   -> unit
   = "bonsai_apple_swiftui_set_frame"
 
@@ -2184,12 +2185,13 @@ module Backend = struct
       | Apple.Rendered_context_menu actions ->
         saw_context_menu := true;
         install_context_menu view ~schedule_event ~actions
-      | Apple.Rendered_frame { width; height } ->
+      | Apple.Rendered_frame { width; height; max_width } ->
         saw_frame := true;
         set_native_frame
           view.native
           (Option.value width ~default:(-1.))
           (Option.value height ~default:(-1.))
+          (Option.value max_width ~default:(-1.))
       | Apple.Rendered_navigation_title title ->
         saw_navigation_title := true;
         set_native_navigation_title view.native (Some title)
@@ -2225,7 +2227,7 @@ module Backend = struct
     if not !saw_liquid_glass_panel
     then set_native_liquid_glass_panel view.native (-1.) false (-1) 0.;
     if not !saw_context_menu then install_context_menu view ~schedule_event ~actions:[];
-    if not !saw_frame then set_native_frame view.native (-1.) (-1.);
+    if not !saw_frame then set_native_frame view.native (-1.) (-1.) (-1.);
     if not !saw_navigation_title then set_native_navigation_title view.native None;
     if not !saw_tap_action then set_tap_action view None;
     if not !saw_on_appear then set_on_appear view None;

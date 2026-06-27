@@ -270,6 +270,7 @@ type edge_insets =
 type frame =
   { width : float option
   ; height : float option
+  ; max_width : float option
   }
 
 type row_action_style =
@@ -1449,7 +1450,10 @@ let liquid_glass_panel
 ;;
 
 let context_menu actions node = Modified_node (Context_menu actions, node)
-let frame ?width ?height node = Modified_node (Frame { width; height }, node)
+let frame ?width ?height ?max_width node =
+  Modified_node (Frame { width; height; max_width }, node)
+;;
+
 let navigation_title title node = Modified_node (Navigation_title title, node)
 
 let searchable ?prompt ~text ~on_change node =
@@ -1839,8 +1843,14 @@ module Renderer = struct
       let float value = string_of_float value in
       let int = string_of_int in
       let list values = "[" ^ String.concat ~sep:"," values ^ "]" in
-      let frame_value ({ width; height } : frame) =
-        opt (Option.map width ~f:float) ^ "x" ^ opt (Option.map height ~f:float)
+      let frame_value ({ width; height; max_width } : frame) =
+        opt (Option.map width ~f:float)
+        ^ "x"
+        ^ opt (Option.map height ~f:float)
+        ^
+        match max_width with
+        | None -> ""
+        | Some max_width -> ":" ^ float max_width
       in
       let text_attrs { style; weight; color } =
         string_of_int (Obj.magic style)
@@ -3690,12 +3700,18 @@ module For_testing = struct
       | Custom_view kind -> "custom(" ^ kind ^ ")"
     ;;
 
-    let rendered_frame_value ({ width; height } : frame) =
+    let rendered_frame_value ({ width; height; max_width } : frame) =
       let value = function
         | None -> "_"
         | Some value -> string_of_float value
       in
-      value width ^ "x" ^ value height
+      value width
+      ^ "x"
+      ^ value height
+      ^
+      match max_width with
+      | None -> ""
+      | Some max_width -> ":" ^ string_of_float max_width
     ;;
 
     let modifier_name = function
