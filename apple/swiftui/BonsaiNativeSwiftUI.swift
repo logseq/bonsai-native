@@ -2134,72 +2134,77 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private var compactSidebarSplitView: some View {
-    GeometryReader { proxy in
-      let revealWidth = proxy.size.width
-      let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
-      let progress = revealWidth > 0 ? visibleWidth / revealWidth : 0
-      let sidebarTopInset = bonsaiDrawerSidebarTopInset(proxy.safeAreaInsets.top)
-      let sidebarBottomInset = bonsaiDrawerSidebarBottomInset(proxy.safeAreaInsets.bottom)
+    ZStack {
+      bonsaiHomeBodyBackground
+        .ignoresSafeArea(.container, edges: .all)
 
-      ZStack(alignment: .leading) {
-        bonsaiHomeBodyBackground
-          .ignoresSafeArea()
+      GeometryReader { proxy in
+        let revealWidth = proxy.size.width
+        let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
+        let progress = revealWidth > 0 ? visibleWidth / revealWidth : 0
+        let sidebarTopInset = bonsaiDrawerSidebarTopInset(proxy.safeAreaInsets.top)
+        let sidebarBottomInset = bonsaiDrawerSidebarBottomInset(proxy.safeAreaInsets.bottom)
 
-        compactSidebarContent
-          .padding(.top, sidebarTopInset)
-          .padding(.bottom, sidebarBottomInset)
-          .frame(width: revealWidth, height: proxy.size.height, alignment: .topLeading)
-          .background(bonsaiHomeBodyBackground.ignoresSafeArea())
-          .opacity(progress)
-          .scrollDisabled(isCompactSidebarDragging)
+        ZStack(alignment: .leading) {
+          bonsaiHomeBodyBackground
+            .ignoresSafeArea(.container, edges: .all)
 
-        ZStack(alignment: .top) {
-          if node.sidebarCompactTopBarVisible {
-            selectedRouteDetail
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
-              .environment(
-                \.bonsaiCompactSidebarToolbar,
-                BonsaiCompactSidebarToolbar(
-                  title: selectedRouteTitle,
-                  openSidebar: {
-                    setCompactSidebarOpen(true)
-                  }
+          compactSidebarContent
+            .padding(.top, sidebarTopInset)
+            .padding(.bottom, sidebarBottomInset)
+            .frame(width: revealWidth, height: proxy.size.height, alignment: .topLeading)
+            .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+            .opacity(progress)
+            .scrollDisabled(isCompactSidebarDragging)
+
+          ZStack(alignment: .top) {
+            if node.sidebarCompactTopBarVisible {
+              selectedRouteDetail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .environment(
+                  \.bonsaiCompactSidebarToolbar,
+                  BonsaiCompactSidebarToolbar(
+                    title: selectedRouteTitle,
+                    openSidebar: {
+                      setCompactSidebarOpen(true)
+                    }
+                  )
                 )
-              )
-          } else {
-            selectedRouteDetail
-              .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+              selectedRouteDetail
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+          }
+          .frame(width: proxy.size.width, height: proxy.size.height)
+          .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+          .offset(x: visibleWidth)
+          .scrollDisabled(isCompactSidebarOpen || isCompactSidebarDragging)
+          .disabled(isCompactSidebarOpen)
+          .clipShape(RoundedRectangle(cornerRadius: 28 * progress, style: .continuous))
+
+          if isCompactSidebarOpen {
+            Color.clear
+              .frame(width: max(0, proxy.size.width - visibleWidth), height: proxy.size.height)
+              .contentShape(Rectangle())
+              .offset(x: visibleWidth)
+              .onTapGesture {
+                setCompactSidebarOpen(false)
+              }
           }
         }
         .frame(width: proxy.size.width, height: proxy.size.height)
-        .background(bonsaiHomeBodyBackground)
-        .offset(x: visibleWidth)
-        .scrollDisabled(isCompactSidebarOpen || isCompactSidebarDragging)
-        .disabled(isCompactSidebarOpen)
-        .clipShape(RoundedRectangle(cornerRadius: 28 * progress, style: .continuous))
-
-        if isCompactSidebarOpen {
-          Color.clear
-            .frame(width: max(0, proxy.size.width - visibleWidth), height: proxy.size.height)
-            .contentShape(Rectangle())
-            .offset(x: visibleWidth)
-            .onTapGesture {
-              setCompactSidebarOpen(false)
+        .clipped()
+        .contentShape(Rectangle())
+        .simultaneousGesture(
+          DragGesture(minimumDistance: 16, coordinateSpace: .global)
+            .onChanged { value in
+              handleCompactSidebarDragChanged(value, revealWidth: revealWidth)
             }
-        }
+            .onEnded { value in
+              handleCompactSidebarDragEnded(value, revealWidth: revealWidth)
+            }
+        )
       }
-      .frame(width: proxy.size.width, height: proxy.size.height)
-      .clipped()
-      .contentShape(Rectangle())
-      .simultaneousGesture(
-        DragGesture(minimumDistance: 16, coordinateSpace: .global)
-          .onChanged { value in
-            handleCompactSidebarDragChanged(value, revealWidth: revealWidth)
-          }
-          .onEnded { value in
-            handleCompactSidebarDragEnded(value, revealWidth: revealWidth)
-          }
-      )
     }
   }
 

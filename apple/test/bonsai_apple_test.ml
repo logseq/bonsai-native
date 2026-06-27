@@ -300,6 +300,11 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
   require
     (contains
        rendered
+       ~substring:"sidebar-shell-background=home-body-ignores-safe-area-outside-clip")
+    "compact sidebar shell background should cover the top and bottom safe areas";
+  require
+    (contains
+       rendered
        ~substring:"sidebar-bottom-controls=safe-area-inset top-padding=10")
     "compact sidebar bottom controls should match the Swift safe-area inset layout";
   require

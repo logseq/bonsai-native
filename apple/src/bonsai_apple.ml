@@ -4173,6 +4173,7 @@ module For_testing = struct
           ^ " sidebar-primary-row-height=52 sidebar-selected-corner-radius=12"
           ^ " sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 \
              bottom=max-safe-area-or-34"
+          ^ " sidebar-shell-background=home-body-ignores-safe-area-outside-clip"
           ^ " sidebar-bottom-controls=safe-area-inset top-padding=10"
           ^ " sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging"
           ^ " sidebar-edge-gesture=enabled-when-compact-top-bar-visible"
