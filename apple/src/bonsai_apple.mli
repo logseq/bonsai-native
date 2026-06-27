@@ -265,7 +265,9 @@ val text_field
   -> ?style:text_field_style
   -> ?axis:axis
   -> ?is_secure:bool
+  -> ?is_focused:bool
   -> ?on_submit:unit Action.t
+  -> ?on_delete_backward_at_start:unit Action.t
   -> text:string
   -> on_change:(string -> unit Action.t)
   -> unit
@@ -801,6 +803,8 @@ module Renderer : sig
     val set_text_field_style : view -> text_field_style -> unit
     val set_text_field_axis : view -> axis -> unit
     val set_text_field_secure : view -> bool -> unit
+    val set_text_field_focus : view -> bool -> unit
+    val set_text_field_delete_backward_at_start : view -> (unit -> unit) option -> unit
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
@@ -1061,6 +1065,7 @@ module For_testing : sig
 
     val move_rows_exn : view -> path:int list -> from_index:int -> to_index:int -> unit
     val submit_text_exn : view -> path:int list -> unit
+    val delete_backward_at_start_text_exn : view -> path:int list -> unit
 
     val submit_safe_area_inset_bottom_text_exn
       :  view

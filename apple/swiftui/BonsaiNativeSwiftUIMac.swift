@@ -286,6 +286,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var textFieldStyle: Int32 = 0
   @Published var textFieldAxis: Int32 = 0
   @Published var isTextFieldSecure = false
+  @Published var isTextFieldFocused = false
+  @Published var textFieldDeleteBackwardAtStartEventId: Int32?
   @Published var isToggleOn = false
   @Published var progressValue: Double = 0
   @Published var isEnabled = true
@@ -536,6 +538,7 @@ private struct BonsaiNativeNavigationTitleModifier: ViewModifier {
 private struct BonsaiNativeNodeView: View {
   @ObservedObject var node: BonsaiNativeNode
   @ObservedObject var model: BonsaiNativeHostModel
+  @FocusState private var isTextFieldFocused: Bool
 
   var body: some View {
     applyModifiers(to: content)
@@ -612,6 +615,24 @@ private struct BonsaiNativeNodeView: View {
               }
             )
           )
+        } else if node.textFieldDeleteBackwardAtStartEventId != nil {
+          BonsaiNativeDeleteAwareTextField(
+            placeholder: node.placeholder ?? "",
+            text: Binding(
+              get: { node.text },
+              set: { value in
+                node.text = value
+                model.sendChange(node.changeEventId, text: value)
+              }
+            ),
+            isFocused: node.isTextFieldFocused,
+            onSubmit: {
+              model.sendClick(node.clickEventId)
+            },
+            onDeleteBackwardAtStart: {
+              model.sendClick(node.textFieldDeleteBackwardAtStartEventId)
+            }
+          )
         } else {
           TextField(
             node.placeholder ?? "",
@@ -626,6 +647,17 @@ private struct BonsaiNativeNodeView: View {
         }
       }
       .onSubmit { model.sendClick(node.clickEventId) }
+      .focused($isTextFieldFocused)
+      .onAppear {
+        if node.isTextFieldFocused {
+          isTextFieldFocused = true
+        }
+      }
+      .onChange(of: node.isTextFieldFocused) { _, isFocused in
+        if isFocused {
+          isTextFieldFocused = true
+        }
+      }
 
       if node.textFieldStyle == 1 {
         textField
@@ -1534,6 +1566,81 @@ private struct BonsaiNativeNodeView: View {
   }
 }
 
+private struct BonsaiNativeDeleteAwareTextField: NSViewRepresentable {
+  let placeholder: String
+  @Binding var text: String
+  let isFocused: Bool
+  let onSubmit: () -> Void
+  let onDeleteBackwardAtStart: () -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(self)
+  }
+
+  func makeNSView(context: Context) -> NSTextField {
+    let textField = NSTextField()
+    textField.delegate = context.coordinator
+    textField.placeholderString = placeholder
+    textField.stringValue = text
+    textField.isBordered = false
+    textField.isBezeled = false
+    textField.drawsBackground = false
+    textField.focusRingType = .none
+    textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    return textField
+  }
+
+  func updateNSView(_ textField: NSTextField, context: Context) {
+    context.coordinator.parent = self
+    textField.placeholderString = placeholder
+    if textField.stringValue != text {
+      textField.stringValue = text
+    }
+    if isFocused && textField.window?.firstResponder !== textField.currentEditor() {
+      DispatchQueue.main.async {
+        textField.window?.makeFirstResponder(textField)
+        if let editor = textField.currentEditor() {
+          editor.selectedRange = NSRange(location: textField.stringValue.count, length: 0)
+        }
+      }
+    }
+  }
+
+  final class Coordinator: NSObject, NSTextFieldDelegate {
+    var parent: BonsaiNativeDeleteAwareTextField
+
+    init(_ parent: BonsaiNativeDeleteAwareTextField) {
+      self.parent = parent
+    }
+
+    func controlTextDidChange(_ notification: Notification) {
+      guard let textField = notification.object as? NSTextField else { return }
+      parent.text = textField.stringValue
+    }
+
+    func control(
+      _ control: NSControl,
+      textView: NSTextView,
+      doCommandBy commandSelector: Selector
+    ) -> Bool {
+      if commandSelector == #selector(NSResponder.deleteBackward(_:)) {
+        let selectedRange = textView.selectedRange()
+        if selectedRange.location == 0 && selectedRange.length == 0 {
+          parent.onDeleteBackwardAtStart()
+          return true
+        }
+      }
+
+      if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+        parent.onSubmit()
+        return true
+      }
+
+      return false
+    }
+  }
+}
+
 private struct BonsaiNativeCongratsEffectView: View {
   var body: some View {
     ZStack {
@@ -1728,6 +1835,19 @@ public func bonsai_native_swiftui_set_text_field_axis(_ pointer: UnsafeMutableRa
 @_cdecl("bonsai_native_swiftui_set_text_field_secure")
 public func bonsai_native_swiftui_set_text_field_secure(_ pointer: UnsafeMutableRawPointer?, _ isSecure: Bool) {
   nativeNode(from: pointer)?.isTextFieldSecure = isSecure
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_focus")
+public func bonsai_native_swiftui_set_text_field_focus(_ pointer: UnsafeMutableRawPointer?, _ isFocused: Bool) {
+  nativeNode(from: pointer)?.isTextFieldFocused = isFocused
+}
+
+@_cdecl("bonsai_native_swiftui_set_text_field_delete_backward_at_start")
+public func bonsai_native_swiftui_set_text_field_delete_backward_at_start(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ eventId: Int32
+) {
+  nativeNode(from: pointer)?.textFieldDeleteBackwardAtStartEventId = eventId < 0 ? nil : eventId
 }
 
 @_cdecl("bonsai_native_swiftui_set_toggle")

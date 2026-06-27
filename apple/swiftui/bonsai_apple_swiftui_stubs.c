@@ -51,6 +51,10 @@ extern void bonsai_native_swiftui_set_placeholder(void *node, const char *text);
 extern void bonsai_native_swiftui_set_text_field_style(void *node, int32_t style);
 extern void bonsai_native_swiftui_set_text_field_axis(void *node, int32_t axis);
 extern void bonsai_native_swiftui_set_text_field_secure(void *node, bool is_secure);
+extern void bonsai_native_swiftui_set_text_field_focus(void *node, bool is_focused);
+extern void bonsai_native_swiftui_set_text_field_delete_backward_at_start(
+  void *node,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_toggle(void *node, bool is_on, int32_t event_id);
 extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
@@ -729,6 +733,24 @@ CAMLprim value bonsai_apple_swiftui_set_text_field_secure(value node, value is_s
 {
   CAMLparam2(node, is_secure);
   bonsai_native_swiftui_set_text_field_secure(pointer_val(node), Bool_val(is_secure));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_text_field_focus(value node, value is_focused)
+{
+  CAMLparam2(node, is_focused);
+  bonsai_native_swiftui_set_text_field_focus(pointer_val(node), Bool_val(is_focused));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_text_field_delete_backward_at_start(
+  value node,
+  value event_id)
+{
+  CAMLparam2(node, event_id);
+  bonsai_native_swiftui_set_text_field_delete_backward_at_start(
+    pointer_val(node),
+    Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 

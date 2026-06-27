@@ -243,7 +243,7 @@ find_source_dir() {
   local package=$1
   local source
   source=$(
-    find "$sources_dir" -maxdepth 1 -type d -name "$package.*" \
+    find "$sources_dir" -maxdepth 1 -type d \( -name "$package" -o -name "$package.*" \) \
       | sort \
       | tail -n 1
   )

@@ -249,6 +249,18 @@ external set_native_text_field_secure
   -> unit
   = "bonsai_apple_swiftui_set_text_field_secure"
 
+external set_native_text_field_focus
+  :  native
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_set_text_field_focus"
+
+external set_native_text_field_delete_backward_at_start
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_text_field_delete_backward_at_start"
+
 external set_native_toggle
   :  native
   -> bool
@@ -962,6 +974,7 @@ module Backend = struct
     ; mutable tap_event_id : int option
     ; mutable appear_event_id : int option
     ; mutable change_event_id : int option
+    ; mutable text_delete_backward_at_start_event_id : int option
     ; mutable search_event_id : int option
     ; mutable tab_select_event_id : int option
     ; mutable sheet_dismiss_event_id : int option
@@ -992,6 +1005,7 @@ module Backend = struct
     ; tap_event_id = None
     ; appear_event_id = None
     ; change_event_id = None
+    ; text_delete_backward_at_start_event_id = None
     ; search_event_id = None
     ; tab_select_event_id = None
     ; sheet_dismiss_event_id = None
@@ -1015,6 +1029,7 @@ module Backend = struct
     clear_handler view.tap_event_id;
     clear_handler view.appear_event_id;
     clear_handler view.change_event_id;
+    clear_handler view.text_delete_backward_at_start_event_id;
     clear_handler view.search_event_id;
     clear_handler view.tab_select_event_id;
     clear_handler view.sheet_dismiss_event_id;
@@ -1155,6 +1170,22 @@ module Backend = struct
 
   let set_text_field_secure view is_secure =
     set_native_text_field_secure view.native is_secure
+  ;;
+
+  let set_text_field_focus view is_focused =
+    set_native_text_field_focus view.native is_focused
+  ;;
+
+  let set_text_field_delete_backward_at_start view handler =
+    let event_id =
+      match handler with
+      | None -> no_event
+      | Some handler ->
+        install_handler view.text_delete_backward_at_start_event_id (Click handler)
+    in
+    view.text_delete_backward_at_start_event_id
+    <- (if event_id = no_event then None else Some event_id);
+    set_native_text_field_delete_backward_at_start view.native event_id
   ;;
 
   let set_toggle view ~is_on ~on_change =

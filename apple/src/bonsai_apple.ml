@@ -549,8 +549,10 @@ type node =
       ; style : text_field_style
       ; axis : axis
       ; is_secure : bool
+      ; is_focused : bool
       ; on_change : string -> unit Action.t
       ; on_submit : unit Action.t option
+      ; on_delete_backward_at_start : unit Action.t option
       }
   | Toggle_node of
       { title : string
@@ -985,12 +987,24 @@ let text_field
       ?(style = Rounded_border)
       ?(axis = Horizontal)
       ?(is_secure = false)
+      ?(is_focused = false)
       ?on_submit
+      ?on_delete_backward_at_start
       ~text
       ~on_change
       ()
   =
-  Text_field_node { text; placeholder; style; axis; is_secure; on_change; on_submit }
+  Text_field_node
+    { text
+    ; placeholder
+    ; style
+    ; axis
+    ; is_secure
+    ; is_focused
+    ; on_change
+    ; on_submit
+    ; on_delete_backward_at_start
+    }
 ;;
 
 let toggle title ~is_on ~on_change = Toggle_node { title; is_on; on_change }
@@ -1609,6 +1623,8 @@ module Renderer = struct
     val set_text_field_style : view -> text_field_style -> unit
     val set_text_field_axis : view -> axis -> unit
     val set_text_field_secure : view -> bool -> unit
+    val set_text_field_focus : view -> bool -> unit
+    val set_text_field_delete_backward_at_start : view -> (unit -> unit) option -> unit
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
@@ -1955,7 +1971,16 @@ module Renderer = struct
         | Button_label_node { label; is_enabled; on_click = _ } ->
           "button-label:" ^ bool is_enabled ^ ":" ^ fingerprint label
         | Text_field_node
-            { text; placeholder; style; axis; is_secure; on_change = _; on_submit = _ } ->
+            { text
+            ; placeholder
+            ; style
+            ; axis
+            ; is_secure
+            ; is_focused
+            ; on_change = _
+            ; on_submit = _
+            ; on_delete_backward_at_start = _
+            } ->
           "text-field:"
           ^ text
           ^ ":"
@@ -1966,6 +1991,8 @@ module Renderer = struct
           ^ axis_name axis
           ^ ":"
           ^ bool is_secure
+          ^ ":"
+          ^ bool is_focused
         | Toggle_node { title; is_on; on_change = _ } ->
           "toggle:" ^ title ^ ":" ^ bool is_on
         | Text_editor_node { text; placeholder; on_change = _ } ->
@@ -2332,12 +2359,26 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          reconcile_positional t [ label ]
        | Text_field_node
-           { text; placeholder; style; axis; is_secure; on_change; on_submit } ->
+           { text
+           ; placeholder
+           ; style
+           ; axis
+           ; is_secure
+           ; is_focused
+           ; on_change
+           ; on_submit
+           ; on_delete_backward_at_start
+           } ->
          Backend.set_text t.view text;
          Backend.set_placeholder t.view placeholder;
          Backend.set_text_field_style t.view style;
          Backend.set_text_field_axis t.view axis;
          Backend.set_text_field_secure t.view is_secure;
+         Backend.set_text_field_focus t.view is_focused;
+         Backend.set_text_field_delete_backward_at_start
+           t.view
+           (Option.map on_delete_backward_at_start ~f:(fun on_delete ->
+              fun () -> t.schedule_event on_delete));
          Backend.set_on_click
            t.view
            (Option.map on_submit ~f:(fun on_submit ->
@@ -3003,6 +3044,8 @@ module For_testing = struct
       ; mutable text_field_style : text_field_style
       ; mutable text_field_axis : axis
       ; mutable text_field_secure : bool
+      ; mutable text_field_focused : bool
+      ; mutable on_text_delete_backward_at_start : (unit -> unit) option
       ; mutable toggle_is_on : bool
       ; mutable progress_value : float option
       ; mutable grid_columns : int option
@@ -3120,6 +3163,8 @@ module For_testing = struct
       ; text_field_style = Rounded_border
       ; text_field_axis = Horizontal
       ; text_field_secure = false
+      ; text_field_focused = false
+      ; on_text_delete_backward_at_start = None
       ; toggle_is_on = false
       ; progress_value = None
       ; grid_columns = None
@@ -3252,6 +3297,16 @@ module For_testing = struct
     let set_text_field_secure view is_secure =
       mutate ();
       view.text_field_secure <- is_secure
+    ;;
+
+    let set_text_field_focus view is_focused =
+      mutate ();
+      view.text_field_focused <- is_focused
+    ;;
+
+    let set_text_field_delete_backward_at_start view handler =
+      mutate ();
+      view.on_text_delete_backward_at_start <- handler
     ;;
 
     let set_toggle view ~is_on ~on_change =
@@ -3697,6 +3752,11 @@ module For_testing = struct
       let text_field_secure =
         match view.kind, view.text_field_secure with
         | Text_field, true -> " secure"
+        | _ -> ""
+      in
+      let text_field_focused =
+        match view.kind, view.text_field_focused with
+        | Text_field, true -> " focused"
         | _ -> ""
       in
       let toggle_selected =
@@ -4308,6 +4368,7 @@ module For_testing = struct
         ^ text_field_chrome
         ^ text_field_axis
         ^ text_field_secure
+        ^ text_field_focused
         ^ toggle_selected
         ^ progress
         ^ grid
@@ -4560,6 +4621,13 @@ module For_testing = struct
       match view.on_click with
       | Some f -> f ()
       | None -> failwith "View has no text-submit handler"
+    ;;
+
+    let delete_backward_at_start_text_exn view ~path =
+      let view = find_visible_exn view ~path in
+      match view.on_text_delete_backward_at_start with
+      | Some f -> f ()
+      | None -> failwith "View has no text delete-backward-at-start handler"
     ;;
 
     let submit_safe_area_inset_bottom_text_exn view ~path ~inset_path =

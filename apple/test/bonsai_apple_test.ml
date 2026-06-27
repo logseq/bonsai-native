@@ -389,6 +389,59 @@ let test_button_label_renders_custom_clickable_content () =
     "click should run the button action"
 ;;
 
+let test_text_field_delete_backward_at_start_event () =
+  Backend.reset ();
+  let component graph =
+    let deleted, set_deleted = Apple.state graph ~key:"deleted" false in
+    Apple.vstack
+      [
+        Apple.text_field ~text:""
+          ~placeholder:"Block"
+          ~on_change:(fun _ -> Apple.Action.ignore)
+          ~on_delete_backward_at_start:(set_deleted true)
+          ();
+        Apple.text (if deleted then "deleted" else "idle");
+      ]
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  Backend.delete_backward_at_start_text_exn root ~path:[ 0 ];
+  App.flush_and_render app;
+  let rendered =
+    match App.view app with
+    | Some root -> Backend.show root
+    | None -> failwith "app did not render"
+  in
+  require
+    (contains rendered ~substring:"text=\"deleted\"")
+    "delete backward at the start of a text field should dispatch its event"
+;;
+
+let test_text_field_focus_renders () =
+  Backend.reset ();
+  let component _graph =
+    Apple.text_field ~text:"Focused" ~placeholder:"Block" ~is_focused:true
+      ~on_change:(fun _ -> Apple.Action.ignore)
+      ()
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let rendered =
+    match App.view app with
+    | Some root -> Backend.show root
+    | None -> failwith "app did not render"
+  in
+  require (contains rendered ~substring:"text-field#") rendered;
+  require
+    (contains rendered ~substring:" focused")
+    "focused text field should expose focus state to the backend"
+;;
+
 let test_button_renders_bordered_prominent_style () =
   Backend.reset ();
   let component _graph =
@@ -877,6 +930,8 @@ let () =
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
+  test_text_field_delete_backward_at_start_event ();
+  test_text_field_focus_renders ();
   test_button_renders_bordered_prominent_style ();
   test_button_renders_plain_style ();
   test_on_appear_event_rerenders_component_state ();
