@@ -415,6 +415,7 @@ type sidebar_action =
   ; system_image : string option
   ; avatar_image : string option
   ; avatar_initial : string option
+  ; selects_tab : string option
   ; chrome : sidebar_action_chrome
   ; closes_sidebar : bool
   ; on_click : unit Action.t
@@ -586,6 +587,7 @@ type node =
       ; on_delete : (int -> unit Action.t) option
       ; on_move : (from_index:int -> to_index:int -> unit Action.t) option
       ; edit_mode : bool
+      ; focused_row_key : string option
       }
   | Movable_rows_node of
       { rows : keyed_node list
@@ -867,6 +869,7 @@ type rendered_sidebar_action =
   ; system_image : string option
   ; avatar_image : string option
   ; avatar_initial : string option
+  ; selects_tab : string option
   ; chrome : sidebar_action_chrome
   ; closes_sidebar : bool
   ; on_click : unit -> unit
@@ -1024,7 +1027,7 @@ let divider () = Divider_node
 let form children = Form_node children
 let scroll_view child = Scroll_view_node child
 
-let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) rows ~key ~row =
+let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) ?focused_row_key rows ~key ~row =
   let seen = String.Hash_set.create () in
   let rows =
     List.map rows ~f:(fun value ->
@@ -1033,7 +1036,7 @@ let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) rows ~key ~row =
       Hash_set.add seen key;
       { key; node = row value })
   in
-  List_node { rows; on_refresh; on_delete; on_move; edit_mode }
+  List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key }
 ;;
 
 let movable_rows ?on_move ?(edit_mode = false) rows ~key ~row =
@@ -1511,6 +1514,7 @@ let sidebar_action
       ?system_image
       ?avatar_image
       ?avatar_initial
+      ?selects_tab
       ?(chrome = Default_chrome)
       ?(closes_sidebar = true)
       ~(on_click : unit Action.t)
@@ -1524,6 +1528,7 @@ let sidebar_action
   ; system_image
   ; avatar_image
   ; avatar_initial
+  ; selects_tab
   ; chrome
   ; closes_sidebar
   ; on_click
@@ -1637,6 +1642,8 @@ module Renderer = struct
       -> on_delete:(int -> unit) option
       -> on_move:(from_index:int -> to_index:int -> unit) option
       -> edit_mode:bool
+      -> focused_row_key:string option
+      -> focused_row_index:int option
       -> unit
 
     val set_tabs
@@ -2017,7 +2024,7 @@ module Renderer = struct
         | Divider_node -> "divider"
         | Form_node children -> "form:" ^ list (List.map children ~f:fingerprint)
         | Scroll_view_node child -> "scroll-view:" ^ fingerprint child
-        | List_node { rows; on_refresh; on_delete; on_move; edit_mode } ->
+        | List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
           "list:"
           ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
           ^ ":"
@@ -2028,6 +2035,8 @@ module Renderer = struct
           ^ bool (Option.is_some on_move)
           ^ ":"
           ^ bool edit_mode
+          ^ ":"
+          ^ opt focused_row_key
         | Movable_rows_node { rows; on_move; edit_mode } ->
           "movable-rows:"
           ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
@@ -2437,7 +2446,13 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t [ child ]
-       | List_node { rows; on_refresh; on_delete; on_move; edit_mode } ->
+       | List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+         let focused_row_index =
+           Option.bind focused_row_key ~f:(fun focused_row_key ->
+             rows
+             |> List.find_mapi (fun index (row : keyed_node) ->
+               if String.equal row.key focused_row_key then Some index else None))
+         in
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          Backend.set_list_behavior
@@ -2451,7 +2466,9 @@ module Renderer = struct
              (Option.map on_move ~f:(fun on_move ->
                 fun ~from_index ~to_index ->
                 t.schedule_event (on_move ~from_index ~to_index)))
-           ~edit_mode;
+           ~edit_mode
+           ~focused_row_key
+           ~focused_row_index;
          reconcile_keyed t rows
        | Movable_rows_node { rows; on_move; edit_mode } ->
          Backend.set_on_click t.view None;
@@ -2464,7 +2481,9 @@ module Renderer = struct
              (Option.map on_move ~f:(fun on_move ->
                 fun ~from_index ~to_index ->
                 t.schedule_event (on_move ~from_index ~to_index)))
-           ~edit_mode;
+           ~edit_mode
+           ~focused_row_key:None
+           ~focused_row_index:None;
          reconcile_keyed t rows
        | Navigation_stack_node children ->
          Backend.set_on_click t.view None;
@@ -2528,6 +2547,7 @@ module Renderer = struct
            ; system_image = action.system_image
            ; avatar_image = action.avatar_image
            ; avatar_initial = action.avatar_initial
+           ; selects_tab = action.selects_tab
            ; chrome = action.chrome
            ; closes_sidebar = action.closes_sidebar
            ; on_click = (fun () -> t.schedule_event action.on_click)
@@ -3074,6 +3094,8 @@ module For_testing = struct
       ; mutable on_list_delete : (int -> unit) option
       ; mutable on_list_move : (from_index:int -> to_index:int -> unit) option
       ; mutable list_edit_mode : bool
+      ; mutable list_focused_row_key : string option
+      ; mutable list_focused_row_index : int option
       ; mutable on_navigation_activate : (unit -> unit) option
       ; mutable on_navigation_deactivate : (unit -> unit) option
       ; mutable navigation_path : string list
@@ -3193,6 +3215,8 @@ module For_testing = struct
       ; on_list_delete = None
       ; on_list_move = None
       ; list_edit_mode = false
+      ; list_focused_row_key = None
+      ; list_focused_row_index = None
       ; on_navigation_activate = None
       ; on_navigation_deactivate = None
       ; navigation_path = []
@@ -3338,12 +3362,22 @@ module For_testing = struct
       view.children <- List.zip_exn keyed children
     ;;
 
-    let set_list_behavior view ~on_refresh ~on_delete ~on_move ~edit_mode =
+    let set_list_behavior
+          view
+          ~on_refresh
+          ~on_delete
+          ~on_move
+          ~edit_mode
+          ~focused_row_key
+          ~focused_row_index
+      =
       mutate ();
       view.on_list_refresh <- on_refresh;
       view.on_list_delete <- on_delete;
       view.on_list_move <- on_move;
-      view.list_edit_mode <- edit_mode
+      view.list_edit_mode <- edit_mode;
+      view.list_focused_row_key <- focused_row_key;
+      view.list_focused_row_index <- focused_row_index
     ;;
 
     let set_tabs view ~selected ~on_select tabs =
@@ -3788,6 +3822,14 @@ module For_testing = struct
           if List.is_empty flags then "" else " " ^ String.concat ~sep:" " flags
         | _ -> ""
       in
+      let focused_row =
+        match view.kind, view.list_focused_row_key, view.list_focused_row_index with
+        | (List | Movable_rows), Some key, Some index ->
+          sprintf " focused-row=%s focused-index=%d" key index
+        | (List | Movable_rows), Some key, None -> " focused-row=" ^ key
+        | (List | Movable_rows), None, Some index -> sprintf " focused-index=%d" index
+        | _ -> ""
+      in
       let slider =
         match view.kind, view.slider_value, view.slider_range with
         | Slider, Some value, Some (min, max) ->
@@ -4225,8 +4267,13 @@ module For_testing = struct
                    menu_action.title ^ image ^ ":" ^ style))
             ^ "]"
         in
+        let selects =
+          match action.selects_tab with
+          | None -> ""
+          | Some tab -> ":selects=" ^ tab
+        in
         let close_policy = if action.closes_sidebar then "" else ":keeps-sidebar" in
-        action.id ^ ":" ^ action.title ^ subtitle ^ avatar ^ menu ^ close_policy
+        action.id ^ ":" ^ action.title ^ subtitle ^ avatar ^ menu ^ selects ^ close_policy
       in
       let sidebar_header_action =
         match view.kind, view.sidebar_header_action with
@@ -4376,6 +4423,7 @@ module For_testing = struct
         ^ progress
         ^ grid
         ^ list_behavior
+        ^ focused_row
         ^ slider
         ^ stepper
         ^ date_picker

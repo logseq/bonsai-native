@@ -330,6 +330,12 @@ external set_native_list_behavior
   -> unit
   = "bonsai_apple_swiftui_set_list_behavior"
 
+external set_native_list_focused_row_index
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_list_focused_row_index"
+
 external set_native_on_click : native -> int -> unit = "bonsai_apple_swiftui_set_on_click"
 
 external set_native_navigation_link_callbacks
@@ -774,6 +780,7 @@ external set_native_sidebar_header_action
   -> string option
   -> string option
   -> string option
+  -> string option
   -> int
   -> int
   -> unit
@@ -784,6 +791,7 @@ external append_native_sidebar_action
   :  native
   -> string
   -> string
+  -> string option
   -> string option
   -> string option
   -> int
@@ -813,6 +821,7 @@ external append_native_sidebar_history_action
   -> string
   -> string option
   -> string option
+  -> string option
   -> int
   -> unit
   = "bonsai_apple_swiftui_append_sidebar_history_action_byte"
@@ -834,6 +843,7 @@ external set_native_sidebar_bottom_action
   -> string option
   -> int
   -> int
+  -> string option
   -> int
   -> unit
   = "bonsai_apple_swiftui_set_sidebar_bottom_action_byte"
@@ -1208,7 +1218,15 @@ module Backend = struct
       (Array.of_list (List.map children ~f:(fun child -> child.native)))
   ;;
 
-  let set_list_behavior view ~on_refresh ~on_delete ~on_move ~edit_mode =
+  let set_list_behavior
+        view
+        ~on_refresh
+        ~on_delete
+        ~on_move
+        ~edit_mode
+        ~focused_row_key:_
+        ~focused_row_index
+    =
     List.iter view.list_event_ids ~f:(Hashtbl.remove event_handlers);
     view.list_event_ids <- [];
     let install_click = function
@@ -1247,7 +1265,10 @@ module Backend = struct
       refresh_event_id
       delete_event_id
       move_event_id
-      edit_mode
+      edit_mode;
+    set_native_list_focused_row_index
+      view.native
+      (Option.value focused_row_index ~default:(-1))
   ;;
 
   let set_tabs view ~selected ~on_select (tabs : Apple.rendered_tab list) =
@@ -1326,7 +1347,7 @@ module Backend = struct
     set_native_sidebar_history_title view.native history_title;
     (match header_action with
      | None ->
-       set_native_sidebar_header_action view.native None None None None None no_event 1
+       set_native_sidebar_header_action view.native None None None None None None no_event 1
      | Some action ->
        set_native_sidebar_header_action
          view.native
@@ -1335,6 +1356,7 @@ module Backend = struct
          action.system_image
          action.avatar_image
          action.avatar_initial
+         action.selects_tab
          (install_sidebar_action action)
          (Bool.to_int action.closes_sidebar));
     List.iter actions ~f:(fun action ->
@@ -1344,6 +1366,7 @@ module Backend = struct
         action.title
         action.subtitle
         action.system_image
+        action.selects_tab
         (install_sidebar_action action)
         (Bool.to_int action.closes_sidebar);
       List.iter action.menu_actions ~f:(fun menu_action ->
@@ -1367,6 +1390,7 @@ module Backend = struct
         action.title
         action.subtitle
         action.system_image
+        action.selects_tab
         (install_sidebar_action action);
       List.iter action.menu_actions ~f:(fun menu_action ->
         let event_id = install_handler None (Click menu_action.on_click) in
@@ -1383,7 +1407,7 @@ module Backend = struct
           style_id
           event_id));
     match bottom_action with
-    | None -> set_native_sidebar_bottom_action view.native None None None no_event 0 1
+    | None -> set_native_sidebar_bottom_action view.native None None None no_event 0 None 1
     | Some action ->
       set_native_sidebar_bottom_action
         view.native
@@ -1392,6 +1416,7 @@ module Backend = struct
         action.system_image
         (install_sidebar_action action)
         (sidebar_action_chrome_id action.chrome)
+        action.selects_tab
         (Bool.to_int action.closes_sidebar)
   ;;
 

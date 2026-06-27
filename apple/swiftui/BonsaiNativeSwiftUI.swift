@@ -436,6 +436,7 @@ private struct BonsaiNativeSidebarAction: Identifiable {
   let systemImage: String?
   let avatarImage: String?
   let avatarInitial: String?
+  let selectsTab: String?
   let chrome: Int32
   let eventId: Int32?
   let closesSidebar: Bool
@@ -630,6 +631,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var listDeleteEventId: Int32?
   @Published var listMoveEventId: Int32?
   @Published var isListEditMode = false
+  @Published var listFocusedRowIndex: Int?
   @Published var exportFilename = ""
   @Published var exportContentType = ""
   @Published var exportContent = ""
@@ -1839,26 +1841,44 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private var listView: some View {
-    List {
-      ForEach(Array(node.children.enumerated()), id: \.element.id) { _, child in
-        BonsaiNativeNodeView(node: child, model: model)
+    ScrollViewReader { proxy in
+      List {
+        ForEach(Array(node.children.enumerated()), id: \.offset) { index, child in
+          BonsaiNativeNodeView(node: child, model: model)
+            .id(index)
+        }
+        .onDelete { offsets in
+          guard let index = offsets.first else { return }
+          model.sendChange(node.listDeleteEventId, text: String(index))
+        }
+        .onMove { source, destination in
+          guard let fromIndex = source.first else { return }
+          model.sendChange(node.listMoveEventId, text: "\(fromIndex):\(destination)")
+        }
       }
-      .onDelete { offsets in
-        guard let index = offsets.first else { return }
-        model.sendChange(node.listDeleteEventId, text: String(index))
+      .environment(\.editMode, .constant(node.isListEditMode ? .active : .inactive))
+      .refreshable {
+        model.sendClick(node.listRefreshEventId)
       }
-      .onMove { source, destination in
-        guard let fromIndex = source.first else { return }
-        model.sendChange(node.listMoveEventId, text: "\(fromIndex):\(destination)")
+      .listStyle(.insetGrouped)
+      .scrollContentBackground(.hidden)
+      .background(bonsaiHomeBodyBackground)
+      .onAppear {
+        scrollFocusedRow(proxy)
+      }
+      .onChange(of: node.listFocusedRowIndex) { _, _ in
+        scrollFocusedRow(proxy)
       }
     }
-    .environment(\.editMode, .constant(node.isListEditMode ? .active : .inactive))
-    .refreshable {
-      model.sendClick(node.listRefreshEventId)
+  }
+
+  private func scrollFocusedRow(_ proxy: ScrollViewProxy) {
+    guard let index = node.listFocusedRowIndex else { return }
+    DispatchQueue.main.async {
+      withAnimation(.easeInOut(duration: 0.18)) {
+        proxy.scrollTo(index)
+      }
     }
-    .listStyle(.insetGrouped)
-    .scrollContentBackground(.hidden)
-    .background(bonsaiHomeBodyBackground)
   }
 
   private var movableRowsView: some View {
@@ -2491,11 +2511,38 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private func performSidebarAction(_ action: BonsaiNativeSidebarAction) {
+    let selectedTab = sidebarActionSelectedTab(action)
     let animation = action.closesSidebar ? compactSidebarSpringAnimation : nil
+    if let selectedTab {
+      selectSidebarActionRoute(selectedTab, closesSidebar: action.closesSidebar)
+    } else {
+      closeCompactSidebarIfNeeded(action)
+    }
     if let eventId = action.eventId {
       model.sendClick(eventId, animation: animation)
     }
-    closeCompactSidebarIfNeeded(action)
+  }
+
+  private func sidebarActionSelectedTab(_ action: BonsaiNativeSidebarAction) -> String? {
+    if let selectsTab = action.selectsTab {
+      return selectsTab
+    }
+    return node.tabs.contains { $0.id == action.id } ? action.id : nil
+  }
+
+  private func selectSidebarActionRoute(_ selectedTab: String, closesSidebar: Bool) {
+    if closesSidebar {
+      bonsaiDismissKeyboard()
+      if isCompactSidebarOpen {
+        bonsaiPerformLightHapticFeedback()
+      }
+      withAnimation(compactSidebarSpringAnimation) {
+        node.selectedTabId = selectedTab
+        updateCompactSidebarOpenState(false)
+      }
+    } else {
+      node.selectedTabId = selectedTab
+    }
   }
 
   private func closeCompactSidebarIfNeeded(_ action: BonsaiNativeSidebarAction) {
@@ -3680,6 +3727,15 @@ public func bonsai_native_swiftui_set_list_behavior(
   node.isListEditMode = editMode
 }
 
+@_cdecl("bonsai_native_swiftui_set_list_focused_row_index")
+public func bonsai_native_swiftui_set_list_focused_row_index(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ focusedRowIndex: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.listFocusedRowIndex = focusedRowIndex < 0 ? nil : Int(focusedRowIndex)
+}
+
 @_cdecl("bonsai_native_swiftui_set_on_click")
 public func bonsai_native_swiftui_set_on_click(
   _ pointer: UnsafeMutableRawPointer?,
@@ -4426,6 +4482,7 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
   _ headerActionSystemImagePointer: UnsafePointer<CChar>?,
   _ headerActionAvatarImagePointer: UnsafePointer<CChar>?,
   _ headerActionAvatarInitialPointer: UnsafePointer<CChar>?,
+  _ headerActionSelectsTabPointer: UnsafePointer<CChar>?,
   _ headerActionEventId: Int32,
   _ headerActionClosesSidebar: Int32
 ) {
@@ -4438,6 +4495,7 @@ public func bonsai_native_swiftui_set_sidebar_header_action(
       systemImage: headerActionSystemImagePointer.map(String.init(cString:)),
       avatarImage: headerActionAvatarImagePointer.map(String.init(cString:)),
       avatarInitial: headerActionAvatarInitialPointer.map(String.init(cString:)),
+      selectsTab: headerActionSelectsTabPointer.map(String.init(cString:)),
       chrome: 0,
       eventId: headerActionEventId < 0 ? nil : headerActionEventId,
       closesSidebar: headerActionClosesSidebar != 0,
@@ -4455,6 +4513,7 @@ public func bonsai_native_swiftui_append_sidebar_action(
   _ titlePointer: UnsafePointer<CChar>?,
   _ subtitlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
+  _ selectsTabPointer: UnsafePointer<CChar>?,
   _ eventId: Int32,
   _ closesSidebar: Int32
 ) {
@@ -4467,6 +4526,7 @@ public func bonsai_native_swiftui_append_sidebar_action(
       systemImage: systemImagePointer.map(String.init(cString:)),
       avatarImage: nil,
       avatarInitial: nil,
+      selectsTab: selectsTabPointer.map(String.init(cString:)),
       chrome: 0,
       eventId: eventId < 0 ? nil : eventId,
       closesSidebar: closesSidebar != 0,
@@ -4517,6 +4577,7 @@ public func bonsai_native_swiftui_append_sidebar_history_action(
   _ titlePointer: UnsafePointer<CChar>?,
   _ subtitlePointer: UnsafePointer<CChar>?,
   _ systemImagePointer: UnsafePointer<CChar>?,
+  _ selectsTabPointer: UnsafePointer<CChar>?,
   _ eventId: Int32
 ) {
   guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
@@ -4528,6 +4589,7 @@ public func bonsai_native_swiftui_append_sidebar_history_action(
       systemImage: systemImagePointer.map(String.init(cString:)),
       avatarImage: nil,
       avatarInitial: nil,
+      selectsTab: selectsTabPointer.map(String.init(cString:)),
       chrome: 0,
       eventId: eventId < 0 ? nil : eventId,
       closesSidebar: true,
@@ -4570,6 +4632,7 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
   _ systemImagePointer: UnsafePointer<CChar>?,
   _ eventId: Int32,
   _ chrome: Int32,
+  _ selectsTabPointer: UnsafePointer<CChar>?,
   _ closesSidebar: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
@@ -4584,6 +4647,7 @@ public func bonsai_native_swiftui_set_sidebar_bottom_action(
     systemImage: systemImagePointer.map(String.init(cString:)),
     avatarImage: nil,
     avatarInitial: nil,
+    selectsTab: selectsTabPointer.map(String.init(cString:)),
     chrome: chrome,
     eventId: eventId < 0 ? nil : eventId,
     closesSidebar: closesSidebar != 0,

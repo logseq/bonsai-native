@@ -298,6 +298,7 @@ val list
   -> ?on_delete:(int -> unit Action.t)
   -> ?on_move:(from_index:int -> to_index:int -> unit Action.t)
   -> ?edit_mode:bool
+  -> ?focused_row_key:string
   -> 'a list
   -> key:('a -> string)
   -> row:('a -> node)
@@ -421,6 +422,7 @@ val sidebar_action
   -> ?system_image:string
   -> ?avatar_image:string
   -> ?avatar_initial:string
+  -> ?selects_tab:string
   -> ?chrome:sidebar_action_chrome
   -> ?closes_sidebar:bool
   -> on_click:unit Action.t
@@ -768,6 +770,7 @@ type rendered_sidebar_action =
   ; system_image : string option
   ; avatar_image : string option
   ; avatar_initial : string option
+  ; selects_tab : string option
   ; chrome : sidebar_action_chrome
   ; closes_sidebar : bool
   ; on_click : unit -> unit
@@ -817,6 +820,8 @@ module Renderer : sig
       -> on_delete:(int -> unit) option
       -> on_move:(from_index:int -> to_index:int -> unit) option
       -> edit_mode:bool
+      -> focused_row_key:string option
+      -> focused_row_index:int option
       -> unit
 
     val set_tabs

@@ -66,6 +66,9 @@ extern void bonsai_native_swiftui_set_list_behavior(
   int32_t delete_event_id,
   int32_t move_event_id,
   bool edit_mode);
+extern void bonsai_native_swiftui_set_list_focused_row_index(
+  void *node,
+  int32_t focused_row_index);
 extern void bonsai_native_swiftui_set_on_click(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_navigation_link_callbacks(
   void *node,
@@ -247,6 +250,7 @@ extern void bonsai_native_swiftui_set_sidebar_header_action(
   const char *header_action_system_image,
   const char *header_action_avatar_image,
   const char *header_action_avatar_initial,
+  const char *header_action_selects_tab,
   int32_t header_action_event_id,
   int32_t header_action_closes_sidebar);
 extern void bonsai_native_swiftui_append_sidebar_action(
@@ -255,6 +259,7 @@ extern void bonsai_native_swiftui_append_sidebar_action(
   const char *title,
   const char *subtitle,
   const char *system_image,
+  const char *selects_tab,
   int32_t event_id,
   int32_t closes_sidebar);
 extern void bonsai_native_swiftui_append_sidebar_action_menu_action(
@@ -272,6 +277,7 @@ extern void bonsai_native_swiftui_append_sidebar_history_action(
   const char *title,
   const char *subtitle,
   const char *system_image,
+  const char *selects_tab,
   int32_t event_id);
 extern void bonsai_native_swiftui_append_sidebar_history_action_menu_action(
   void *node,
@@ -286,6 +292,7 @@ extern void bonsai_native_swiftui_set_sidebar_bottom_action(
   const char *system_image,
   int32_t event_id,
   int32_t chrome,
+  const char *selects_tab,
   int32_t closes_sidebar);
 extern void bonsai_native_swiftui_set_section(void *node, const char *title);
 extern void bonsai_native_swiftui_clear_picker(
@@ -823,6 +830,17 @@ CAMLprim value bonsai_apple_swiftui_set_list_behavior(
     Int_val(delete_event_id),
     Int_val(move_event_id),
     Bool_val(edit_mode));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_list_focused_row_index(
+  value node,
+  value focused_row_index)
+{
+  CAMLparam2(node, focused_row_index);
+  bonsai_native_swiftui_set_list_focused_row_index(
+    pointer_val(node),
+    Int_val(focused_row_index));
   CAMLreturn(Val_unit);
 }
 
@@ -1501,11 +1519,12 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action(
   value system_image,
   value avatar_image,
   value avatar_initial,
+  value selects_tab,
   value event_id,
   value closes_sidebar)
 {
   CAMLparam5(node, id, title, system_image, avatar_image);
-  CAMLxparam3(avatar_initial, event_id, closes_sidebar);
+  CAMLxparam4(avatar_initial, selects_tab, event_id, closes_sidebar);
   bonsai_native_swiftui_set_sidebar_header_action(
     pointer_val(node),
     Is_none(id) ? NULL : String_val(Some_val(id)),
@@ -1513,6 +1532,7 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action(
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
     Is_none(avatar_image) ? NULL : String_val(Some_val(avatar_image)),
     Is_none(avatar_initial) ? NULL : String_val(Some_val(avatar_initial)),
+    Is_none(selects_tab) ? NULL : String_val(Some_val(selects_tab)),
     Int_val(event_id),
     Int_val(closes_sidebar));
   CAMLreturn(Val_unit);
@@ -1529,7 +1549,8 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_header_action_byte(value *argv, 
     argv[4],
     argv[5],
     argv[6],
-    argv[7]);
+    argv[7],
+    argv[8]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_sidebar_action(
@@ -1538,17 +1559,19 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_action(
   value title,
   value subtitle,
   value system_image,
+  value selects_tab,
   value event_id,
   value closes_sidebar)
 {
   CAMLparam5(node, id, title, subtitle, system_image);
-  CAMLxparam2(event_id, closes_sidebar);
+  CAMLxparam3(selects_tab, event_id, closes_sidebar);
   bonsai_native_swiftui_append_sidebar_action(
     pointer_val(node),
     String_val(id),
     String_val(title),
     Is_none(subtitle) ? NULL : String_val(Some_val(subtitle)),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Is_none(selects_tab) ? NULL : String_val(Some_val(selects_tab)),
     Int_val(event_id),
     Int_val(closes_sidebar));
   CAMLreturn(Val_unit);
@@ -1564,7 +1587,8 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_action_byte(value *argv, int 
     argv[3],
     argv[4],
     argv[5],
-    argv[6]);
+    argv[6],
+    argv[7]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_sidebar_action_menu_action(
@@ -1599,16 +1623,18 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_history_action(
   value title,
   value subtitle,
   value system_image,
+  value selects_tab,
   value event_id)
 {
   CAMLparam5(node, id, title, subtitle, system_image);
-  CAMLxparam1(event_id);
+  CAMLxparam2(selects_tab, event_id);
   bonsai_native_swiftui_append_sidebar_history_action(
     pointer_val(node),
     String_val(id),
     String_val(title),
     Is_none(subtitle) ? NULL : String_val(Some_val(subtitle)),
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
+    Is_none(selects_tab) ? NULL : String_val(Some_val(selects_tab)),
     Int_val(event_id));
   CAMLreturn(Val_unit);
 }
@@ -1622,7 +1648,8 @@ CAMLprim value bonsai_apple_swiftui_append_sidebar_history_action_byte(value *ar
     argv[2],
     argv[3],
     argv[4],
-    argv[5]);
+    argv[5],
+    argv[6]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_sidebar_history_action_menu_action(
@@ -1649,10 +1676,11 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_bottom_action(
   value system_image,
   value event_id,
   value chrome,
+  value selects_tab,
   value closes_sidebar)
 {
   CAMLparam5(node, id, title, system_image, event_id);
-  CAMLxparam2(chrome, closes_sidebar);
+  CAMLxparam3(chrome, selects_tab, closes_sidebar);
   bonsai_native_swiftui_set_sidebar_bottom_action(
     pointer_val(node),
     Is_none(id) ? NULL : String_val(Some_val(id)),
@@ -1660,6 +1688,7 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_bottom_action(
     Is_none(system_image) ? NULL : String_val(Some_val(system_image)),
     Int_val(event_id),
     Int_val(chrome),
+    Is_none(selects_tab) ? NULL : String_val(Some_val(selects_tab)),
     Int_val(closes_sidebar));
   CAMLreturn(Val_unit);
 }
@@ -1674,7 +1703,8 @@ CAMLprim value bonsai_apple_swiftui_set_sidebar_bottom_action_byte(value *argv, 
     argv[3],
     argv[4],
     argv[5],
-    argv[6]);
+    argv[6],
+    argv[7]);
 }
 
 CAMLprim value bonsai_apple_swiftui_set_section(value node, value title)

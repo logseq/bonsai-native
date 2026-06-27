@@ -62,8 +62,15 @@ let test_compact_sidebar_close_paths_share_swift_animation () =
      setCompactSidebarOpen(false) for the Swift drawer animation, keyboard dismissal, \
      haptic, and drag-state reset";
   require
-    (count_substrings source ~substring:"performSidebarAction(action)" >= 4)
+    (count_substrings source ~substring:"performSidebarAction(action)" >= 2)
     "compact sidebar action taps should share the data-driven action helper";
+  require
+    (contains source ~substring:"selectSidebarActionRoute(selectedTab")
+    "compact sidebar actions should select the route locally before the OCaml rerender";
+  require
+    (contains source ~substring:"node.selectedTabId = selectedTab")
+    "compact sidebar route selection should update the selected route in the Swift \
+     animation transaction";
   require
     (count_substrings source ~substring:"closeCompactSidebarIfNeeded(action)" = 1)
     "compact sidebar action close policy should stay centralized";
@@ -232,6 +239,13 @@ let test_sidebar_actions_can_keep_compact_drawer_open () =
            ())
       ~actions:
         [ Apple.sidebar_action
+            ~selects_tab:"chat"
+            ~id:"inbox"
+            ~title:"Inbox"
+            ~system_image:"tray"
+            ~on_click:(set_event "inbox")
+            ()
+        ; Apple.sidebar_action
             ~id:"decks"
             ~title:"Decks"
             ~system_image:"rectangle.stack"
@@ -247,7 +261,9 @@ let test_sidebar_actions_can_keep_compact_drawer_open () =
         ]
       ~selected
       ~on_select:set_selected
-      [ Apple.tab ~id:"decks" ~title:"Decks" (Apple.text event) ]
+      [ Apple.tab ~id:"decks" ~title:"Decks" (Apple.text event)
+      ; Apple.tab ~id:"chat" ~title:"Chat" (Apple.text event)
+      ]
   in
   let app = App.create component in
   App.flush_and_render app;
@@ -257,6 +273,9 @@ let test_sidebar_actions_can_keep_compact_drawer_open () =
     | None -> failwith "app did not render"
   in
   let rendered = Backend.show root in
+  require
+    (contains rendered ~substring:"inbox:Inbox:tray:selects=chat")
+    "sidebar action should expose the route it selects when it differs from its action id";
   require
     (contains rendered ~substring:"sidebar-header-action=account:Account:avatar=?:keeps-sidebar")
     "header action should expose that it keeps the compact sidebar open";
@@ -946,6 +965,42 @@ let test_movable_rows_move_only_the_group_children () =
     "moving the first movable row after the second should update that group"
 ;;
 
+let test_list_marks_focused_row_for_native_scroll () =
+  Backend.reset ();
+  let component _graph =
+    Apple.list
+      ~focused_row_key:"third"
+      [ "first"; "second"; "third" ]
+      ~key:(fun row -> row)
+      ~row:(fun row ->
+        Apple.text_field
+          ~text:row
+          ~is_focused:(String.equal row "third")
+          ~on_change:(fun _ -> Apple.Action.ignore)
+          ())
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  require
+    (contains (Backend.show root) ~substring:"focused-row=third")
+    "focused list row should be exposed so the native list can keep it visible"
+;;
+
+let test_focused_row_scroll_keeps_row_visible_without_centering () =
+  let source = read_file swiftui_source_path in
+  require
+    (not (contains source ~substring:"proxy.scrollTo(index, anchor: .center)"))
+    "focused row scrolling should keep the row visible without forcing it to the center";
+  require
+    (contains source ~substring:"proxy.scrollTo(index)")
+    "focused row scrolling should let SwiftUI choose the minimal scroll needed to reveal it"
+;;
+
 let () =
   test_event_rerenders_component_state ();
   test_scoped_state_is_independent ();
@@ -977,5 +1032,7 @@ let () =
   test_toggle_audio_file_playback_action_updates_test_playback_state ();
   test_audio_recording_actions_update_testing_backend ();
   test_toolbar_item_can_render_share_link ();
-  test_movable_rows_move_only_the_group_children ()
+  test_movable_rows_move_only_the_group_children ();
+  test_list_marks_focused_row_for_native_scroll ();
+  test_focused_row_scroll_keeps_row_visible_without_centering ()
 ;;
