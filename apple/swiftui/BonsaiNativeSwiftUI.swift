@@ -1733,11 +1733,6 @@ private struct BonsaiNativeNodeView: View {
         NavigationLink(value: navigationValue) {
           navigationLinkLabel(suppressRowActions: true)
         }
-        .simultaneousGesture(
-          TapGesture().onEnded {
-            model.sendClick(node.navigationActivateEventId)
-          }
-        )
       } else {
         NavigationLink {
           if node.children.indices.contains(1) {

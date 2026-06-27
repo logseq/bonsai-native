@@ -30,6 +30,21 @@ let count_substrings text ~substring =
   loop 0 0
 ;;
 
+let substring_index text ~substring ~from =
+  let text_length = String.length text in
+  let substring_length = String.length substring in
+  let rec loop index =
+    if substring_length = 0
+    then Some index
+    else if index + substring_length > text_length
+    then None
+    else if String.sub text index substring_length = substring
+    then Some index
+    else loop (index + 1)
+  in
+  loop from
+;;
+
 let read_file path =
   let channel = open_in path in
   Fun.protect
@@ -50,6 +65,37 @@ let test_navigation_value_links_keep_primary_tap_for_link () =
      >= 2)
     "both value-based and destination-based NavigationLink labels should suppress \
      nested row actions so the primary tap opens the link"
+;;
+
+let test_navigation_value_links_do_not_preempt_system_push () =
+  let source = read_file swiftui_source_path in
+  let value_link_start =
+    match
+      substring_index
+        source
+        ~substring:"if let navigationValue = node.navigationLinkValue"
+        ~from:0
+    with
+    | Some index -> index
+    | None -> failwith "value-based NavigationLink branch not found"
+  in
+  let destination_link_start =
+    match
+      substring_index
+        source
+        ~substring:"} else {\n        NavigationLink {"
+        ~from:value_link_start
+    with
+    | Some index -> index
+    | None -> failwith "destination NavigationLink branch not found"
+  in
+  let value_branch =
+    String.sub source value_link_start (destination_link_start - value_link_start)
+  in
+  require
+    (not (contains value_branch ~substring:"simultaneousGesture"))
+    "value-based NavigationLink should let NavigationStack update path first so push/pop \
+     and header transitions remain native"
 ;;
 
 let test_compact_sidebar_close_paths_share_swift_animation () =
@@ -1021,6 +1067,7 @@ let () =
   test_sidebar_actions_can_keep_compact_drawer_open ();
   test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome ();
   test_compact_sidebar_bottom_search_tracks_keyboard ();
+  test_navigation_value_links_do_not_preempt_system_push ();
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
