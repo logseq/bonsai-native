@@ -303,8 +303,10 @@ val list
   :  ?on_refresh:unit Action.t
   -> ?on_delete:(int -> unit Action.t)
   -> ?on_move:(from_index:int -> to_index:int -> unit Action.t)
+  -> ?on_focused_row_disappear:unit Action.t
   -> ?edit_mode:bool
   -> ?focused_row_key:string
+  -> ?focused_row_index:int
   -> 'a list
   -> key:('a -> string)
   -> row:('a -> node)
@@ -314,8 +316,10 @@ val lazy_list
   :  ?on_refresh:unit Action.t
   -> ?on_delete:(int -> unit Action.t)
   -> ?on_move:(from_index:int -> to_index:int -> unit Action.t)
+  -> ?on_focused_row_disappear:unit Action.t
   -> ?edit_mode:bool
   -> ?focused_row_key:string
+  -> ?focused_row_index:int
   -> length:int
   -> key:(int -> string)
   -> row:(int -> node)
@@ -847,6 +851,7 @@ module Renderer : sig
       -> on_refresh:(unit -> unit) option
       -> on_delete:(int -> unit) option
       -> on_move:(from_index:int -> to_index:int -> unit) option
+      -> on_focused_row_disappear:(unit -> unit) option
       -> edit_mode:bool
       -> focused_row_key:string option
       -> focused_row_index:int option
@@ -1106,6 +1111,7 @@ module For_testing : sig
       -> unit
 
     val move_rows_exn : view -> path:int list -> from_index:int -> to_index:int -> unit
+    val focused_list_row_disappear_exn : view -> path:int list -> unit
     val submit_text_exn : view -> path:int list -> unit
     val delete_backward_at_start_text_exn : view -> path:int list -> unit
 

@@ -367,6 +367,12 @@ external set_native_list_focused_row_index
   -> unit
   = "bonsai_apple_swiftui_set_list_focused_row_index"
 
+external set_native_list_focused_row_disappear_event
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_list_focused_row_disappear_event"
+
 external set_native_on_click : native -> int -> unit = "bonsai_apple_swiftui_set_on_click"
 
 external set_native_navigation_link_callbacks
@@ -1302,6 +1308,7 @@ module Backend = struct
         ~on_refresh
         ~on_delete
         ~on_move
+        ~on_focused_row_disappear
         ~edit_mode
         ~focused_row_key:_
         ~focused_row_index
@@ -1339,12 +1346,16 @@ module Backend = struct
                ~to_index:(Int.of_string to_index)
            | None -> ()))
     in
+    let focused_row_disappear_event_id = install_click on_focused_row_disappear in
     set_native_list_behavior
       view.native
       refresh_event_id
       delete_event_id
       move_event_id
       edit_mode;
+    set_native_list_focused_row_disappear_event
+      view.native
+      focused_row_disappear_event_id;
     set_native_list_focused_row_index
       view.native
       (Option.value focused_row_index ~default:(-1))

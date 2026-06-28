@@ -615,8 +615,10 @@ type node =
       ; on_refresh : unit Action.t option
       ; on_delete : (int -> unit Action.t) option
       ; on_move : (from_index:int -> to_index:int -> unit Action.t) option
+      ; on_focused_row_disappear : unit Action.t option
       ; edit_mode : bool
       ; focused_row_key : string option
+      ; focused_row_index : int option
       }
   | Lazy_list_node of
       { length : int
@@ -625,8 +627,10 @@ type node =
       ; on_refresh : unit Action.t option
       ; on_delete : (int -> unit Action.t) option
       ; on_move : (from_index:int -> to_index:int -> unit Action.t) option
+      ; on_focused_row_disappear : unit Action.t option
       ; edit_mode : bool
       ; focused_row_key : string option
+      ; focused_row_index : int option
       }
   | Movable_rows_node of
       { rows : keyed_node list
@@ -1079,7 +1083,8 @@ let divider () = Divider_node
 let form children = Form_node children
 let scroll_view child = Scroll_view_node child
 
-let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) ?focused_row_key rows ~key ~row =
+let list ?on_refresh ?on_delete ?on_move ?on_focused_row_disappear
+    ?(edit_mode = false) ?focused_row_key ?focused_row_index rows ~key ~row =
   let seen = String.Hash_set.create () in
   let rows =
     List.map rows ~f:(fun value ->
@@ -1088,22 +1093,46 @@ let list ?on_refresh ?on_delete ?on_move ?(edit_mode = false) ?focused_row_key r
       Hash_set.add seen key;
       { key; node = row value })
   in
-  List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key }
+  List_node
+    {
+      rows;
+      on_refresh;
+      on_delete;
+      on_move;
+      on_focused_row_disappear;
+      edit_mode;
+      focused_row_key;
+      focused_row_index;
+    }
 ;;
 
 let lazy_list
       ?on_refresh
       ?on_delete
       ?on_move
+      ?on_focused_row_disappear
       ?(edit_mode = false)
       ?focused_row_key
+      ?focused_row_index
       ~length
       ~key
       ~row
       ()
   =
   if length < 0 then invalid_arg "Apple.lazy_list length must be non-negative";
-  Lazy_list_node { length; key; row; on_refresh; on_delete; on_move; edit_mode; focused_row_key }
+  Lazy_list_node
+    {
+      length;
+      key;
+      row;
+      on_refresh;
+      on_delete;
+      on_move;
+      on_focused_row_disappear;
+      edit_mode;
+      focused_row_key;
+      focused_row_index;
+    }
 ;;
 
 let movable_rows ?on_move ?(edit_mode = false) rows ~key ~row =
@@ -1715,6 +1744,7 @@ module Renderer = struct
       -> on_refresh:(unit -> unit) option
       -> on_delete:(int -> unit) option
       -> on_move:(from_index:int -> to_index:int -> unit) option
+      -> on_focused_row_disappear:(unit -> unit) option
       -> edit_mode:bool
       -> focused_row_key:string option
       -> focused_row_index:int option
@@ -1902,6 +1932,19 @@ module Renderer = struct
       Hashtbl.clear t.lazy_rows;
       t.lazy_list_version <- 0;
       List.iter rows ~f:destroy
+    ;;
+
+    let find_lazy_row_by_key t ~target_index ~target_key =
+      Hashtbl.fold
+        (fun cached_index (cached_key, mounted) found ->
+           match found with
+           | Some _ -> found
+           | None ->
+             if cached_index <> target_index && String.equal cached_key target_key
+             then Some (cached_index, mounted)
+             else None)
+        t.lazy_rows
+        None
     ;;
 
     let rec fingerprint node =
@@ -2126,7 +2169,17 @@ module Renderer = struct
         | Divider_node -> "divider"
         | Form_node children -> "form:" ^ list (List.map children ~f:fingerprint)
         | Scroll_view_node child -> "scroll-view:" ^ fingerprint child
-        | List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+        | List_node
+            {
+              rows;
+              on_refresh;
+              on_delete;
+              on_move;
+              on_focused_row_disappear;
+              edit_mode;
+              focused_row_key;
+              focused_row_index;
+            } ->
           "list:"
           ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
           ^ ":"
@@ -2136,10 +2189,25 @@ module Renderer = struct
           ^ ":"
           ^ bool (Option.is_some on_move)
           ^ ":"
+          ^ bool (Option.is_some on_focused_row_disappear)
+          ^ ":"
           ^ bool edit_mode
           ^ ":"
           ^ opt focused_row_key
-        | Lazy_list_node { length; on_refresh; on_delete; on_move; edit_mode; focused_row_key; _ } ->
+          ^ ":"
+          ^ opt (Option.map focused_row_index ~f:string_of_int)
+        | Lazy_list_node
+            {
+              length;
+              on_refresh;
+              on_delete;
+              on_move;
+              on_focused_row_disappear;
+              edit_mode;
+              focused_row_key;
+              focused_row_index;
+              _;
+            } ->
           "lazy-list:"
           ^ string_of_int length
           ^ ":"
@@ -2149,9 +2217,13 @@ module Renderer = struct
           ^ ":"
           ^ bool (Option.is_some on_move)
           ^ ":"
+          ^ bool (Option.is_some on_focused_row_disappear)
+          ^ ":"
           ^ bool edit_mode
           ^ ":"
           ^ opt focused_row_key
+          ^ ":"
+          ^ opt (Option.map focused_row_index ~f:string_of_int)
         | Movable_rows_node { rows; on_move; edit_mode } ->
           "movable-rows:"
           ^ list (List.map rows ~f:(fun row -> row.key ^ ":" ^ fingerprint row.node))
@@ -2566,13 +2638,26 @@ module Renderer = struct
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t [ child ]
-       | List_node { rows; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+       | List_node
+           {
+             rows;
+             on_refresh;
+             on_delete;
+             on_move;
+             on_focused_row_disappear;
+             edit_mode;
+             focused_row_key;
+             focused_row_index;
+           } ->
          clear_lazy_rows t;
          let focused_row_index =
-           Option.bind focused_row_key ~f:(fun focused_row_key ->
-             rows
-             |> List.find_mapi (fun index (row : keyed_node) ->
-               if String.equal row.key focused_row_key then Some index else None))
+           match focused_row_index with
+           | Some _ as index -> index
+           | None ->
+             Option.bind focused_row_key ~f:(fun focused_row_key ->
+               rows
+               |> List.find_mapi (fun index (row : keyed_node) ->
+                 if String.equal row.key focused_row_key then Some index else None))
          in
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
@@ -2587,16 +2672,30 @@ module Renderer = struct
              (Option.map on_move ~f:(fun on_move ->
                 fun ~from_index ~to_index ->
                 t.schedule_event (on_move ~from_index ~to_index)))
+           ~on_focused_row_disappear:
+             (Option.map on_focused_row_disappear ~f:(fun action ->
+                fun () -> t.schedule_event action))
            ~edit_mode
            ~focused_row_key
            ~focused_row_index;
          reconcile_keyed t rows
-       | Lazy_list_node { length; key; row; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+       | Lazy_list_node
+           {
+             length;
+             key;
+             row;
+             on_refresh;
+             on_delete;
+             on_move;
+             on_focused_row_disappear;
+             edit_mode;
+             focused_row_key;
+             focused_row_index;
+           } ->
          debug_log "lazy_list_update_start length=%d cached_rows=%d version=%d"
            length (Hashtbl.length t.lazy_rows) t.lazy_list_version;
          List.iter t.children ~f:(fun child -> destroy child.mounted);
          t.children <- [];
-         let focused_row_index = None in
          let stale_indices =
            debug_time "lazy_list_stale_scan" (fun () ->
                Hashtbl.fold
@@ -2604,9 +2703,11 @@ module Renderer = struct
                     if index >= length then index :: stale_indices
                     else
                       let row_key = key index in
-                      if String.equal cached_key row_key
-                      then stale_indices
-                      else index :: stale_indices)
+                      if String.equal cached_key row_key then stale_indices
+                      else
+                        match find_lazy_row_by_key t ~target_index:index ~target_key:row_key with
+                        | Some _ -> stale_indices
+                        | None -> index :: stale_indices)
                  t.lazy_rows
                  [])
          in
@@ -2627,10 +2728,22 @@ module Renderer = struct
              update mounted (row index);
              mounted.view
            | cached ->
-             Option.iter cached ~f:(fun (_cached_key, mounted) -> destroy mounted);
-             let mounted = mount ~schedule_event:t.schedule_event (row index) in
-             Hashtbl.replace t.lazy_rows index (row_key, mounted);
-             mounted.view
+             (match find_lazy_row_by_key t ~target_index:index ~target_key:row_key with
+              | Some (cached_index, mounted) ->
+                Hashtbl.remove t.lazy_rows cached_index;
+                Option.iter cached ~f:(fun (displaced_key, displaced_mounted) ->
+                    if displaced_mounted != mounted
+                    then
+                      Hashtbl.replace t.lazy_rows cached_index
+                        (displaced_key, displaced_mounted));
+                update mounted (row index);
+                Hashtbl.replace t.lazy_rows index (row_key, mounted);
+                mounted.view
+              | None ->
+                Option.iter cached ~f:(fun (_cached_key, mounted) -> destroy mounted);
+                let mounted = mount ~schedule_event:t.schedule_event (row index) in
+                Hashtbl.replace t.lazy_rows index (row_key, mounted);
+                mounted.view)
          in
          let release_row index =
            match Hashtbl.find_opt t.lazy_rows index with
@@ -2653,6 +2766,9 @@ module Renderer = struct
                  (Option.map on_move ~f:(fun on_move ->
                     fun ~from_index ~to_index ->
                     t.schedule_event (on_move ~from_index ~to_index)))
+               ~on_focused_row_disappear:
+                 (Option.map on_focused_row_disappear ~f:(fun action ->
+                    fun () -> t.schedule_event action))
                ~edit_mode
                ~focused_row_key
                ~focused_row_index);
@@ -2673,6 +2789,7 @@ module Renderer = struct
              (Option.map on_move ~f:(fun on_move ->
                 fun ~from_index ~to_index ->
                 t.schedule_event (on_move ~from_index ~to_index)))
+           ~on_focused_row_disappear:None
            ~edit_mode
            ~focused_row_key:None
            ~focused_row_index:None;
@@ -3287,6 +3404,7 @@ module For_testing = struct
       ; mutable on_list_refresh : (unit -> unit) option
       ; mutable on_list_delete : (int -> unit) option
       ; mutable on_list_move : (from_index:int -> to_index:int -> unit) option
+      ; mutable on_focused_row_disappear : (unit -> unit) option
       ; mutable list_edit_mode : bool
       ; mutable list_focused_row_key : string option
       ; mutable list_focused_row_index : int option
@@ -3409,6 +3527,7 @@ module For_testing = struct
       ; on_list_refresh = None
       ; on_list_delete = None
       ; on_list_move = None
+      ; on_focused_row_disappear = None
       ; list_edit_mode = false
       ; list_focused_row_key = None
       ; list_focused_row_index = None
@@ -3567,6 +3686,7 @@ module For_testing = struct
           ~on_refresh
           ~on_delete
           ~on_move
+          ~on_focused_row_disappear
           ~edit_mode
           ~focused_row_key
           ~focused_row_index
@@ -3575,6 +3695,7 @@ module For_testing = struct
       view.on_list_refresh <- on_refresh;
       view.on_list_delete <- on_delete;
       view.on_list_move <- on_move;
+      view.on_focused_row_disappear <- on_focused_row_disappear;
       view.list_edit_mode <- edit_mode;
       view.list_focused_row_key <- focused_row_key;
       view.list_focused_row_index <- focused_row_index
@@ -4904,6 +5025,13 @@ module For_testing = struct
     ;;
 
     let move_rows_exn = move_list_row_exn
+
+    let focused_list_row_disappear_exn view ~path =
+      let view = find_visible_exn view ~path in
+      match view.on_focused_row_disappear with
+      | Some f -> f ()
+      | None -> failwith "View has no focused row disappear handler"
+    ;;
 
     let submit_text_exn view ~path =
       let view = find_visible_exn view ~path in

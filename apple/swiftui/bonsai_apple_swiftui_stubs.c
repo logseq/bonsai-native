@@ -88,6 +88,9 @@ extern void bonsai_native_swiftui_set_list_behavior(
 extern void bonsai_native_swiftui_set_list_focused_row_index(
   void *node,
   int32_t focused_row_index);
+extern void bonsai_native_swiftui_set_list_focused_row_disappear_event(
+  void *node,
+  int32_t event_id);
 extern void bonsai_native_swiftui_set_on_click(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_navigation_link_callbacks(
   void *node,
@@ -976,6 +979,17 @@ CAMLprim value bonsai_apple_swiftui_set_list_focused_row_index(
   bonsai_native_swiftui_set_list_focused_row_index(
     pointer_val(node),
     Int_val(focused_row_index));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_list_focused_row_disappear_event(
+  value node,
+  value event_id)
+{
+  CAMLparam2(node, event_id);
+  bonsai_native_swiftui_set_list_focused_row_disappear_event(
+    pointer_val(node),
+    Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 

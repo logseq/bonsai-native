@@ -289,6 +289,37 @@ let test_lazy_list_renderer_uses_indexed_keys () =
     (not (contains source ~substring:"List.init length key"))
     "lazy list fingerprint should not call the row key callback for every row";
   require
+    (contains source ~substring:"let find_lazy_row_by_key")
+    "lazy list renderer should be able to reuse a mounted row after its index changes";
+  require
+    (contains
+       source
+       ~substring:
+         "match find_lazy_row_by_key t ~target_index:index ~target_key:row_key with")
+    "lazy list stale scans should distinguish moved rows from rows whose content or focus \
+     changed";
+  require
+    (not
+       (contains source
+          ~substring:
+            "if String.equal cached_key row_key\n                      then stale_indices\n                      else index :: stale_indices"))
+    "lazy list stale scans should not destroy moved rows just because their index key \
+     changed";
+  require
+    (contains source ~substring:"Hashtbl.remove t.lazy_rows cached_index")
+    "lazy list renderer should move a cached row from its old index to its new index \
+     instead of rebuilding it";
+  require
+    (contains
+       source
+       ~substring:"Hashtbl.replace t.lazy_rows cached_index")
+    "lazy list renderer should keep the displaced row cached so adjacent moved rows are \
+     reused instead of remounted";
+  require
+    (contains source ~substring:"(displaced_key, displaced_mounted)")
+    "lazy list renderer should preserve the displaced row's mounted value when rekeying \
+     moved rows";
+  require
     (not (contains source ~substring:"if index >= length then None"))
     "lazy list focus handling should not scan every row key to find a focused row"
 ;;
@@ -354,6 +385,59 @@ let test_swiftui_lazy_list_uses_native_list_for_row_actions () =
   require
     (contains source ~substring:".onMove { source, destination in")
     "lazy provider native List rows should expose native row move"
+;;
+
+let test_swiftui_lazy_list_move_updates_visible_order_immediately () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private struct BonsaiNativeLazyListMovePreview")
+    "lazy provider row moves should use a lightweight local preview so native List \
+     updates immediately after a drag";
+  require
+    (contains source ~substring:"@State private var lazyListMovePreview")
+    "the move preview should be view-local state rather than rebuilding OCaml rows";
+  require
+    (contains source ~substring:"BonsaiNativeLazyListRowSlots(count: node.lazyListRowCount, movePreview: lazyListMovePreview)")
+    "lazy provider List rows should be driven by a lightweight slot collection";
+  require
+    (contains source ~substring:"lazyListMovePreview =\n      BonsaiNativeLazyListMovePreview")
+    "native onMove should update the local order before waiting for OCaml to render";
+  require
+    (contains source ~substring:"private func commitLazyListMove(fromIndex: Int, toOffset: Int)")
+    "lazy provider row moves should commit to OCaml after the local preview is visible";
+  require
+    (contains source ~substring:"private final class BonsaiNativeRenderedFrameScheduler")
+    "lazy provider row moves should use a frame scheduler, not an executor yield, before \
+     committing to OCaml";
+  require
+    (contains
+       source
+       ~substring:
+         "BonsaiNativeRenderedFrameScheduler.shared.runAfterRenderedFrame { [model] in")
+    "lazy provider row moves should wait until after SwiftUI can render the local preview \
+     before committing to OCaml";
+  require
+    (not (contains source ~substring:"await Task.yield()"))
+    "Task.yield only yields the Swift executor and does not guarantee the List preview has \
+     presented a frame";
+  require
+    (not (contains source ~substring:"Array(0..<node.lazyListRowCount)"))
+    "lazy move preview must not allocate an array for every row in large journals"
+;;
+
+let test_swiftui_list_debug_perf_log_uses_swift_safe_interpolation () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private func debugDouble(_ value: Double, digits: Int)")
+    "debug list perf logs should format doubles with a narrow helper";
+  require
+    (not
+       (contains
+          source
+          ~substring:
+            "String(\n        format:\n          \"list_perf seconds=%.2f list=%@"))
+    "debug list perf logs should not use one large String(format:) call with Swift Int \
+     values because iOS 26 reports format-specifier mismatches"
 ;;
 
 let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
@@ -428,6 +512,27 @@ let test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache () =
      owns provider release"
 ;;
 
+let test_swiftui_lazy_list_blurs_focused_row_after_disappear () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"listFocusedRowDisappearEventId")
+    "SwiftUI lists should store a native event for the focused row leaving the viewport";
+  require
+    (contains source ~substring:"scheduleFocusedRowDisappear()")
+    "lazy row disappear should schedule focused-row blur independently of cache release";
+  require
+    (contains source ~substring:"guard owner.listFocusedRowIndex == index else { return }")
+    "only the focused lazy row should trigger the disappear event";
+  require
+    (contains source ~substring:"model.sendClick(owner.listFocusedRowDisappearEventId)")
+    "focused lazy row disappearance should notify OCaml so editing exits when the row \
+     leaves the visible viewport";
+  require
+    (contains source ~substring:"blurFocusedRowForUserScroll")
+    "user scrolling the list should also blur the focused row because SwiftUI may keep \
+     offscreen rows alive"
+;;
+
 let test_swiftui_lazy_list_setters_skip_unchanged_published_values () =
   let source = read_file swiftui_source_path in
   require
@@ -462,6 +567,21 @@ let test_swiftui_navigation_setter_skips_unchanged_published_values () =
   require
     (contains source ~substring:"if node.navigationDestinationIds != nextDestinationIds")
     "navigation stack updates should not republish unchanged destination ids"
+;;
+
+let test_swiftui_change_events_emit_immediately_on_main_thread () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private func dispatchEvent(animation: Animation? = nil, _ emit: @escaping () -> Void)")
+    "SwiftUI event dispatch should share one main-thread-aware path";
+  require
+    (contains source ~substring:"if Thread.isMainThread {\n      performEmit()")
+    "SwiftUI change events triggered by native gestures should emit immediately on the \
+     main thread instead of waiting one extra runloop";
+  require
+    (contains source ~substring:"DispatchQueue.main.async(execute: performEmit)")
+    "SwiftUI event dispatch should still hop to the main thread when called from \
+     background callbacks"
 ;;
 
 let test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay () =
@@ -1692,11 +1812,15 @@ let () =
   test_swiftui_lazy_list_uses_native_row_provider ();
   test_swiftui_lazy_list_loads_rows_on_appear ();
   test_swiftui_lazy_list_uses_native_list_for_row_actions ();
+  test_swiftui_lazy_list_move_updates_visible_order_immediately ();
+  test_swiftui_list_debug_perf_log_uses_swift_safe_interpolation ();
   test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
   test_swiftui_lazy_list_retained_cache_stays_small ();
   test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache ();
+  test_swiftui_lazy_list_blurs_focused_row_after_disappear ();
   test_swiftui_lazy_list_setters_skip_unchanged_published_values ();
   test_swiftui_navigation_setter_skips_unchanged_published_values ();
+  test_swiftui_change_events_emit_immediately_on_main_thread ();
   test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();

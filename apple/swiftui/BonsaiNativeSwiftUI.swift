@@ -1,6 +1,7 @@
 import AVFoundation
 import CryptoKit
 import Foundation
+import OSLog
 import PhotosUI
 import QuartzCore
 import Speech
@@ -697,6 +698,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var listRefreshEventId: Int32?
   @Published var listDeleteEventId: Int32?
   @Published var listMoveEventId: Int32?
+  @Published var listFocusedRowDisappearEventId: Int32?
   @Published var isListEditMode = false
   @Published var listFocusedRowIndex: Int?
   @Published var lazyListProviderId: Int32?
@@ -836,6 +838,7 @@ private final class BonsaiNativeScrollStressProbe {
 private final class BonsaiNativeListVirtualizationProbe {
   static let shared = BonsaiNativeListVirtualizationProbe()
 
+  private let logger = Logger(subsystem: "com.logseq.bonsai-native", category: "ListDebug")
   private let isEnabled =
     ProcessInfo.processInfo.environment["BONSAI_NATIVE_LIST_DEBUG"] == "1"
   private let frameProbe = BonsaiNativeFrameProbe()
@@ -931,31 +934,7 @@ private final class BonsaiNativeListVirtualizationProbe {
     let renderTotal = renderTotalMsByList[listID] ?? 0
     let releaseTotal = releaseTotalMsByList[listID] ?? 0
     log(
-      String(
-        format:
-          "list_perf seconds=%.2f list=%@ total_rows=%d visible_rows=%d visible_indices=%d retained_rows=%d cached_rows=%d retained_order=%d peak_visible_rows=%d appear=%d disappear=%d cache_hit=%d render=%d refresh=%d release=%d render_total_ms=%.2f render_avg_ms=%.3f render_max_ms=%.2f release_total_ms=%.2f release_avg_ms=%.3f release_max_ms=%.2f",
-        now - startedAt,
-        listID.uuidString,
-        totalRows,
-        visibleRowsByList[listID]?.count ?? 0,
-        visibleIndices,
-        retainedRowsByList[listID]?.count ?? 0,
-        cachedRows,
-        retainedOrder,
-        peakVisibleRowsByList[listID] ?? 0,
-        appearedByList[listID] ?? 0,
-        disappearedByList[listID] ?? 0,
-        cacheHitsByList[listID] ?? 0,
-        rendered,
-        refreshed,
-        releaseCount,
-        renderTotal,
-        renderCount == 0 ? 0 : renderTotal / Double(renderCount),
-        renderMaxMsByList[listID] ?? 0,
-        releaseTotal,
-        releaseCount == 0 ? 0 : releaseTotal / Double(releaseCount),
-        releaseMaxMsByList[listID] ?? 0
-      )
+      "list_perf seconds=\(debugDouble(now - startedAt, digits: 2)) list=\(listID.uuidString) total_rows=\(totalRows) visible_rows=\(visibleRowsByList[listID]?.count ?? 0) visible_indices=\(visibleIndices) retained_rows=\(retainedRowsByList[listID]?.count ?? 0) cached_rows=\(cachedRows) retained_order=\(retainedOrder) peak_visible_rows=\(peakVisibleRowsByList[listID] ?? 0) appear=\(appearedByList[listID] ?? 0) disappear=\(disappearedByList[listID] ?? 0) cache_hit=\(cacheHitsByList[listID] ?? 0) render=\(rendered) refresh=\(refreshed) release=\(releaseCount) render_total_ms=\(debugDouble(renderTotal, digits: 2)) render_avg_ms=\(debugDouble(renderCount == 0 ? 0 : renderTotal / Double(renderCount), digits: 3)) render_max_ms=\(debugDouble(renderMaxMsByList[listID] ?? 0, digits: 2)) release_total_ms=\(debugDouble(releaseTotal, digits: 2)) release_avg_ms=\(debugDouble(releaseCount == 0 ? 0 : releaseTotal / Double(releaseCount), digits: 3)) release_max_ms=\(debugDouble(releaseMaxMsByList[listID] ?? 0, digits: 2))"
     )
     reportStartedAtByList[listID] = now
     appearedByList[listID] = 0
@@ -978,6 +957,49 @@ private final class BonsaiNativeListVirtualizationProbe {
   private func log(_ message: String) {
     fputs("[BonsaiNativeListDebug] \(message)\n", stderr)
     fflush(stderr)
+    logger.info("\(message, privacy: .public)")
+  }
+
+  private func debugDouble(_ value: Double, digits: Int) -> String {
+    String(format: "%.\(digits)f", value)
+  }
+}
+
+private final class BonsaiNativeRenderedFrameScheduler: NSObject {
+  static let shared = BonsaiNativeRenderedFrameScheduler()
+
+  private var displayLink: CADisplayLink?
+  private var pendingActions: [() -> Void] = []
+  private var remainingTicks = 0
+
+  func runAfterRenderedFrame(_ action: @escaping () -> Void) {
+    pendingActions.append(action)
+    remainingTicks = max(remainingTicks, 2)
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "rendered_frame_scheduler_schedule pending=\(pendingActions.count) remaining_ticks=\(remainingTicks)"
+    )
+    guard displayLink == nil else { return }
+    let link = CADisplayLink(target: self, selector: #selector(tick(_:)))
+    link.add(to: .main, forMode: .common)
+    displayLink = link
+  }
+
+  @objc private func tick(_: CADisplayLink) {
+    remainingTicks -= 1
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "rendered_frame_scheduler_tick remaining_ticks=\(remainingTicks) pending=\(pendingActions.count)"
+    )
+    guard remainingTicks <= 0 else { return }
+    displayLink?.invalidate()
+    displayLink = nil
+    let actions = pendingActions
+    pendingActions.removeAll()
+    for action in actions {
+      action()
+    }
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "rendered_frame_scheduler_flushed actions=\(actions.count)"
+    )
   }
 }
 
@@ -992,31 +1014,32 @@ private final class BonsaiNativeHostModel: ObservableObject {
 
   func sendClick(_ eventId: Int32?, animation: Animation? = nil) {
     guard let eventId else { return }
-    DispatchQueue.main.async { [callback] in
-      let emit = {
-        callback?(eventId, nil)
+    dispatchEvent(animation: animation) { [callback] in
+      callback?(eventId, nil)
+    }
+  }
+
+  func sendChange(_ eventId: Int32?, text: String, animation: Animation? = nil) {
+    guard let eventId else { return }
+    dispatchEvent(animation: animation) { [callback, text] in
+      text.withCString { pointer in
+        callback?(eventId, pointer)
       }
+    }
+  }
+
+  private func dispatchEvent(animation: Animation? = nil, _ emit: @escaping () -> Void) {
+    let performEmit = {
       if let animation {
         withAnimation(animation, emit)
       } else {
         emit()
       }
     }
-  }
-
-  func sendChange(_ eventId: Int32?, text: String, animation: Animation? = nil) {
-    guard let eventId else { return }
-    DispatchQueue.main.async { [callback, text] in
-      let emit = {
-        text.withCString { pointer in
-          callback?(eventId, pointer)
-        }
-      }
-      if let animation {
-        withAnimation(animation, emit)
-      } else {
-        emit()
-      }
+    if Thread.isMainThread {
+      performEmit()
+    } else {
+      DispatchQueue.main.async(execute: performEmit)
     }
   }
 }
@@ -1181,6 +1204,58 @@ private func isValidYouTubeVideoID(_ value: String) -> Bool {
     && value.allSatisfy { character in
       character.isLetter || character.isNumber || character == "_" || character == "-"
     }
+}
+
+private struct BonsaiNativeLazyListMovePreview: Equatable {
+  let fromIndex: Int
+  let toOffset: Int
+  let rowCount: Int
+
+  func sourceIndex(for position: Int) -> Int {
+    guard rowCount > 0 else { return position }
+    let fromIndex = min(max(0, fromIndex), rowCount - 1)
+    let toOffset = min(max(0, toOffset), rowCount)
+    if fromIndex < toOffset {
+      if position < fromIndex { return position }
+      if position < toOffset - 1 { return position + 1 }
+      if position == toOffset - 1 { return fromIndex }
+      return position
+    }
+    if fromIndex > toOffset {
+      if position < toOffset { return position }
+      if position == toOffset { return fromIndex }
+      if position <= fromIndex { return position - 1 }
+      return position
+    }
+    return position
+  }
+}
+
+private struct BonsaiNativeLazyListRowSlot: Identifiable {
+  let position: Int
+  let sourceIndex: Int
+
+  var id: Int {
+    sourceIndex
+  }
+}
+
+private struct BonsaiNativeLazyListRowSlots: RandomAccessCollection {
+  typealias Index = Int
+  typealias Element = BonsaiNativeLazyListRowSlot
+
+  let count: Int
+  let movePreview: BonsaiNativeLazyListMovePreview?
+
+  var startIndex: Int { 0 }
+  var endIndex: Int { count }
+
+  subscript(position: Int) -> BonsaiNativeLazyListRowSlot {
+    BonsaiNativeLazyListRowSlot(
+      position: position,
+      sourceIndex: movePreview?.sourceIndex(for: position) ?? position
+    )
+  }
 }
 
 private struct BonsaiNativeRootView: View {
@@ -2079,6 +2154,8 @@ private struct BonsaiNativeNodeView: View {
   @State private var toolbarExportContentType = "public.plain-text"
   @State private var toolbarExportContent = ""
   @State private var isToolbarExportPresented = false
+  @State private var lazyListMovePreview: BonsaiNativeLazyListMovePreview?
+  @State private var listScrollBlurSentForFocusedIndex: Int?
 
   private enum DragAxis {
     case horizontal
@@ -2415,26 +2492,54 @@ private struct BonsaiNativeNodeView: View {
       listAppeared(proxy)
     }
     .onChange(of: node.children.count + node.lazyListRowCount) { _, _ in
+      if lazyListMovePreview != nil {
+        BonsaiNativeListVirtualizationProbe.shared.debug(
+          "lazy_move_preview_clear reason=row_count list=\(node.id.uuidString)"
+        )
+      }
+      lazyListMovePreview = nil
       listChildrenCountChanged()
     }
+    .onChange(of: node.lazyListVersion) { oldVersion, newVersion in
+      if lazyListMovePreview != nil {
+        BonsaiNativeListVirtualizationProbe.shared.debug(
+          "lazy_move_preview_clear reason=version list=\(node.id.uuidString) old_version=\(oldVersion) new_version=\(newVersion)"
+        )
+      }
+      lazyListMovePreview = nil
+    }
+    .onChange(of: lazyListMovePreview) { oldPreview, newPreview in
+      BonsaiNativeListVirtualizationProbe.shared.debug(
+        "lazy_move_preview_state_changed list=\(node.id.uuidString) old=\(describeMovePreview(oldPreview)) new=\(describeMovePreview(newPreview)) version=\(node.lazyListVersion)"
+      )
+    }
     .onChange(of: node.listFocusedRowIndex) { _, _ in
+      listScrollBlurSentForFocusedIndex = nil
       scrollFocusedRow(proxy)
     }
+    .simultaneousGesture(
+      DragGesture(minimumDistance: 2)
+        .onChanged { value in
+          blurFocusedRowForUserScroll(value.translation)
+        }
+    )
   }
 
   @ViewBuilder
   private func nativeListRows() -> some View {
     if let providerId = node.lazyListProviderId {
-      ForEach(0..<node.lazyListRowCount, id: \.self) { index in
-        lazyListRow(providerId: providerId, index: index)
+      let slots =
+        BonsaiNativeLazyListRowSlots(count: node.lazyListRowCount, movePreview: lazyListMovePreview)
+      let _ = logVisibleLazySlots(slots)
+      ForEach(slots) { slot in
+        lazyListRow(providerId: providerId, index: slot.sourceIndex)
       }
         .onDelete { offsets in
           guard let index = offsets.first else { return }
           model.sendChange(node.listDeleteEventId, text: String(index))
         }
         .onMove { source, destination in
-          guard let fromIndex = source.first else { return }
-          model.sendChange(node.listMoveEventId, text: "\(fromIndex):\(destination)")
+          moveLazyListRows(source: source, destination: destination)
         }
         .listRowInsets(EdgeInsets())
     } else {
@@ -2470,6 +2575,54 @@ private struct BonsaiNativeNodeView: View {
     ForEach(0..<node.lazyListRowCount, id: \.self) { index in
       lazyListRow(providerId: providerId, index: index)
     }
+  }
+
+  private func moveLazyListRows(source: IndexSet, destination: Int) {
+    guard let fromPosition = source.first else { return }
+    guard fromPosition >= 0 && fromPosition < node.lazyListRowCount else { return }
+    let toOffset = min(max(0, destination), node.lazyListRowCount)
+    let slots =
+      BonsaiNativeLazyListRowSlots(count: node.lazyListRowCount, movePreview: lazyListMovePreview)
+    let fromIndex = slots[fromPosition].sourceIndex
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "lazy_move_preview_set list=\(node.id.uuidString) from_position=\(fromPosition) from_index=\(fromIndex) to_offset=\(toOffset) rows=\(node.lazyListRowCount) version=\(node.lazyListVersion)"
+    )
+    lazyListMovePreview =
+      BonsaiNativeLazyListMovePreview(
+        fromIndex: fromIndex,
+        toOffset: toOffset,
+        rowCount: node.lazyListRowCount
+      )
+    commitLazyListMove(fromIndex: fromIndex, toOffset: toOffset)
+  }
+
+  private func commitLazyListMove(fromIndex: Int, toOffset: Int) {
+    let eventId = node.listMoveEventId
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "lazy_move_commit_scheduled list=\(node.id.uuidString) from_index=\(fromIndex) to_offset=\(toOffset) version=\(node.lazyListVersion)"
+    )
+    BonsaiNativeRenderedFrameScheduler.shared.runAfterRenderedFrame { [model] in
+      BonsaiNativeListVirtualizationProbe.shared.debug(
+        "lazy_move_commit_emit from_index=\(fromIndex) to_offset=\(toOffset)"
+      )
+      model.sendChange(eventId, text: "\(fromIndex):\(toOffset)")
+    }
+  }
+
+  private func describeMovePreview(_ preview: BonsaiNativeLazyListMovePreview?) -> String {
+    guard let preview else { return "nil" }
+    return "from=\(preview.fromIndex) to=\(preview.toOffset) rows=\(preview.rowCount)"
+  }
+
+  private func logVisibleLazySlots(_ slots: BonsaiNativeLazyListRowSlots) {
+    guard lazyListMovePreview != nil else { return }
+    let limit = min(slots.count, 12)
+    let mapping = (0..<limit)
+      .map { position in "\(position):\(slots[position].sourceIndex)" }
+      .joined(separator: ",")
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "lazy_move_preview_slots list=\(node.id.uuidString) version=\(node.lazyListVersion) slots=\(mapping)"
+    )
   }
 
   private func lazyListRow(providerId: Int32, index: Int) -> some View {
@@ -2520,6 +2673,18 @@ private struct BonsaiNativeNodeView: View {
         proxy.scrollTo(targetID)
       }
     }
+  }
+
+  private func blurFocusedRowForUserScroll(_ translation: CGSize) {
+    guard abs(translation.height) > abs(translation.width) else { return }
+    guard let focusedIndex = node.listFocusedRowIndex else { return }
+    guard node.listFocusedRowDisappearEventId != nil else { return }
+    guard listScrollBlurSentForFocusedIndex != focusedIndex else { return }
+    listScrollBlurSentForFocusedIndex = focusedIndex
+    BonsaiNativeListVirtualizationProbe.shared.debug(
+      "list_scroll_blur_focused_row list=\(node.id.uuidString) focused_index=\(focusedIndex)"
+    )
+    model.sendClick(node.listFocusedRowDisappearEventId)
   }
 
   private func startScrollStress(_ proxy: ScrollViewProxy) {
@@ -4031,6 +4196,7 @@ private struct BonsaiNativeLazyListRowView: View {
   @State private var child: BonsaiNativeNode?
   @State private var isVisible = false
   @State private var releaseToken: UUID?
+  @State private var focusedDisappearToken: UUID?
 
   var body: some View {
     Group {
@@ -4044,6 +4210,7 @@ private struct BonsaiNativeLazyListRowView: View {
     .onAppear {
       isVisible = true
       releaseToken = nil
+      focusedDisappearToken = nil
       owner.lazyListVisibleIndices.insert(index)
       if let child {
         BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
@@ -4069,6 +4236,7 @@ private struct BonsaiNativeLazyListRowView: View {
           totalRows: totalRows
         )
       }
+      scheduleFocusedRowDisappear()
       scheduleRelease()
       reportListPerf()
     }
@@ -4172,6 +4340,20 @@ private struct BonsaiNativeLazyListRowView: View {
       guard child === rendered else { return }
       child = nil
       releaseToken = nil
+    }
+  }
+
+  private func scheduleFocusedRowDisappear() {
+    guard owner.listFocusedRowIndex == index else { return }
+    guard owner.listFocusedRowDisappearEventId != nil else { return }
+    let token = UUID()
+    focusedDisappearToken = token
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+      guard focusedDisappearToken == token else { return }
+      guard !isVisible else { return }
+      guard owner.listFocusedRowIndex == index else { return }
+      model.sendClick(owner.listFocusedRowDisappearEventId)
+      focusedDisappearToken = nil
     }
   }
 
@@ -4728,6 +4910,18 @@ public func bonsai_native_swiftui_set_list_behavior(
   }
   if node.isListEditMode != editMode {
     node.isListEditMode = editMode
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_set_list_focused_row_disappear_event")
+public func bonsai_native_swiftui_set_list_focused_row_disappear_event(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  let nextEventId = eventId < 0 ? nil : eventId
+  if node.listFocusedRowDisappearEventId != nextEventId {
+    node.listFocusedRowDisappearEventId = nextEventId
   }
 }
 
