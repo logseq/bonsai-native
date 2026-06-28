@@ -319,6 +319,57 @@ private func bonsaiNativeSemanticColor(_ color: Int32) -> Color? {
   }
 }
 
+private let bonsaiNativePreferredFontFamily = "Inter"
+
+private func bonsaiNativeTextStyleSize(_ textStyle: Font.TextStyle) -> CGFloat {
+  switch textStyle {
+  case .largeTitle: return 34
+  case .title: return 28
+  case .title2: return 22
+  case .title3: return 20
+  case .headline: return 17
+  case .callout: return 16
+  case .subheadline: return 15
+  case .footnote: return 13
+  case .caption: return 12
+  case .caption2: return 11
+  default: return 17
+  }
+}
+
+private func bonsaiNativePreferredFont(
+  _ textStyle: Font.TextStyle,
+  weight: Font.Weight = .regular
+) -> Font {
+  bonsaiNativePreferredFont(
+    size: bonsaiNativeTextStyleSize(textStyle),
+    weight: weight,
+    relativeTo: textStyle
+  )
+}
+
+private func bonsaiNativePreferredFont(
+  size: CGFloat,
+  weight: Font.Weight = .regular,
+  relativeTo textStyle: Font.TextStyle = .body
+) -> Font {
+  if UIFont(name: bonsaiNativePreferredFontFamily, size: size) != nil {
+    return Font.custom(bonsaiNativePreferredFontFamily, size: size, relativeTo: textStyle)
+      .weight(weight)
+  }
+  return .system(size: size, weight: weight)
+}
+
+private func bonsaiNativePreferredUIFont(
+  size: CGFloat,
+  weight: UIFont.Weight = .regular
+) -> UIFont {
+  if let font = UIFont(name: bonsaiNativePreferredFontFamily, size: size) {
+    return font
+  }
+  return .systemFont(ofSize: size, weight: weight)
+}
+
 private struct SidebarBottomActionChrome: ViewModifier {
   let chrome: Int32
 
@@ -1044,6 +1095,7 @@ private struct BonsaiNativeYouTubeIframeView: UIViewRepresentable {
     let webView = WKWebView(frame: .zero, configuration: configuration)
     webView.scrollView.isScrollEnabled = false
     webView.scrollView.backgroundColor = .clear
+    webView.isUserInteractionEnabled = false
     webView.isOpaque = false
     webView.backgroundColor = .clear
     load(webView, context: context)
@@ -1700,7 +1752,7 @@ private struct BonsaiNativeCongratsEffectView: View {
         Image(systemName: "sparkles")
           .font(.system(size: 44, weight: .semibold))
         Text("Complete")
-          .font(.title2.weight(.semibold))
+          .font(bonsaiNativePreferredFont(.title2, weight: .semibold))
       }
       .padding(.horizontal, 28)
       .padding(.vertical, 22)
@@ -1761,7 +1813,7 @@ private struct BonsaiNativeTextFieldView: View {
     if node.textFieldStyle == 1 {
       textField
         .textFieldStyle(.plain)
-        .font(.system(size: 18, weight: .regular))
+        .font(bonsaiNativePreferredFont(size: 18, weight: .regular))
         .frame(maxWidth: .infinity, minHeight: 52, alignment: .leading)
         .padding(.horizontal, 16)
         .bonsaiLiquidGlassPanel(cornerRadius: 26, isInteractive: true)
@@ -1937,6 +1989,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
       for: .editingChanged
     )
     textField.onDeleteBackwardAtStart = onDeleteBackwardAtStart
+    textField.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
     textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return textField
   }
@@ -1945,6 +1998,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
     context.coordinator.parent = self
     textField.placeholder = placeholder
     textField.clearButtonMode = uiTextFieldClearButtonMode(clearButtonMode)
+    textField.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
     if textField.text != text {
       textField.text = text
     }
@@ -2050,8 +2104,7 @@ private struct BonsaiNativeNodeView: View {
     switch node.kind {
     case .label:
       Text(node.text)
-        .font(textFont(node.textStyle))
-        .fontWeight(textWeight(node.textWeight))
+        .font(textFont(node.textStyle, weight: node.textWeight))
         .foregroundStyle(textColor(node.textColor))
 
     case .button:
@@ -2067,7 +2120,7 @@ private struct BonsaiNativeNodeView: View {
                 Text(node.text)
               }
               Text(subtitle)
-                .font(.caption2)
+                .font(bonsaiNativePreferredFont(.caption2))
                 .lineLimit(1)
                 .minimumScaleFactor(0.75)
                 .foregroundStyle(.secondary)
@@ -2140,6 +2193,7 @@ private struct BonsaiNativeNodeView: View {
             }
           )
         )
+        .font(bonsaiNativePreferredFont(.body))
         .frame(minHeight: 96)
         .scrollContentBackground(.hidden)
       }
@@ -2313,6 +2367,7 @@ private struct BonsaiNativeNodeView: View {
         BonsaiNativeCongratsEffectView()
       } else if let payload = youtubePayload(from: node.text) {
         BonsaiNativeYouTubeIframeView(payload: payload)
+          .allowsHitTesting(false)
       } else {
         Text(node.text)
           .foregroundStyle(.secondary)
@@ -2341,33 +2396,7 @@ private struct BonsaiNativeNodeView: View {
 
   @ViewBuilder
   private func listContent(_ proxy: ScrollViewProxy) -> some View {
-    if let providerId = node.lazyListProviderId, !node.isListEditMode {
-      lazyScrollList(providerId: providerId, proxy: proxy)
-    } else {
-      nativeList(proxy)
-    }
-  }
-
-  private func lazyScrollList(providerId: Int32, proxy: ScrollViewProxy) -> some View {
-    ScrollView {
-      LazyVStack(alignment: .leading, spacing: 0) {
-        lazyListRows(providerId: providerId)
-      }
-      .frame(maxWidth: .infinity, alignment: .topLeading)
-    }
-    .refreshable {
-      model.sendClick(node.listRefreshEventId)
-    }
-    .background(bonsaiHomeBodyBackground)
-    .onAppear {
-      listAppeared(proxy)
-    }
-    .onChange(of: node.children.count + node.lazyListRowCount) { _, _ in
-      listChildrenCountChanged()
-    }
-    .onChange(of: node.listFocusedRowIndex) { _, _ in
-      scrollFocusedRow(proxy)
-    }
+    nativeList(proxy)
   }
 
   private func nativeList(_ proxy: ScrollViewProxy) -> some View {
@@ -2721,19 +2750,20 @@ private struct BonsaiNativeNodeView: View {
     return formatter
   }()
 
-  private func textFont(_ style: Int32) -> Font {
+  private func textFont(_ style: Int32, weight: Int32) -> Font {
+    let weight = textWeight(weight)
     switch style {
-    case 0: return .largeTitle
-    case 1: return .title
-    case 2: return .title2
-    case 3: return .title3
-    case 4: return .headline
-    case 6: return .callout
-    case 7: return .subheadline
-    case 8: return .footnote
-    case 9: return .caption
-    case 10: return .caption2
-    default: return .body
+    case 0: return bonsaiNativePreferredFont(.largeTitle, weight: weight)
+    case 1: return bonsaiNativePreferredFont(.title, weight: weight)
+    case 2: return bonsaiNativePreferredFont(.title2, weight: weight)
+    case 3: return bonsaiNativePreferredFont(.title3, weight: weight)
+    case 4: return bonsaiNativePreferredFont(.headline, weight: weight)
+    case 6: return bonsaiNativePreferredFont(.callout, weight: weight)
+    case 7: return bonsaiNativePreferredFont(.subheadline, weight: weight)
+    case 8: return bonsaiNativePreferredFont(.footnote, weight: weight)
+    case 9: return bonsaiNativePreferredFont(.caption, weight: weight)
+    case 10: return bonsaiNativePreferredFont(.caption2, weight: weight)
+    default: return bonsaiNativePreferredFont(.body, weight: weight)
     }
   }
 
@@ -2897,7 +2927,7 @@ private struct BonsaiNativeNodeView: View {
     VStack(alignment: .leading, spacing: 28) {
       HStack(alignment: .center, spacing: 16) {
         Text(sidebarTitle)
-          .font(.system(size: 28, weight: .bold))
+          .font(bonsaiNativePreferredFont(size: 28, weight: .bold, relativeTo: .title))
           .foregroundStyle(.primary)
           .lineLimit(1)
           .accessibilityAddTraits(.isHeader)
@@ -3089,7 +3119,7 @@ private struct BonsaiNativeNodeView: View {
 
       if !node.sidebarHistoryActions.isEmpty, let historyTitle = node.sidebarHistoryTitle {
         Text(historyTitle)
-          .font(.system(size: 18, weight: .semibold))
+          .font(bonsaiNativePreferredFont(size: 18, weight: .semibold, relativeTo: .headline))
           .foregroundStyle(.primary)
           .padding(.horizontal, 12)
           .padding(.top, 8)
@@ -3234,12 +3264,18 @@ private struct BonsaiNativeNodeView: View {
 
       VStack(alignment: .leading, spacing: 4) {
         Text(title)
-          .font(.system(size: subtitle == nil ? 16 : 17, weight: subtitle == nil ? .semibold : .regular))
+          .font(
+            bonsaiNativePreferredFont(
+              size: subtitle == nil ? 16 : 17,
+              weight: subtitle == nil ? .semibold : .regular,
+              relativeTo: subtitle == nil ? .callout : .body
+            )
+          )
           .foregroundStyle(.primary)
           .lineLimit(1)
         if let subtitle, !subtitle.isEmpty {
           Text(subtitle)
-            .font(.caption)
+            .font(bonsaiNativePreferredFont(.caption))
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
@@ -3329,7 +3365,7 @@ private struct BonsaiNativeNodeView: View {
       .fill(Color.pink.opacity(0.9))
       .overlay {
         Text(action.avatarInitial ?? "?")
-          .font(.system(size: 14, weight: .semibold))
+          .font(bonsaiNativePreferredFont(size: 14, weight: .semibold, relativeTo: .caption))
           .foregroundStyle(.white)
       }
   }
@@ -3381,7 +3417,7 @@ private struct BonsaiNativeNodeView: View {
           .contentShape(Circle())
       } else {
         Label(action.title, systemImage: action.systemImage ?? "square.and.pencil")
-          .font(.system(size: 18, weight: .semibold))
+          .font(bonsaiNativePreferredFont(size: 18, weight: .semibold, relativeTo: .headline))
           .labelStyle(.titleAndIcon)
           .foregroundStyle(.white)
           .padding(.horizontal, 24)
@@ -3676,12 +3712,12 @@ private struct BonsaiNativeListRowView: View {
     HStack(spacing: 12) {
       VStack(alignment: .leading, spacing: 4) {
         Text(node.text)
-          .font(.headline)
+          .font(bonsaiNativePreferredFont(.headline))
           .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
           .strikethrough(node.rowTitleStrikethrough, color: .secondary)
         if !node.rowSubtitle.isEmpty {
           Text(node.rowSubtitle)
-            .font(.caption)
+            .font(bonsaiNativePreferredFont(.caption))
             .foregroundStyle(.secondary)
         }
       }
@@ -3697,12 +3733,12 @@ private struct BonsaiNativeListRowView: View {
     VStack(alignment: .leading, spacing: 6) {
       rowPreviewImage(maxHeight: 160)
       Text(node.text)
-        .font(.headline)
+        .font(bonsaiNativePreferredFont(.headline))
         .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
         .strikethrough(node.rowTitleStrikethrough, color: .secondary)
       if !node.rowSubtitle.isEmpty {
         Text(node.rowSubtitle)
-          .font(.caption)
+          .font(bonsaiNativePreferredFont(.caption))
           .foregroundStyle(.secondary)
       }
     }
@@ -3727,13 +3763,13 @@ private struct BonsaiNativeListRowView: View {
     HStack(spacing: 14) {
       VStack(alignment: .leading, spacing: 3) {
         Text(node.text)
-          .font(.subheadline)
+          .font(bonsaiNativePreferredFont(.subheadline))
           .foregroundStyle(node.rowTitleStrikethrough ? .secondary : .primary)
           .strikethrough(node.rowTitleStrikethrough, color: .secondary)
           .lineLimit(1)
         if !node.rowSubtitle.isEmpty {
           Text(node.rowSubtitle)
-            .font(.subheadline)
+            .font(bonsaiNativePreferredFont(.subheadline))
             .foregroundStyle(.secondary)
             .lineLimit(1)
         }
@@ -3744,7 +3780,7 @@ private struct BonsaiNativeListRowView: View {
 
       if !node.rowTrailingText.isEmpty {
         Text(node.rowTrailingText)
-          .font(.caption)
+          .font(bonsaiNativePreferredFont(.caption))
           .foregroundStyle(.secondary)
           .lineLimit(1)
           .fixedSize(horizontal: true, vertical: false)
@@ -3782,7 +3818,7 @@ private struct BonsaiNativePhotoPickerView: View {
       }
       if let selected = node.placeholder, !selected.isEmpty {
         Label("Image attached", systemImage: "checkmark.circle.fill")
-          .font(.caption)
+          .font(bonsaiNativePreferredFont(.caption))
           .foregroundStyle(.secondary)
       }
     }
@@ -3906,7 +3942,7 @@ private struct BonsaiNativeCameraCaptureView: View {
 
       if let captured = node.placeholder, !captured.isEmpty {
         Label("Image attached", systemImage: "checkmark.circle.fill")
-          .font(.caption)
+          .font(bonsaiNativePreferredFont(.caption))
           .foregroundStyle(.secondary)
       }
     }

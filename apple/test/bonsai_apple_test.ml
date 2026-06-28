@@ -336,6 +336,26 @@ let test_swiftui_lazy_list_loads_rows_on_appear () =
      ForEach body because SwiftUI may evaluate off-screen rows"
 ;;
 
+let test_swiftui_lazy_list_uses_native_list_for_row_actions () =
+  let source = read_file swiftui_source_path in
+  require
+    (not (contains source ~substring:"lazyScrollList(providerId: providerId, proxy: proxy)"))
+    "lazy provider lists should not bypass native List, because ScrollView/LazyVStack \
+     does not support native swipe delete or long-press row moves";
+  require
+    (not (contains source ~substring:"private func lazyScrollList"))
+    "lazy provider lists should use the native List path with onDelete/onMove";
+  require
+    (contains source ~substring:"private func nativeList(_ proxy: ScrollViewProxy) -> some View")
+    "lazy provider lists should retain the native List path";
+  require
+    (contains source ~substring:".onDelete { offsets in")
+    "lazy provider native List rows should expose native swipe delete";
+  require
+    (contains source ~substring:".onMove { source, destination in")
+    "lazy provider native List rows should expose native row move"
+;;
+
 let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
   let source = read_file swiftui_source_path in
   require
@@ -1311,6 +1331,35 @@ let test_swiftui_custom_view_supports_youtube_webkit_iframes () =
     "custom views should recognize youtube payloads by kind"
 ;;
 
+let test_youtube_iframe_does_not_steal_list_row_gestures () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"BonsaiNativeYouTubeIframeView(payload: payload)\n          .allowsHitTesting(false)")
+    "youtube iframe previews should not steal List row swipe or long-press move gestures";
+  require
+    (contains source ~substring:"webView.isUserInteractionEnabled = false")
+    "the underlying WKWebView should not receive row gesture touches"
+;;
+
+let test_swiftui_prefers_inter_for_typography () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private let bonsaiNativePreferredFontFamily = \"Inter\"")
+    "SwiftUI runtime should define Inter as the preferred app font family";
+  require
+    (contains source ~substring:"Font.custom(bonsaiNativePreferredFontFamily")
+    "SwiftUI runtime should use Font.custom so Inter is preferred when available";
+  require
+    (contains source ~substring:"private func textFont(_ style: Int32, weight: Int32) -> Font")
+    "text nodes should resolve style and weight through the Inter-preferred font helper";
+  require
+    (contains source ~substring:".font(textFont(node.textStyle, weight: node.textWeight))")
+    "label text should use the Inter-preferred font helper instead of direct system fonts";
+  require
+    (contains source ~substring:".font(bonsaiNativePreferredFont(size:")
+    "custom-sized runtime text should use the Inter-preferred font helper"
+;;
+
 let test_keyboard_dismiss_controls_renders () =
   Backend.reset ();
   let component _graph =
@@ -1642,6 +1691,7 @@ let () =
   test_lazy_list_renderer_uses_indexed_keys ();
   test_swiftui_lazy_list_uses_native_row_provider ();
   test_swiftui_lazy_list_loads_rows_on_appear ();
+  test_swiftui_lazy_list_uses_native_list_for_row_actions ();
   test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
   test_swiftui_lazy_list_retained_cache_stays_small ();
   test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache ();
@@ -1667,6 +1717,8 @@ let () =
   test_file_image_can_render_swift_image_file_style ();
   test_swiftui_image_view_supports_remote_urls ();
   test_swiftui_custom_view_supports_youtube_webkit_iframes ();
+  test_youtube_iframe_does_not_steal_list_row_gestures ();
+  test_swiftui_prefers_inter_for_typography ();
   test_keyboard_dismiss_controls_renders ();
   test_scroll_dismisses_keyboard_renders ();
   test_secondary_fill_panel_renders ();
