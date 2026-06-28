@@ -4,6 +4,7 @@
  (enabled_if
   (or
    (= %{context_name} default)
+   (= %{context_name} default.ios)
    (= %{context_name} simulator)
    (= %{context_name} device.ios)
    (= %{context_name} simulator.ios)

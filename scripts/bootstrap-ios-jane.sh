@@ -397,7 +397,7 @@ build_ppxlib() {
   (
     cd "$source"
     DUNE_WORKSPACE="$workspace" opam exec --switch="$switch_name" -- \
-      dune install -p ppxlib -x ios --prefix "$sysroot" --display quiet || true
+      dune install -p ppxlib -x ios --prefix "$switch_prefix" --display quiet || true
   )
   normalize_nested_sysroot
 
@@ -530,6 +530,7 @@ build_and_install_package() {
   if [[ -L $sysroot_lib/$package ]]; then
     rm -f "$sysroot_lib/$package"
   fi
+  rm -rf "$sysroot/ios-sysroot"
 
   (
     cd "$source"
@@ -539,7 +540,7 @@ build_and_install_package() {
     DUNE_WORKSPACE="$workspace" opam exec --switch="$switch_name" -- \
       dune build -p "$package" -x ios @install --display short
     DUNE_WORKSPACE="$workspace" opam exec --switch="$switch_name" -- \
-      dune install -p "$package" -x ios --prefix "$sysroot" --display quiet || true
+      dune install -p "$package" -x ios --prefix "$switch_prefix" --display quiet || true
   )
 
   normalize_nested_sysroot

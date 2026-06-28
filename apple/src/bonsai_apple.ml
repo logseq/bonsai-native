@@ -11,6 +11,29 @@ let clipboard_image_file_for_testing = ref None
 let playing_audio_file_for_testing = ref None
 let is_audio_recording_for_testing = ref false
 
+let debug_enabled () =
+  match Sys.getenv_opt "BONSAI_NATIVE_LIST_DEBUG" with
+  | Some "1" | Some "true" -> true
+  | _ -> false
+;;
+
+let debug_log format =
+  Printf.ksprintf
+    (fun message ->
+      if debug_enabled ()
+      then (
+        prerr_endline ("[BonsaiAppleDebug] " ^ message);
+        flush stderr))
+    format
+;;
+
+let debug_time label f =
+  let start = Sys.time () in
+  let result = f () in
+  debug_log "%s cpu_ms=%.2f" label ((Sys.time () -. start) *. 1000.);
+  result
+;;
+
 type audio_recording_result =
   { transcript : string
   ; local_path : string
@@ -2569,25 +2592,32 @@ module Renderer = struct
            ~focused_row_index;
          reconcile_keyed t rows
        | Lazy_list_node { length; key; row; on_refresh; on_delete; on_move; edit_mode; focused_row_key } ->
+         debug_log "lazy_list_update_start length=%d cached_rows=%d version=%d"
+           length (Hashtbl.length t.lazy_rows) t.lazy_list_version;
          List.iter t.children ~f:(fun child -> destroy child.mounted);
          t.children <- [];
          let focused_row_index = None in
          let stale_indices =
-           Hashtbl.fold
-             (fun index (cached_key, _mounted) stale_indices ->
-                if index >= length then index :: stale_indices
-                else
-                  let row_key = key index in
-                  if String.equal cached_key row_key then stale_indices else index :: stale_indices)
-             t.lazy_rows
-             []
+           debug_time "lazy_list_stale_scan" (fun () ->
+               Hashtbl.fold
+                 (fun index (cached_key, _mounted) stale_indices ->
+                    if index >= length then index :: stale_indices
+                    else
+                      let row_key = key index in
+                      if String.equal cached_key row_key
+                      then stale_indices
+                      else index :: stale_indices)
+                 t.lazy_rows
+                 [])
          in
-         List.iter stale_indices ~f:(fun index ->
-             match Hashtbl.find_opt t.lazy_rows index with
-             | None -> ()
-             | Some (_key, mounted) ->
-               Hashtbl.remove t.lazy_rows index;
-               destroy mounted);
+         debug_log "lazy_list_stale_indices count=%d" (List.length stale_indices);
+         debug_time "lazy_list_destroy_stale" (fun () ->
+             List.iter stale_indices ~f:(fun index ->
+                 match Hashtbl.find_opt t.lazy_rows index with
+                 | None -> ()
+                 | Some (_key, mounted) ->
+                   Hashtbl.remove t.lazy_rows index;
+                   destroy mounted));
          if not (List.is_empty stale_indices) then
            t.lazy_list_version <- t.lazy_list_version + 1;
          let render_row index =
@@ -2609,24 +2639,28 @@ module Renderer = struct
              Hashtbl.remove t.lazy_rows index;
              destroy mounted
          in
-         Backend.set_on_click t.view None;
-         Backend.set_on_change t.view None;
-         Backend.set_list_behavior
-           t.view
-           ~on_refresh:
-             (Option.map on_refresh ~f:(fun action -> fun () -> t.schedule_event action))
-           ~on_delete:
-             (Option.map on_delete ~f:(fun on_delete ->
-                fun index -> t.schedule_event (on_delete index)))
-           ~on_move:
-             (Option.map on_move ~f:(fun on_move ->
-                fun ~from_index ~to_index ->
-                t.schedule_event (on_move ~from_index ~to_index)))
-           ~edit_mode
-           ~focused_row_key
-           ~focused_row_index;
-         Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
-           ~render_row ~release_row
+         debug_time "lazy_list_set_handlers" (fun () ->
+             Backend.set_on_click t.view None;
+             Backend.set_on_change t.view None;
+             Backend.set_list_behavior
+               t.view
+               ~on_refresh:
+                 (Option.map on_refresh ~f:(fun action -> fun () -> t.schedule_event action))
+               ~on_delete:
+                 (Option.map on_delete ~f:(fun on_delete ->
+                    fun index -> t.schedule_event (on_delete index)))
+               ~on_move:
+                 (Option.map on_move ~f:(fun on_move ->
+                    fun ~from_index ~to_index ->
+                    t.schedule_event (on_move ~from_index ~to_index)))
+               ~edit_mode
+               ~focused_row_key
+               ~focused_row_index);
+         debug_time "lazy_list_set_rows" (fun () ->
+             Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
+               ~render_row ~release_row);
+         debug_log "lazy_list_update_end length=%d cached_rows=%d version=%d"
+           length (Hashtbl.length t.lazy_rows) t.lazy_list_version
        | Movable_rows_node { rows; on_move; edit_mode } ->
          clear_lazy_rows t;
          Backend.set_on_click t.view None;

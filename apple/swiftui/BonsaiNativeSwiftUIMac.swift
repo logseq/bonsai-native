@@ -1984,7 +1984,10 @@ public func bonsai_native_swiftui_set_text_field_secure(_ pointer: UnsafeMutable
 
 @_cdecl("bonsai_native_swiftui_set_text_field_focus")
 public func bonsai_native_swiftui_set_text_field_focus(_ pointer: UnsafeMutableRawPointer?, _ isFocused: Bool) {
-  nativeNode(from: pointer)?.isTextFieldFocused = isFocused
+  guard let node = nativeNode(from: pointer) else { return }
+  if node.isTextFieldFocused != isFocused {
+    node.isTextFieldFocused = isFocused
+  }
 }
 
 @_cdecl("bonsai_native_swiftui_set_text_field_delete_backward_at_start")
@@ -2040,10 +2043,21 @@ public func bonsai_native_swiftui_set_list_behavior(
   _ editMode: Bool
 ) {
   guard let node = nativeNode(from: pointer) else { return }
-  node.listRefreshEventId = refreshEventId < 0 ? nil : refreshEventId
-  node.listDeleteEventId = deleteEventId < 0 ? nil : deleteEventId
-  node.listMoveEventId = moveEventId < 0 ? nil : moveEventId
-  node.isListEditMode = editMode
+  let nextRefreshEventId = refreshEventId < 0 ? nil : refreshEventId
+  let nextDeleteEventId = deleteEventId < 0 ? nil : deleteEventId
+  let nextMoveEventId = moveEventId < 0 ? nil : moveEventId
+  if node.listRefreshEventId != nextRefreshEventId {
+    node.listRefreshEventId = nextRefreshEventId
+  }
+  if node.listDeleteEventId != nextDeleteEventId {
+    node.listDeleteEventId = nextDeleteEventId
+  }
+  if node.listMoveEventId != nextMoveEventId {
+    node.listMoveEventId = nextMoveEventId
+  }
+  if node.isListEditMode != editMode {
+    node.isListEditMode = editMode
+  }
 }
 
 @_cdecl("bonsai_native_swiftui_set_list_focused_row_index")
@@ -2052,7 +2066,10 @@ public func bonsai_native_swiftui_set_list_focused_row_index(
   _ focusedRowIndex: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
-  node.listFocusedRowIndex = focusedRowIndex < 0 ? nil : Int(focusedRowIndex)
+  let nextFocusedRowIndex = focusedRowIndex < 0 ? nil : Int(focusedRowIndex)
+  if node.listFocusedRowIndex != nextFocusedRowIndex {
+    node.listFocusedRowIndex = nextFocusedRowIndex
+  }
 }
 
 @_cdecl("bonsai_native_swiftui_set_on_click")
@@ -2868,14 +2885,23 @@ public func bonsai_native_swiftui_set_disclosure_group(_ pointer: UnsafeMutableR
 @_cdecl("bonsai_native_swiftui_set_navigation_path_stack")
 public func bonsai_native_swiftui_set_navigation_path_stack(_ pointer: UnsafeMutableRawPointer?, _ pathPointer: UnsafeMutablePointer<UnsafePointer<CChar>?>?, _ pathCount: Int32, _ eventId: Int32, _ destinationsPointer: UnsafeMutablePointer<UnsafePointer<CChar>?>?, _ destinationsCount: Int32) {
   guard let node = nativeNode(from: pointer) else { return }
-  node.navigationPath = (0..<Int(pathCount)).compactMap { index in
+  let nextPath: [String] = (0..<Int(pathCount)).compactMap { index in
     guard let value = pathPointer?[index] else { return nil }
     return String(cString: value)
   }
-  node.navigationPathEventId = eventId < 0 ? nil : eventId
-  node.navigationDestinationIds = (0..<Int(destinationsCount)).compactMap { index in
+  if node.navigationPath != nextPath {
+    node.navigationPath = nextPath
+  }
+  let nextEventId = eventId < 0 ? nil : eventId
+  if node.navigationPathEventId != nextEventId {
+    node.navigationPathEventId = nextEventId
+  }
+  let nextDestinationIds: [String] = (0..<Int(destinationsCount)).compactMap { index in
     guard let value = destinationsPointer?[index] else { return nil }
     return String(cString: value)
+  }
+  if node.navigationDestinationIds != nextDestinationIds {
+    node.navigationDestinationIds = nextDestinationIds
   }
 }
 

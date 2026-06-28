@@ -56,6 +56,7 @@ let read_file path =
 
 let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
 let swiftui_backend_source_path = "../swiftui/bonsai_apple_swiftui.ml"
+let swiftui_dune_path = "../swiftui/dune"
 let apple_source_path = "../src/bonsai_apple.ml"
 
 let test_navigation_value_links_keep_primary_tap_for_link () =
@@ -191,6 +192,17 @@ let test_list_virtualization_probe_does_not_log_per_row_events () =
     (contains source ~substring:"list_update reason=")
     "list virtualization probe should keep summary update logs for device verification";
   require
+    (contains source ~substring:"BONSAI_NATIVE_LIST_DEBUG")
+    "list virtualization probe should be opt-in so row appear bookkeeping is not on the \
+     scroll hot path by default";
+  require
+    (not (contains source ~substring:"appearedRowsByList"))
+    "list virtualization probe should not retain a set of every row that has ever \
+     appeared; that cost grows with scroll distance";
+  require
+    (not (contains source ~substring:"unique_appeared_rows"))
+    "list virtualization probe logs should not require unbounded per-row history";
+  require
     (not (contains source ~substring:"row_appear list="))
     "list virtualization probe should not log every row appear event because that makes \
      scrolling measurements noisy";
@@ -198,6 +210,17 @@ let test_list_virtualization_probe_does_not_log_per_row_events () =
     (not (contains source ~substring:"row_disappear list="))
     "list virtualization probe should not log every row disappear event because that \
      makes scrolling measurements noisy"
+;;
+
+let test_swiftui_library_builds_in_default_ios_context () =
+  let source = read_file swiftui_dune_path in
+  require
+    (contains source ~substring:"default.ios")
+    "dune -x ios uses the default.ios target context; bonsai_apple.swiftui must be \
+     enabled there so iOS sysroot installs do not keep stale SwiftUI artifacts";
+  require
+    (contains source ~substring:"public_name bonsai_apple.swiftui")
+    "the default.ios context coverage should apply to the public SwiftUI sublibrary"
 ;;
 
 let test_lazy_list_renders_rows_in_testing_backend () =
@@ -283,7 +306,7 @@ let test_swiftui_lazy_list_uses_native_row_provider () =
     "SwiftUI backend should not store every lazy row key because that scales with the \
      entire list";
   require
-    (contains source ~substring:"bonsaiNativeLazyRowRenderCallback?(providerId, Int32(index))")
+    (contains source ~substring:"renderCallback(providerId, Int32(index))")
     "SwiftUI lazy list rows should be rendered through the provider on demand";
   require
     (contains source ~substring:"bonsaiNativeLazyRowReleaseCallback?")
@@ -322,6 +345,15 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"version: node.lazyListVersion")
     "SwiftUI lazy rows should receive the provider version so visible rows can refresh";
   require
+    (contains source ~substring:"key: \"\\(node.lazyListVersion):\\(index)\"")
+    "SwiftUI cached lazy rows should be invalidated when the OCaml provider version changes";
+  require
+    (contains source ~substring:"let owner: BonsaiNativeNode")
+    "SwiftUI lazy row wrappers should not observe the whole list owner";
+  require
+    (not (contains source ~substring:"@ObservedObject var owner: BonsaiNativeNode"))
+    "list-level lazy list publishes should not invalidate every retained row wrapper";
+  require
     (contains source ~substring:".onChange(of: version)")
     "SwiftUI lazy rows should refresh when OCaml updates the provider, even if the row \
      index and key are unchanged";
@@ -329,7 +361,7 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"private func refreshRow()")
     "SwiftUI lazy rows should call the OCaml row provider again for visible cached rows";
   require
-    (contains source ~substring:"node.lazyListVersion = Int(version)")
+    (contains source ~substring:"let nextVersion = Int(version)")
     "SwiftUI lazy list provider updates should use the OCaml renderer's version instead \
      of bumping on every append";
   require
@@ -341,12 +373,107 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
 let test_swiftui_lazy_list_retained_cache_stays_small () =
   let source = read_file swiftui_source_path in
   require
-    (contains source ~substring:"let maxRetainedRows = 32")
-    "SwiftUI lazy lists should retain only a few screens of off-screen rows so long \
-     blocks feeds do not keep heating up and growing memory";
+    (contains source ~substring:"owner.lazyListVisibleIndices.count")
+    "SwiftUI lazy list retained cache should scale with the number of visible rows";
   require
-    (not (contains source ~substring:"let maxRetainedRows = 80"))
-    "SwiftUI lazy list retained cache should not keep the old high row bound"
+    (contains source ~substring:"min(192, max(96, visibleBudget * 4))")
+    "SwiftUI lazy lists should keep several screens of rows while preserving a bounded \
+     cache for very large lists";
+  require
+    (not (contains source ~substring:"let maxRetainedRows = 32"))
+    "SwiftUI lazy list retained cache should not be almost the same size as one visible \
+     screen on iPhone"
+;;
+
+let test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"DispatchQueue.main.asyncAfter(deadline: .now() + 0.8)")
+    "lazy row disappear should defer detach because SwiftUI List can produce transient \
+     disappear/appear passes during layout";
+  require
+    (contains source ~substring:"releaseToken")
+    "deferred lazy row detach should be cancellable when the same row appears again";
+  require
+    (contains source ~substring:"guard !isVisible else { return }")
+    "deferred lazy row detach should not clear rows that became visible again";
+  require
+    (contains source ~substring:"guard child === rendered else { return }")
+    "deferred lazy row detach should not clear a replacement child";
+  require
+    (not
+       (contains source
+          ~substring:"releaseToken = nil\n      releaseCachedRow(index: index"))
+    "deferred lazy row detach should not release the retained cache entry; cache trimming \
+     owns provider release"
+;;
+
+let test_swiftui_lazy_list_setters_skip_unchanged_published_values () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"if !node.children.isEmpty {\n    node.children = []")
+    "lazy list updates should not publish an unchanged empty children array on every \
+     render";
+  require
+    (contains source ~substring:"if node.lazyListProviderId != providerId")
+    "lazy list updates should not republish the same provider id";
+  require
+    (contains source ~substring:"if node.lazyListVersion != nextVersion")
+    "lazy list updates should not republish the same provider version";
+  require
+    (contains source ~substring:"if node.lazyListRowCount != rowCount")
+    "lazy list updates should not republish the same row count";
+  require
+    (contains source ~substring:"if node.listRefreshEventId != nextRefreshEventId")
+    "list behavior updates should not republish unchanged refresh callbacks";
+  require
+    (contains source ~substring:"if node.listFocusedRowIndex != nextFocusedRowIndex")
+    "focused row updates should not publish when focus did not change"
+;;
+
+let test_swiftui_navigation_setter_skips_unchanged_published_values () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"if node.navigationPath != nextPath")
+    "navigation stack updates should not republish an unchanged path on every render";
+  require
+    (contains source ~substring:"if node.navigationPathEventId != nextEventId")
+    "navigation stack updates should not republish an unchanged path callback";
+  require
+    (contains source ~substring:"if node.navigationDestinationIds != nextDestinationIds")
+    "navigation stack updates should not republish unchanged destination ids"
+;;
+
+let test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay () =
+  let source = read_file swiftui_source_path in
+  require
+    (not (contains source ~substring:"BonsaiNativeKeyboardHandoff"))
+    "delete-at-start should not use a hidden text field to hold first responder";
+  require
+    (not (contains source ~substring:"retainKeyboard(from:"))
+    "delete-at-start should let the newly focused row become first responder";
+  require
+    (not (contains source ~substring:"asyncAfter(deadline: .now() + 0.05)"))
+    "delete-at-start focus should not rely on short timed retries";
+  require
+    (not (contains source ~substring:"asyncAfter(deadline: .now() + 0.15)"))
+    "delete-at-start focus should not rely on row replacement timeout retries";
+  require
+    (not (contains source ~substring:"asyncAfter(deadline: .now() + 0.4)"))
+    "delete-at-start focus should not rely on hidden keyboard handoff timeout";
+  require
+    (contains source ~substring:"func requestFocus()")
+    "delete-aware text fields should keep an explicit focus request";
+  require
+    (contains source ~substring:"guard !wantsFocus || !isFirstResponder else { return }")
+    "focused text fields should not enqueue focus retries on every render while already \
+     first responder";
+  require
+    (contains source ~substring:"if node.isTextFieldFocused != isFocused")
+    "text-field focus setters should not publish unchanged focus values";
+  require
+    (contains source ~substring:"override func didMoveToWindow()")
+    "delete-aware text fields should focus when the replacement row is mounted"
 ;;
 
 let counter graph =
@@ -1488,6 +1615,7 @@ let () =
   test_compact_sidebar_close_paths_share_swift_animation ();
   test_native_list_uses_stable_node_identity ();
   test_list_virtualization_probe_does_not_log_per_row_events ();
+  test_swiftui_library_builds_in_default_ios_context ();
   test_lazy_list_renders_rows_in_testing_backend ();
   test_lazy_list_patches_cached_rows ();
   test_lazy_list_renderer_uses_indexed_keys ();
@@ -1495,6 +1623,10 @@ let () =
   test_swiftui_lazy_list_loads_rows_on_appear ();
   test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
   test_swiftui_lazy_list_retained_cache_stays_small ();
+  test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache ();
+  test_swiftui_lazy_list_setters_skip_unchanged_published_values ();
+  test_swiftui_navigation_setter_skips_unchanged_published_values ();
+  test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
