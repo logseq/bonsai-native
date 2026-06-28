@@ -460,11 +460,24 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"invalidatedIndexPointer")
     "the OCaml-to-Swift bridge should pass stale indices with lazy list row updates";
   require
-    (contains source ~substring:"if owner.lazyListInvalidatedIndices.contains(index)")
-    "visible lazy rows should refresh only when their own index was invalidated";
+    (contains source ~substring:"owner.lazyListInvalidatedIndices.contains(sourceIndex)")
+    "lazy row slots should mark only invalidated source indices for refresh";
   require
-    (contains source ~substring:"version: node.lazyListVersion")
-    "SwiftUI lazy rows should receive the provider version so visible rows can refresh";
+    (not (contains source ~substring:"version: node.lazyListVersion"))
+    "SwiftUI lazy rows should not receive the global provider version because append-only \
+     pagination should not re-evaluate every retained row body";
+  require
+    (not (contains source ~substring:"totalRows: node.lazyListRowCount"))
+    "SwiftUI lazy rows should not receive the global row count because append-only \
+     pagination should not re-evaluate every retained row body";
+  require
+    (not (contains source ~substring:".onChange(of: version)"))
+    "SwiftUI lazy rows should not observe the global provider version; invalidated rows \
+     should refresh through their own appear/load path";
+  require
+    (contains source ~substring:"refreshGeneration: slot.refreshGeneration")
+    "SwiftUI lazy rows should receive a per-row refresh generation so only invalidated \
+     rows refresh after provider updates";
   require
     (contains source ~substring:"key: slot.key")
     "SwiftUI lazy row cache identity should use the stable provider row key";
@@ -479,9 +492,16 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (not (contains source ~substring:"@ObservedObject var owner: BonsaiNativeNode"))
     "list-level lazy list publishes should not invalidate every retained row wrapper";
   require
-    (contains source ~substring:".onChange(of: version)")
-    "SwiftUI lazy rows should refresh when OCaml updates the provider, even if the row \
-     index and key are unchanged";
+    (not (contains source ~substring:"@State private var child: BonsaiNativeNode?"))
+    "SwiftUI lazy row wrappers should not store rendered child nodes in row-local state \
+     because List cells are reused while scrolling";
+  require
+    (contains source ~substring:"private var cachedRenderedChild: BonsaiNativeNode?")
+    "SwiftUI lazy row wrappers should read rendered child nodes from the owner row cache";
+  require
+    (contains source ~substring:".onChange(of: refreshGeneration)")
+    "SwiftUI lazy rows should refresh when OCaml invalidates their own source index, even \
+     if the row key is unchanged";
   require
     (contains source ~substring:"private func refreshRow()")
     "SwiftUI lazy rows should call the OCaml row provider again for visible cached rows";
@@ -501,9 +521,9 @@ let test_swiftui_lazy_list_retained_cache_stays_small () =
     (contains source ~substring:"owner.lazyListVisibleIndices.count")
     "SwiftUI lazy list retained cache should scale with the number of visible rows";
   require
-    (contains source ~substring:"min(192, max(96, visibleBudget * 4))")
-    "SwiftUI lazy lists should keep several screens of rows while preserving a bounded \
-     cache for very large lists";
+    (contains source ~substring:"min(384, max(128, visibleBudget * 8))")
+    "SwiftUI lazy lists should keep enough nearby rows for fast scrolling while \
+     preserving a bounded cache for very large lists";
   require
     (not (contains source ~substring:"let maxRetainedRows = 32"))
     "SwiftUI lazy list retained cache should not be almost the same size as one visible \
@@ -545,7 +565,11 @@ let test_swiftui_lazy_list_logs_ui_row_lifecycle_counts () =
   require
     (contains source ~substring:"media_view_live=")
     "list_perf logs should include live media view count because WebKit/image rows can \
-     leak separately from text rows"
+     leak separately from text rows";
+  require
+    (contains source ~substring:"body=")
+    "list_perf logs should include lazy row body evaluation count so SwiftUI invalidation \
+     can be separated from OCaml row rendering"
 ;;
 
 let test_swiftui_lazy_list_uses_stable_row_keys_for_identity () =
@@ -580,7 +604,7 @@ let test_swiftui_lazy_list_disappear_defers_detach_without_releasing_cache () =
     (contains source ~substring:"guard !isVisible else { return }")
     "deferred lazy row detach should not clear rows that became visible again";
   require
-    (contains source ~substring:"guard child === rendered else { return }")
+    (contains source ~substring:"guard cachedRenderedChild === rendered else { return }")
     "deferred lazy row detach should not clear a replacement child";
   require
     (not
