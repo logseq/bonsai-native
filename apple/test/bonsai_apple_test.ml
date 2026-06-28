@@ -324,6 +324,15 @@ let test_lazy_list_renderer_uses_indexed_keys () =
     "lazy list focus handling should not scan every row key to find a focused row"
 ;;
 
+let test_lazy_list_marks_moved_target_indices_stale () =
+  let source = read_file apple_source_path in
+  require
+    (contains source ~substring:"| Some _ -> index :: stale_indices")
+    "lazy list stale scans should invalidate a visible target index when its cached row \
+     key moved from another index; otherwise old footer rows can remain visible in the \
+     middle after load more"
+;;
+
 let test_swiftui_lazy_list_uses_native_row_provider () =
   let source = read_file swiftui_source_path in
   require
@@ -1878,6 +1887,7 @@ let () =
   test_lazy_list_renders_rows_in_testing_backend ();
   test_lazy_list_patches_cached_rows ();
   test_lazy_list_renderer_uses_indexed_keys ();
+  test_lazy_list_marks_moved_target_indices_stale ();
   test_swiftui_lazy_list_uses_native_row_provider ();
   test_swiftui_lazy_list_loads_rows_on_appear ();
   test_swiftui_lazy_list_uses_native_list_for_row_actions ();

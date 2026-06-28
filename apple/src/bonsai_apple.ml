@@ -2707,7 +2707,7 @@ module Renderer = struct
                       if String.equal cached_key row_key then stale_indices
                       else
                         match find_lazy_row_by_key t ~target_index:index ~target_key:row_key with
-                        | Some _ -> stale_indices
+                        | Some _ -> index :: stale_indices
                         | None -> index :: stale_indices)
                  t.lazy_rows
                  [])
