@@ -28,12 +28,6 @@ jobs:
         with:
           ocaml-compiler: 5.2.1
 
-      - name: Add Jane Street preview repositories
-        run: |
-          opam repo add janestreet-bleeding-external git+https://github.com/janestreet/opam-repository.git#external-packages
-          opam repo add janestreet-bleeding git+https://github.com/janestreet/opam-repository.git
-          opam update
-
       - name: Install OCaml dependencies
         run: opam install . --deps-only --with-test -y
 

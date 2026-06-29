@@ -40,7 +40,7 @@ reject_contains() {
 require_contains \
   "$workflow" \
   "runs-on: macos-15-intel" \
-  "CI must run on Intel macOS because bonsai_apple needs Apple headers and current Melange dependencies fail on macOS arm64."
+  "CI must run on a pinned macOS runner because bonsai_apple builds stubs that include dispatch/dispatch.h."
 
 reject_contains \
   "$workflow" \
@@ -50,7 +50,12 @@ reject_contains \
 reject_contains \
   "$workflow" \
   "runs-on: macos-latest" \
-  "CI must not use macos-latest because it currently selects an arm64 runner for public repositories."
+  "CI must not use macos-latest because the backing image can drift under this Apple-specific build."
+
+reject_contains \
+  "$workflow" \
+  "janestreet-bleeding" \
+  "CI must not add Jane Street bleeding repositories because they can select preview dependencies incompatible with fresh macOS runners."
 
 require_contains \
   "$workflow" \
