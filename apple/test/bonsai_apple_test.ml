@@ -1049,6 +1049,15 @@ let test_swiftui_lazy_list_structural_row_count_publishes_synchronously () =
     (contains source ~substring:"lazy_row_count_coalesced")
     "structural coalesced row-count publishes should be visible in performance logs";
   require
+    (not
+       (contains source ~substring:"coalescedStructuralLazyListRowCountPublishDelay"))
+    "structural row-count coalescing must not use a timed debounce because that is \
+     visible as slow Enter/Delete";
+  require
+    (contains source ~substring:"DispatchQueue.main.async(execute: workItem)")
+    "structural row-count coalescing should only merge updates already queued for the \
+     next main-loop turn";
+  require
     (contains source ~substring:"!providerInvalidatedIndices.isEmpty")
     "only structural invalidation updates should use the coalesced row-count publish \
      path";

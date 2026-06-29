@@ -30,7 +30,6 @@ private var bonsaiNativeLazyRowKeyCallback: BonsaiNativeLazyRowKeyCallback?
 private var bonsaiNativeLazyRowReleaseCallback: BonsaiNativeLazyRowReleaseCallback?
 private let minDeferredLazyListAppendRowCount = 16
 private let maxDeferredLazyListRowCountPublishDelay: CFTimeInterval = 0.25
-private let coalescedStructuralLazyListRowCountPublishDelay: CFTimeInterval = 0.12
 
 private enum BonsaiNativeFrameAlignment: Int32 {
   case center = 0
@@ -6264,10 +6263,7 @@ private func scheduleCoalescedStructuralLazyListRowCountPublish(
     node.pendingLazyListRowCountWorkItem = nil
   }
   node.pendingLazyListRowCountWorkItem = workItem
-  DispatchQueue.main.asyncAfter(
-    deadline: .now() + coalescedStructuralLazyListRowCountPublishDelay,
-    execute: workItem
-  )
+  DispatchQueue.main.async(execute: workItem)
 }
 
 private func shouldDeferLazyListRowCountPublish(
