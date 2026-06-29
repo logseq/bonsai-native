@@ -2349,6 +2349,16 @@ let test_swiftui_image_view_reserves_requested_height_before_load () =
      loading so rows do not change height while scrolling"
 ;;
 
+let test_swiftui_strict_list_rows_remove_default_insets () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source
+       ~substring:
+         "BonsaiNativeNodeView(node: child, model: model)\n          .listRowInsets(EdgeInsets())")
+    "strict SwiftUI List rows should remove the default horizontal row insets so app rows \
+     control their own margins"
+;;
+
 let test_swiftui_custom_view_supports_youtube_webkit_iframes () =
   let source = read_file swiftui_source_path in
   require (contains source ~substring:"import WebKit") "YouTube iframes should use WebKit";
@@ -2796,6 +2806,7 @@ let () =
   test_file_image_can_render_swift_image_file_style ();
   test_swiftui_image_view_supports_remote_urls ();
   test_swiftui_image_view_reserves_requested_height_before_load ();
+  test_swiftui_strict_list_rows_remove_default_insets ();
   test_swiftui_custom_view_supports_youtube_webkit_iframes ();
   test_youtube_iframe_does_not_steal_list_row_gestures ();
   test_swiftui_prefers_inter_for_typography ();

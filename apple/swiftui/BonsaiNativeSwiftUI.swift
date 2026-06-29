@@ -3178,6 +3178,7 @@ private struct BonsaiNativeNodeView: View {
     } else {
       ForEach(node.children) { child in
         BonsaiNativeNodeView(node: child, model: model)
+          .listRowInsets(EdgeInsets())
           .onAppear {
             BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
               listID: node.id,
