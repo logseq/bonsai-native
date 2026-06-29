@@ -905,6 +905,18 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     "row-local rendered children must be tied to the current stable row key so a focused \
      editor cannot leak into the reused add-block placeholder row";
   require
+    (contains source ~substring:"@State private var renderedChildRefreshGeneration")
+    "row-local rendered children must also be tied to the row state generation so the \
+     previous focused editor cannot keep displaying after focus moves to another block";
+  require
+    (contains source ~substring:"renderedChildRefreshGeneration == refreshGeneration")
+    "displayedChild should reject a row-local child rendered for an older focused/unfocused \
+     state";
+  require
+    (contains source ~substring:"renderedChildRefreshGeneration = refreshGeneration")
+    "loading or refreshing a lazy row should record the generation used for its displayed \
+     child";
+  require
     (contains source ~substring:".onChange(of: refreshGeneration)")
     "SwiftUI lazy rows should refresh when OCaml invalidates their own source index, even \
      if the row key is unchanged";
@@ -1396,6 +1408,10 @@ let test_swiftui_lazy_list_scroll_blur_ignores_tap_jitter () =
   require
     (contains source ~substring:"guard abs(translation.height) >= 12")
     "scroll blur should ignore small vertical tap jitter before sending Blur_block";
+  require
+    (contains source ~substring:"guard !node.lazyListVisibleIndices.contains(focusedIndex)")
+    "list-level scroll blur should not close the editor while the focused lazy row is \
+     still visible because keyboard and row-height movement can look like scroll";
   require
     (not (contains source ~substring:"DragGesture(minimumDistance: 2)"))
     "a two-point drag threshold is too low and can blur immediately after a row tap"

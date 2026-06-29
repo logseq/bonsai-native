@@ -3728,6 +3728,12 @@ private struct BonsaiNativeNodeView: View {
     guard abs(translation.height) > abs(translation.width) else { return }
     guard let focusedIndex = node.listFocusedRowIndex else { return }
     guard node.listFocusedRowDisappearEventId != nil else { return }
+    guard !node.lazyListVisibleIndices.contains(focusedIndex) else {
+      BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+        "list_scroll_blur_skip_visible_focused_row list=\(node.id.uuidString) focused_index=\(focusedIndex) visible=\(node.lazyListVisibleIndices.sorted())"
+      )
+      return
+    }
     guard listScrollBlurSentForFocusedIndex != focusedIndex else { return }
     listScrollBlurSentForFocusedIndex = focusedIndex
     BonsaiNativeListVirtualizationProbe.shared.debugAlways(
@@ -5256,6 +5262,7 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
   @State private var loadGeneration = 0
   @State private var renderedChild: BonsaiNativeNode?
   @State private var renderedChildKey: String?
+  @State private var renderedChildRefreshGeneration = 0
   @State private var rowState = BonsaiNativeLazyListRowState()
 
   static func == (lhs: BonsaiNativeLazyListRowView, rhs: BonsaiNativeLazyListRowView) -> Bool {
@@ -5336,12 +5343,16 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
 
   private var displayedChild: BonsaiNativeNode? {
     guard renderedChildKey == key else { return cachedRenderedChild }
+    guard renderedChildRefreshGeneration == refreshGeneration else {
+      return cachedRenderedChild
+    }
     return renderedChild ?? cachedRenderedChild
   }
 
   private func setRenderedChild(_ child: BonsaiNativeNode?) {
     renderedChild = child
     renderedChildKey = child == nil ? nil : key
+    renderedChildRefreshGeneration = refreshGeneration
   }
 
   private func trackVisibleIndexAppear() {

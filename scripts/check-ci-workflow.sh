@@ -39,13 +39,18 @@ reject_contains() {
 
 require_contains \
   "$workflow" \
-  "runs-on: macos-latest" \
-  "CI must run on macOS because bonsai_apple builds stubs that include dispatch/dispatch.h."
+  "runs-on: macos-15-intel" \
+  "CI must run on Intel macOS because bonsai_apple needs Apple headers and current Melange dependencies fail on macOS arm64."
 
 reject_contains \
   "$workflow" \
   "runs-on: ubuntu-latest" \
   "CI must not run Apple stub builds on Ubuntu."
+
+reject_contains \
+  "$workflow" \
+  "runs-on: macos-latest" \
+  "CI must not use macos-latest because it currently selects an arm64 runner for public repositories."
 
 require_contains \
   "$workflow" \
