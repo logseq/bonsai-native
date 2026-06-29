@@ -356,8 +356,11 @@ external set_native_lazy_list_rows
   -> int
   -> int
   -> int array
+  -> int array
+  -> string array
   -> unit
-  = "bonsai_apple_swiftui_set_lazy_list_rows"
+  = "bonsai_apple_swiftui_set_lazy_list_rows_bytecode"
+    "bonsai_apple_swiftui_set_lazy_list_rows"
 
 external set_native_lazy_list_rows_published_event
   :  native
@@ -1328,8 +1331,8 @@ module Backend = struct
        && List.equal Int.equal view.lazy_list_native_stale_indices stale_indices)
   ;;
 
-  let set_lazy_list_rows view ~length ~version ~stale_indices ~key_row ~render_row
-      ~release_row ~on_rows_published =
+  let set_lazy_list_rows view ~length ~version ~stale_indices ~identity_keys ~key_row
+      ~render_row ~release_row ~on_rows_published =
     let provider_id =
       match view.lazy_list_provider_id with
       | Some provider_id -> provider_id
@@ -1357,8 +1360,16 @@ module Backend = struct
       view.lazy_list_native_version <- Some version;
       view.lazy_list_native_stale_indices <- stale_indices;
       set_native_lazy_list_rows_published_event view.native rows_published_event_id;
+      let identity_indices =
+        Array.of_list (List.map identity_keys ~f:(fun (index, _) -> index))
+      in
+      let identity_values =
+        Array.of_list (List.map identity_keys ~f:(fun (_, key) -> key))
+      in
       set_native_lazy_list_rows view.native provider_id length version
-        (Array.of_list stale_indices))
+        (Array.of_list stale_indices)
+        identity_indices
+        identity_values)
   ;;
 
   let set_list_behavior

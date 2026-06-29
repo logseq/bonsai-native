@@ -1761,6 +1761,7 @@ module Renderer = struct
       -> length:int
       -> version:int
       -> stale_indices:int list
+      -> identity_keys:(int * string) list
       -> key_row:(int -> string)
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
@@ -2759,6 +2760,15 @@ module Renderer = struct
          in
          debug_log "lazy_list_stale_indices count=%d order_changed=%b"
            (List.length stale_indices) order_changed;
+         let identity_keys =
+           Hashtbl.fold
+             (fun index cached keys ->
+                if index >= 0 && index < length
+                then (index, cached.identity_key) :: keys
+                else keys)
+             t.lazy_rows
+             []
+         in
          let stale_indices_to_destroy =
            List.filter (fun index -> index < 0 || index >= length) stale_indices
          in
@@ -2840,6 +2850,7 @@ module Renderer = struct
          debug_time "lazy_list_set_rows" (fun () ->
              Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
                ~stale_indices
+               ~identity_keys
                ~key_row:key
                ~render_row ~release_row
                ~on_rows_published:
@@ -3771,7 +3782,8 @@ module For_testing = struct
       view.list_focused_row_index <- focused_row_index
     ;;
 
-    let set_lazy_list_rows view ~length ~version:_ ~stale_indices:_ ~key_row
+    let set_lazy_list_rows view ~length ~version:_ ~stale_indices:_ ~identity_keys:_
+        ~key_row
         ~render_row
         ~release_row:_
         ~on_rows_published:_ =

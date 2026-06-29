@@ -57,6 +57,7 @@ let read_file path =
 let swiftui_source_path = "../swiftui/BonsaiNativeSwiftUI.swift"
 let swiftui_mac_source_path = "../swiftui/BonsaiNativeSwiftUIMac.swift"
 let swiftui_backend_source_path = "../swiftui/bonsai_apple_swiftui.ml"
+let swiftui_stubs_source_path = "../swiftui/bonsai_apple_swiftui_stubs.c"
 let swiftui_dune_path = "../swiftui/dune"
 let apple_source_path = "../src/bonsai_apple.ml"
 let bootstrap_ios_script_path = "../../scripts/bootstrap-ios-jane.sh"
@@ -458,7 +459,7 @@ let test_swiftui_lazy_list_uses_native_row_provider () =
      not from every row disappear"
 ;;
 
-let test_swiftui_lazy_list_renders_missing_visible_rows_without_placeholder () =
+let test_swiftui_lazy_list_defers_missing_visible_row_render () =
   let source = read_file swiftui_source_path in
   require
     (contains source ~substring:"BonsaiNativeLazyListRowView(")
@@ -468,17 +469,16 @@ let test_swiftui_lazy_list_renders_missing_visible_rows_without_placeholder () =
     "SwiftUI lazy list rows should construct missing cached rows through one shared \
      render path";
   require
-    (contains source ~substring:"let renderedChild = cachedRenderedChild ?? renderRowIfNeeded()")
-    "SwiftUI lazy list row bodies should synchronously resolve missing visible rows so \
-     fast scrolling does not show blank placeholder cells before onAppear runs";
+    (contains source ~substring:"let displayedChild = renderedChild ?? cachedRenderedChild")
+    "SwiftUI lazy list row bodies should only read existing row state/cache";
   require
-    (not (contains source ~substring:"Color.clear\n          .frame(minHeight: 44)"))
-    "SwiftUI lazy list rows should not display a clear placeholder while waiting for \
-     onAppear because fast scrolling can expose those blank cells";
+    (contains source ~substring:"Color.clear\n          .frame(height: 44)")
+    "SwiftUI lazy list rows should use a stable placeholder while row rendering is \
+     deferred out of the body pass";
   require
     (contains source ~substring:"DispatchQueue.main.async")
-    "SwiftUI lazy list row release should be deferred so disappearing rows cannot re-enter \
-     OCaml during a render pass"
+    "SwiftUI lazy list row render/release work should be deferred so rows cannot re-enter \
+     OCaml during a SwiftUI render pass"
 ;;
 
 let test_swiftui_lazy_list_uses_native_list_for_row_actions () =
@@ -512,16 +512,17 @@ let test_swiftui_native_list_disables_implicit_row_count_animation () =
 let test_swiftui_lazy_list_move_updates_visible_order_immediately () =
   let source = read_file swiftui_source_path in
   require
-    (contains source ~substring:"private struct BonsaiNativeLazyListMovePreview")
-    "lazy provider row moves should use a lightweight local preview so native List \
-     updates immediately after a drag";
+    (not (contains source ~substring:"private struct BonsaiNativeLazyListMovePreview"))
+    "lazy provider row moves should not keep a local SwiftUI preview because writing \
+     view state from native List move callbacks can publish during view updates";
   require
-    (contains source ~substring:"@State private var lazyListMovePreview")
-    "the move preview should be view-local state rather than rebuilding OCaml rows";
+    (not (contains source ~substring:"@State private var lazyListMovePreview"))
+    "lazy provider row moves should not update local @State during List drag/drop";
   require
-    (contains source ~substring:"ForEach(0..<node.lazyListRowCount, id: \\.self)")
-    "lazy provider List rows should be driven by range identity so native List does not \
-     pre-resolve every row key";
+    (contains source ~substring:"ForEach(lazyListPositions())")
+    "lazy provider List rows should use stable native-cached row identity so native \
+     delete/reorder transactions do not reuse index-keyed cells after persisted order \
+     changes";
   require
     (not
        (contains source
@@ -529,25 +530,28 @@ let test_swiftui_lazy_list_move_updates_visible_order_immediately () =
     "drag preview rows should not switch ForEach identity because SwiftUI can hitch while \
      diffing key-backed slots";
   require
-    (contains source ~substring:"lazyListMovePreview?.sourceIndex(for: position) ?? position")
-    "range-based rows should still show the local move preview by remapping source indices";
+    (contains source ~substring:"let sourceIndex = position")
+    "range-based rows should keep stable position mapping until the persisted OCaml model \
+     publishes the new order";
   require
-    (contains source ~substring:"lazyListMovePreview =\n      BonsaiNativeLazyListMovePreview")
-    "native onMove should update the local order before waiting for OCaml to render";
+    (not (contains source ~substring:"lazyListMovePreview ="))
+    "native onMove should not update local order before persistence succeeds";
   require
     (contains source ~substring:"private func commitLazyListMove(fromIndex: Int, toOffset: Int)")
     "lazy provider row moves should commit to OCaml through one focused helper";
   require
-    (contains
-       source
-       ~substring:
-         "BonsaiNativeRenderedFrameScheduler.shared.runAfterRenderedFrame { [model] in")
-    "lazy provider row moves should let SwiftUI render the local preview before sending \
-     the synchronous OCaml move";
+    (not
+       (contains
+          source
+          ~substring:
+            "DispatchQueue.main.async { [model] in\n\
+            \      BonsaiNativeRenderedFrameScheduler.shared.runAfterRenderedFrame { [model] in"))
+    "lazy provider row moves should not wait for a rendered-frame scheduler before \
+     sending the OCaml move because that delays persist and visible order updates";
   require
-    (contains source ~substring:"DispatchQueue.main.async { [model] in")
-    "lazy provider row moves should not start the rendered-frame wait until the local \
-     preview state has committed to the next main-loop turn";
+    (contains source ~substring:"model.sendChange(eventId, text: text, deferOnMain: false)")
+    "lazy provider row moves should update the data source before the native onMove \
+     callback returns";
   require
     (contains source ~substring:"lazy_move_commit_scheduled")
     "lazy provider row moves should log the scheduled commit separately from the emit";
@@ -560,6 +564,37 @@ let test_swiftui_lazy_list_move_updates_visible_order_immediately () =
   require
     (not (contains source ~substring:"Array(0..<node.lazyListRowCount)"))
     "lazy move preview must not allocate an array for every row in large journals"
+;;
+
+let test_swiftui_lazy_list_delete_leaves_native_delete_transaction () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private func emitListChangeWithoutAnimation")
+    "native list delete/move commits should share a no-animation emitter";
+  require
+    (contains source ~substring:"model.sendChange(eventId, text: text, deferOnMain: false)")
+    "native list commits should synchronously mutate the OCaml model inside the List \
+     callback so SwiftUI's native delete/reorder transaction sees the updated data source";
+  require
+    (contains source ~substring:"var transaction = Transaction()")
+    "native list commits should create an explicit transaction";
+  require
+    (contains source ~substring:"transaction.animation = nil")
+    "native list commits should disable implicit row animations around OCaml event \
+     emission";
+  require
+    (contains source ~substring:"name: \"lazy_delete\"")
+    "lazy list delete should use the no-animation emitter";
+  require
+    (contains source ~substring:"_event_emit_begin")
+    "native list commits should log when event emission begins";
+  require
+    (contains source ~substring:"_event_emit_end")
+    "native list commits should log when event emission ends";
+  require
+    (contains source ~substring:"if Thread.isMainThread {\n      emit()")
+    "native list commits should emit immediately when SwiftUI calls onDelete/onMove on \
+     the main thread"
 ;;
 
 let test_swiftui_list_debug_perf_log_uses_swift_safe_interpolation () =
@@ -662,8 +697,20 @@ let test_swiftui_lazy_list_visible_index_tracking_stays_off_scroll_hot_path () =
     (contains source ~substring:"trackVisibleIndexDisappear()")
     "lazy row disappear should delegate visible-index tracking to a guarded helper";
   require
-    (contains source ~substring:"if BonsaiNativeListVirtualizationProbe.shared.isDebugEnabled")
-    "visible-index bookkeeping should only run when full list debug is explicitly enabled"
+    (contains source ~substring:"owner.lazyListVisibleIndices.insert(index)")
+    "visible-index bookkeeping should track mounted row positions so native List diffing \
+     can resolve real row keys for visible delete/reorder updates";
+  require
+    (contains source ~substring:"owner.lazyListVisibleIndices.remove(index)")
+    "visible-index bookkeeping should remove positions when rows leave the viewport";
+  require
+    (not
+       (contains source
+          ~substring:
+            "if BonsaiNativeListVirtualizationProbe.shared.isDebugEnabled {\n\
+            \      owner.lazyListVisibleIndices.insert(index)"))
+    "visible-index bookkeeping must not be debug-only because stable row identity depends \
+     on it during normal swipe and drag operations"
 ;;
 
 let test_swiftui_lazy_list_keeps_slots_off_scroll_hot_path () =
@@ -677,16 +724,22 @@ let test_swiftui_lazy_list_keeps_slots_off_scroll_hot_path () =
     "lazy list should not keep a persistent slot array because SwiftUI repeatedly walks \
      collection ids";
   require
-    (contains source ~substring:"lazyListMovePreview?.sourceIndex(for: position) ?? position")
-    "range-based rows should still honor the local move preview"
+    (not (contains source ~substring:"lazyListMovePreview"))
+    "lazy list should not keep a local move preview because native List can call move \
+     callbacks during SwiftUI view updates"
 ;;
 
-let test_swiftui_lazy_list_foreach_does_not_resolve_all_row_keys () =
+let test_swiftui_lazy_list_foreach_resolves_keys_only_for_visible_rows () =
   let source = read_file swiftui_source_path in
+  let backend_source = read_file swiftui_backend_source_path in
+  let stubs_source = read_file swiftui_stubs_source_path in
   require
-    (contains source ~substring:"ForEach(0..<node.lazyListRowCount, id: \\.self)")
-    "lazy lists should use range identity so SwiftUI List does not resolve every row key \
-     while diffing large collections";
+    (contains source ~substring:"private struct BonsaiNativeLazyListPositions")
+    "lazy lists should feed ForEach a lightweight random-access collection instead of \
+     allocating a full row-position array";
+  require
+    (contains source ~substring:"ForEach(lazyListPositions())")
+    "lazy lists should use native cached row identity instead of mutable index identity";
   require
     (not (contains source ~substring:"ForEach(slots)"))
     "lazy lists should not feed a key-backed slot collection to ForEach because SwiftUI \
@@ -696,19 +749,49 @@ let test_swiftui_lazy_list_foreach_does_not_resolve_all_row_keys () =
     "lazy lists should not feed a computed key-backed slot collection to ForEach during \
      drag preview";
   require
-    (contains source ~substring:"key: bonsaiNativeLazyRowKeyHint(owner: node, index: sourceIndex)")
-    "lazy row positions should use a native key hint so SwiftUI body evaluation does not \
-     synchronously call OCaml for row keys";
+    (contains source
+       ~substring:"id: bonsaiNativeLazyRowKeyHint(owner: owner, index: position)")
+    "lazy row positions should read only native cached identity hints during SwiftUI \
+     ForEach diffing";
   require
-    (not
-       (contains source
-          ~substring:"key: bonsaiNativeLazyRowKey(owner: node, providerId: providerId, index: sourceIndex)"))
-    "lazy row positions must not resolve OCaml row keys in SwiftUI body because native \
-     List may evaluate many row bodies after row-count updates";
+    (not (contains source ~substring:"bonsaiNativeLazyRowIdentity"))
+    "lazy row positions must not synchronously call OCaml while SwiftUI is diffing native \
+     List rows";
+  require
+    (contains source ~substring:"return \"lazy-row-\\(index)\"")
+    "lazy row positions should keep a cheap native key hint fallback for off-screen rows";
+  require
+    (contains backend_source ~substring:"~identity_keys")
+    "OCaml lazy-list publishes should push already cached row keys into the native \
+     identity cache";
+  require
+    (contains stubs_source ~substring:"identity_key_values[index] = String_val")
+    "the C bridge should pass native identity key updates without asking SwiftUI ForEach \
+     to call OCaml";
   require
     (not (contains source ~substring:"proxy.scrollTo(\n            bonsaiNativeLazyRowKey"))
     "scroll-to-index should use the same range identity as ForEach instead of resolving \
      OCaml row keys"
+;;
+
+let test_swiftui_lazy_row_body_does_not_render_rows_synchronously () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"@State private var renderedChild")
+    "lazy row view should hold rendered row nodes in row-local state";
+  require
+    (contains source ~substring:"let displayedChild = renderedChild ?? cachedRenderedChild")
+    "lazy row body may read existing state/cache";
+  require
+    (not (contains source ~substring:"let renderedChild = cachedRenderedChild ?? renderRowIfNeeded()"))
+    "lazy row body must not synchronously call OCaml row render while SwiftUI is \
+     evaluating body";
+  require
+    (contains source ~substring:"DispatchQueue.main.async {\n      guard rowState.isVisible")
+    "lazy row rendering should be deferred out of the SwiftUI body/update pass";
+  require
+    (contains source ~substring:"loadRowIfNeeded()")
+    "visible lazy rows should still request row rendering from onAppear"
 ;;
 
 let test_swiftui_lazy_list_disappear_does_not_enqueue_release_work () =
@@ -834,30 +917,45 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"let staleIdentityKeyIndices =")
     "lazy list provider updates should clear only stale or invalidated native row keys";
   require
+    (contains source
+       ~substring:
+         "node.lazyListIdentityKeyByIndex[index] = String(cString: keyPointer)")
+    "lazy list provider updates should repopulate native row identity keys from the \
+     OCaml publish payload before SwiftUI diffs rows";
+  require
+    (contains source ~substring:"node.lazyListVisibleIndices.subtract(outOfRangeIndices)")
+    "lazy list provider updates should keep invalidated visible row positions visible so \
+     SwiftUI can resolve stable row keys during native delete/reorder diffs";
+  require
+    (not (contains source ~substring:"node.lazyListVisibleIndices.subtract(staleIndices)"))
+    "invalidated rows should not be removed from visible-index tracking because that \
+     makes native List fall back to index identity for the changed viewport";
+  require
     (not (contains source ~substring:"node.lazyListVersion &+= 1"))
     "SwiftUI lazy list provider updates should not refresh visible rows for pure append \
      updates"
 ;;
 
-let test_swiftui_lazy_list_row_count_publishes_after_ocaml_callback_returns () =
+let test_swiftui_lazy_list_structural_row_count_publishes_synchronously () =
   let source = read_file swiftui_source_path in
   require
-    (contains source ~substring:"private func scheduleLazyListRowCountPublish")
-    "lazy list row-count publishes should go through an explicit scheduler";
+    (not (contains source ~substring:"private func scheduleLazyListRowCountPublish"))
+    "non-deferred lazy list row-count publishes should not go through a next-turn \
+     scheduler because native List delete/reorder transactions need the data source \
+     updated before the callback returns";
   require
-    (contains source ~substring:"DispatchQueue.main.async { [weak node] in")
-    "immediate lazy list row-count publishes should run on the next main-queue turn so \
-     SwiftUI cannot re-enter OCaml while the current OCaml action/render callback still \
-     owns the runtime";
+    (contains source
+       ~substring:
+         "publishLazyListRowCount(\n\
+         \      node,\n\
+         \      rowCount,\n\
+         \      invalidatedCount: providerInvalidatedIndices.count")
+    "set_lazy_list_rows should synchronously publish structural row-count changes after \
+     persistence/model update so swipe delete and drag reorder do not animate against \
+     stale data";
   require
-    (contains source ~substring:"guard node.pendingLazyListRowCountGeneration == generation")
-    "scheduled row-count publishes should drop stale generations";
-  require
-    (not
-       (contains source
-          ~substring:"publishLazyListRowCount(node, rowCount, invalidatedCount: providerInvalidatedIndices.count)"))
-    "set_lazy_list_rows should not synchronously publish row-count changes from inside \
-     the OCaml render callback"
+    (contains source ~substring:"scheduleDeferredLazyListRowCountPublish(node, rowCount)")
+    "pure large append/load-more updates should keep the scroll-idle deferral path"
 ;;
 
 let test_swiftui_lazy_list_defers_append_row_count_while_scrolling () =
@@ -902,9 +1000,9 @@ let test_swiftui_lazy_list_defers_append_row_count_while_scrolling () =
     "deferred append row-count publishes should be scheduled for scroll idle rather than \
      dropped";
   require
-    (contains source ~substring:"scheduleLazyListRowCountPublish(")
-    "non-deferred row-count updates should still publish on the next main-queue turn for \
-     delete, collapse, move, and focus-related UI refreshes";
+    (contains source ~substring:"publishLazyListRowCount(")
+    "non-deferred row-count updates should publish synchronously for delete, collapse, \
+     move, and focus-related UI refreshes";
   require
     (contains source ~substring:"invalidatedCount: providerInvalidatedIndices.count")
     "non-deferred scheduled row-count updates should preserve invalidated-row refresh \
@@ -1339,19 +1437,19 @@ let test_swiftui_navigation_setter_skips_unchanged_published_values () =
     "navigation stack updates should not republish unchanged destination ids"
 ;;
 
-let test_swiftui_change_events_emit_immediately_on_main_thread () =
+let test_swiftui_change_events_defer_from_view_update_callbacks () =
   let source = read_file swiftui_source_path in
   require
-    (contains source ~substring:"private func dispatchEvent(animation: Animation? = nil, _ emit: @escaping () -> Void)")
+    (contains source ~substring:"deferOnMain: Bool = true")
     "SwiftUI event dispatch should share one main-thread-aware path";
   require
-    (contains source ~substring:"if Thread.isMainThread {\n      performEmit()")
-    "SwiftUI change events triggered by native gestures should emit immediately on the \
-     main thread instead of waiting one extra runloop";
+    (contains source ~substring:"if Thread.isMainThread && !deferOnMain")
+    "native List commits need an explicit immediate path, while lifecycle/change events \
+     should keep the default deferred path";
   require
     (contains source ~substring:"DispatchQueue.main.async(execute: performEmit)")
-    "SwiftUI event dispatch should still hop to the main thread when called from \
-     background callbacks"
+    "default SwiftUI event dispatch should hop to the next main-loop turn before calling \
+     OCaml from view update callbacks"
 ;;
 
 let test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay () =
@@ -1384,6 +1482,17 @@ let test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay () =
   require
     (contains source ~substring:"override func didMoveToWindow()")
     "delete-aware text fields should focus when the replacement row is mounted"
+;;
+
+let test_swiftui_delete_aware_text_change_updates_model_immediately () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains
+       source
+       ~substring:"model.sendChange(node.changeEventId, text: value, deferOnMain: false)")
+    "delete-aware text field edits should update OCaml before SwiftUI leaves the input \
+     callback so the first character after deleting a block cannot be overwritten by a \
+     stale rendered row"
 ;;
 
 let counter graph =
@@ -2601,10 +2710,12 @@ let () =
   test_lazy_list_renderer_uses_indexed_keys ();
   test_lazy_list_marks_moved_target_indices_order_changed ();
   test_swiftui_lazy_list_uses_native_row_provider ();
-  test_swiftui_lazy_list_renders_missing_visible_rows_without_placeholder ();
+  test_swiftui_lazy_list_defers_missing_visible_row_render ();
   test_swiftui_lazy_list_uses_native_list_for_row_actions ();
   test_swiftui_native_list_disables_implicit_row_count_animation ();
   test_swiftui_lazy_list_move_updates_visible_order_immediately ();
+  test_swiftui_lazy_list_delete_leaves_native_delete_transaction ();
+  test_swiftui_lazy_row_body_does_not_render_rows_synchronously ();
   test_swiftui_list_debug_perf_log_uses_swift_safe_interpolation ();
   test_swiftui_frame_probe_can_run_without_list_debug_bookkeeping ();
   test_swiftui_frame_probe_logs_slow_lazy_row_renders ();
@@ -2613,14 +2724,14 @@ let () =
   test_swiftui_lazy_list_row_is_equatable ();
   test_swiftui_lazy_list_visible_index_tracking_stays_off_scroll_hot_path ();
   test_swiftui_lazy_list_keeps_slots_off_scroll_hot_path ();
-  test_swiftui_lazy_list_foreach_does_not_resolve_all_row_keys ();
+  test_swiftui_lazy_list_foreach_resolves_keys_only_for_visible_rows ();
   test_swiftui_lazy_list_disappear_does_not_enqueue_release_work ();
   test_ios_bootstrap_prefers_checkout_sources_for_local_packages ();
   test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update ();
   test_swiftui_lazy_list_defers_append_row_count_while_scrolling ();
   test_swiftui_lazy_list_publishes_deferred_appends_once_after_idle ();
   test_swiftui_lazy_list_row_count_publish_disables_implicit_animation_at_write ();
-  test_swiftui_lazy_list_row_count_publishes_after_ocaml_callback_returns ();
+  test_swiftui_lazy_list_structural_row_count_publishes_synchronously ();
   test_swiftui_lazy_list_deferred_append_has_max_latency ();
   test_swiftui_lazy_list_logs_row_count_publish_decisions ();
   test_swiftui_lazy_list_emits_row_count_published_event ();
@@ -2637,8 +2748,9 @@ let () =
   test_swiftui_lazy_list_scroll_blur_ignores_tap_jitter ();
   test_swiftui_lazy_list_setters_skip_unchanged_published_values ();
   test_swiftui_navigation_setter_skips_unchanged_published_values ();
-  test_swiftui_change_events_emit_immediately_on_main_thread ();
+  test_swiftui_change_events_defer_from_view_update_callbacks ();
   test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay ();
+  test_swiftui_delete_aware_text_change_updates_model_immediately ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();

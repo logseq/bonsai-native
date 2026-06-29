@@ -864,6 +864,7 @@ module Renderer : sig
       -> length:int
       -> version:int
       -> stale_indices:int list
+      -> identity_keys:(int * string) list
       -> key_row:(int -> string)
       -> render_row:(int -> view)
       -> release_row:(int -> unit)

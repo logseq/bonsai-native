@@ -2070,7 +2070,10 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
   _ count: Int32,
   _ version: Int32,
   _ invalidatedIndexPointer: UnsafePointer<Int32>?,
-  _ invalidatedIndexCount: Int32
+  _ invalidatedIndexCount: Int32,
+  _ identityIndexPointer: UnsafePointer<Int32>?,
+  _ identityKeyPointer: UnsafePointer<UnsafePointer<CChar>?>?,
+  _ identityKeyCount: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   if count <= 0 && !node.children.isEmpty {
