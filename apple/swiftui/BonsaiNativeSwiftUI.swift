@@ -4755,12 +4755,12 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     let _ = loadGeneration
     let _ = BonsaiNativeFrameProbe.shared.markLazyRowBody()
     let _ = BonsaiNativeListVirtualizationProbe.shared.rowBodyEvaluated(listID: listID)
+    let renderedChild = cachedRenderedChild ?? renderRowIfNeeded()
     Group {
-      if let child = cachedRenderedChild {
+      if let child = renderedChild {
         BonsaiNativeNodeView(node: child, model: model)
       } else {
-        Color.clear
-          .frame(minHeight: 44)
+        EmptyView()
       }
     }
     .background {
@@ -4773,15 +4773,8 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
       rowState.isVisible = true
       rowState.focusedDisappearToken = nil
       trackVisibleIndexAppear()
-      if let child = cachedRenderedChild {
-        BonsaiNativeListVirtualizationProbe.shared.rowAppearedAtIndex(
-          listID: listID,
-          rowID: child.id,
-          index: index,
-          totalRows: owner.lazyListRowCount
-        )
-      } else {
-        loadRow()
+      if let child = cachedRenderedChild ?? renderRowIfNeeded() {
+        markRowAppeared(child)
       }
       reportListPerf()
     }
@@ -4824,35 +4817,24 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     }
   }
 
-  private func loadRow() {
-    guard rowState.isVisible else { return }
-    guard cachedRenderedChild == nil else { return }
-    if let cached = owner.lazyListRowsByIndex[index],
-       owner.lazyListRowKeyByIndex[index] == key {
+  private func renderRowIfNeeded() -> BonsaiNativeNode? {
+    if let cached = cachedRenderedChild {
       touchRetainedIndex(index)
-      loadGeneration &+= 1
       BonsaiNativeListVirtualizationProbe.shared.rowCacheHit(listID: listID)
-      BonsaiNativeListVirtualizationProbe.shared.rowAppearedAtIndex(
-        listID: listID,
-        rowID: cached.id,
-        index: index,
-        totalRows: owner.lazyListRowCount
-      )
-      reportListPerf()
-      return
+      return cached
     }
     guard let renderCallback = bonsaiNativeLazyRowRenderCallback else {
       BonsaiNativeListVirtualizationProbe.shared.debug(
         "lazy_row_render_missing_callback provider=\(providerId) index=\(index)"
       )
-      return
+      return nil
     }
     let renderStartedAt = CACurrentMediaTime()
     guard let pointer = renderCallback(providerId, Int32(index)) else {
       BonsaiNativeListVirtualizationProbe.shared.debug(
         "lazy_row_render_nil_pointer provider=\(providerId) index=\(index)"
       )
-      return
+      return nil
     }
     let renderElapsedMs = (CACurrentMediaTime() - renderStartedAt) * 1000
     BonsaiNativeFrameProbe.shared.markLazyRowRender(
@@ -4865,25 +4847,28 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
       BonsaiNativeListVirtualizationProbe.shared.debug(
         "lazy_row_render_missing_node provider=\(providerId) index=\(index)"
       )
-      return
+      return nil
     }
     owner.lazyListRowsByIndex[index] = rendered
     owner.lazyListRowKeyByIndex[index] = key
     touchRetainedIndex(index)
-    loadGeneration &+= 1
     BonsaiNativeListVirtualizationProbe.shared.rowRendered(
       listID: listID,
       elapsedMs: renderElapsedMs
     )
     BonsaiNativeListVirtualizationProbe.shared.rowRetained(listID: listID, rowID: rendered.id)
+    trimRetainedRows()
+    reportListPerf()
+    return rendered
+  }
+
+  private func markRowAppeared(_ child: BonsaiNativeNode) {
     BonsaiNativeListVirtualizationProbe.shared.rowAppearedAtIndex(
       listID: listID,
-      rowID: rendered.id,
+      rowID: child.id,
       index: index,
       totalRows: owner.lazyListRowCount
     )
-    trimRetainedRows()
-    reportListPerf()
   }
 
   private func refreshRow() {
@@ -5463,8 +5448,8 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
   }
   if node.lazyListProviderId != providerId {
     node.lazyListProviderId = providerId
-    node.lazyListIdentityKeyByIndex.removeAll()
   }
+  node.lazyListIdentityKeyByIndex.removeAll(keepingCapacity: true)
   let rowCount = Int(count)
   let providerInvalidatedIndices: Set<Int>
   if let invalidatedIndexPointer {

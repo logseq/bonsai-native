@@ -354,27 +354,27 @@ let test_swiftui_lazy_list_uses_native_row_provider () =
      not from every row disappear"
 ;;
 
-let test_swiftui_lazy_list_loads_rows_on_appear () =
+let test_swiftui_lazy_list_renders_missing_visible_rows_without_placeholder () =
   let source = read_file swiftui_source_path in
   require
     (contains source ~substring:"BonsaiNativeLazyListRowView(")
     "SwiftUI lazy lists should use a row wrapper so ForEach can stay lightweight";
   require
-    (contains source ~substring:"private func loadRow()")
-    "SwiftUI lazy list rows should construct OCaml rows from onAppear";
+    (contains source ~substring:"private func renderRowIfNeeded()")
+    "SwiftUI lazy list rows should construct missing cached rows through one shared \
+     render path";
   require
-    (contains source ~substring:"loadRow()")
-    "SwiftUI lazy list row construction should happen in onAppear so the row does not \
-     display a blank placeholder first";
+    (contains source ~substring:"let renderedChild = cachedRenderedChild ?? renderRowIfNeeded()")
+    "SwiftUI lazy list row bodies should synchronously resolve missing visible rows so \
+     fast scrolling does not show blank placeholder cells before onAppear runs";
+  require
+    (not (contains source ~substring:"Color.clear\n          .frame(minHeight: 44)"))
+    "SwiftUI lazy list rows should not display a clear placeholder while waiting for \
+     onAppear because fast scrolling can expose those blank cells";
   require
     (contains source ~substring:"DispatchQueue.main.async")
     "SwiftUI lazy list row release should be deferred so disappearing rows cannot re-enter \
-     OCaml during a render pass";
-  require
-    (not
-       (contains source ~substring:"if let child = renderLazyListRow(providerId:"))
-    "SwiftUI lazy lists should not call the OCaml row provider directly inside the \
-     ForEach body because SwiftUI may evaluate off-screen rows"
+     OCaml during a render pass"
 ;;
 
 let test_swiftui_lazy_list_uses_native_list_for_row_actions () =
@@ -692,6 +692,11 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
          "if !providerInvalidatedIndices.isEmpty && node.lazyListVersion != nextVersion")
     "append-only lazy list provider updates should not publish lazyListVersion because \
      no visible row needs a refresh";
+  require
+    (contains source ~substring:"node.lazyListIdentityKeyByIndex.removeAll(keepingCapacity: true)")
+    "lazy list provider updates must clear the index-key cache because collapse/expand \
+     can shift rows while preserving block identities, and stale index keys keep SwiftUI \
+     rendering the old row";
   require
     (not (contains source ~substring:"if node.lazyListVersion != nextVersion"))
     "lazy list provider updates should not publish a version for pure row-count changes";
@@ -2110,7 +2115,7 @@ let () =
   test_lazy_list_renderer_uses_indexed_keys ();
   test_lazy_list_marks_moved_target_indices_stale ();
   test_swiftui_lazy_list_uses_native_row_provider ();
-  test_swiftui_lazy_list_loads_rows_on_appear ();
+  test_swiftui_lazy_list_renders_missing_visible_rows_without_placeholder ();
   test_swiftui_lazy_list_uses_native_list_for_row_actions ();
   test_swiftui_native_list_disables_implicit_row_count_animation ();
   test_swiftui_lazy_list_move_updates_visible_order_immediately ();
