@@ -2327,6 +2327,22 @@ let test_plain_text_field_renders_plain_style () =
     "plain text fields should expose SwiftUI plain text field style"
 ;;
 
+let test_plain_text_fields_match_body_text_size () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:".font(bonsaiNativePreferredFont(.body))")
+    "plain SwiftUI text fields should use the same body font as display text";
+  require
+    (contains source ~substring:"bonsaiNativePreferredUIFont(.body)")
+    "delete-aware UIKit text inputs should use the same body font as display text";
+  require
+    (not (contains source ~substring:"textView.font = bonsaiNativePreferredUIFont(size: 18"))
+    "multiline block editors should not use a larger hard-coded font than display rows";
+  require
+    (not (contains source ~substring:"textField.font = bonsaiNativePreferredUIFont(size: 18"))
+    "delete-aware single-line fields should not use a larger hard-coded font than display rows"
+;;
+
 let test_frame_renders_max_width () =
   Backend.reset ();
   let component _graph =
@@ -2866,6 +2882,7 @@ let () =
   test_liquid_glass_panel_renders ();
   test_pill_text_field_uses_liquid_glass_chrome ();
   test_plain_text_field_renders_plain_style ();
+  test_plain_text_fields_match_body_text_size ();
   test_frame_renders_max_width ();
   test_swiftui_frame_supports_leading_alignment ();
   test_swiftui_horizontal_stack_supports_top_alignment ();

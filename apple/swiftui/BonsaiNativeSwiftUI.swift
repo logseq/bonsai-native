@@ -466,6 +466,13 @@ private func bonsaiNativePreferredUIFont(
   return .systemFont(ofSize: size, weight: weight)
 }
 
+private func bonsaiNativePreferredUIFont(
+  _ textStyle: Font.TextStyle,
+  weight: UIFont.Weight = .regular
+) -> UIFont {
+  bonsaiNativePreferredUIFont(size: bonsaiNativeTextStyleSize(textStyle), weight: weight)
+}
+
 private struct SidebarBottomActionChrome: ViewModifier {
   let chrome: Int32
 
@@ -2566,6 +2573,7 @@ private struct BonsaiNativeTextFieldView: View {
     } else if node.textFieldStyle == 2 {
       textField
         .textFieldStyle(.plain)
+        .font(bonsaiNativePreferredFont(.body))
     } else {
       textField
         .textFieldStyle(.roundedBorder)
@@ -2839,7 +2847,7 @@ private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
     textView.isScrollEnabled = false
     textView.textContainerInset = .zero
     textView.textContainer.lineFragmentPadding = 0
-    textView.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
+    textView.font = bonsaiNativePreferredUIFont(.body)
     textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
     textView.onDeleteBackwardAtStart = onDeleteBackwardAtStart
@@ -2849,7 +2857,7 @@ private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
   func updateUIView(_ textView: BonsaiNativeDeleteAwareUITextView, context: Context) {
     context.coordinator.parent = self
     textView.placeholder = placeholder
-    textView.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
+    textView.font = bonsaiNativePreferredUIFont(.body)
     if textView.text != text {
       textView.text = text
       textView.updatePlaceholderVisibility()
@@ -2988,7 +2996,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
       for: .editingChanged
     )
     textField.onDeleteBackwardAtStart = onDeleteBackwardAtStart
-    textField.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
+    textField.font = bonsaiNativePreferredUIFont(.body)
     textField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     return textField
   }
@@ -2997,7 +3005,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
     context.coordinator.parent = self
     textField.placeholder = placeholder
     textField.clearButtonMode = uiTextFieldClearButtonMode(clearButtonMode)
-    textField.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
+    textField.font = bonsaiNativePreferredUIFont(.body)
     if textField.text != text {
       textField.text = text
     }
