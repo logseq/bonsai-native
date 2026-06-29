@@ -1452,14 +1452,22 @@ let test_swiftui_change_events_defer_from_view_update_callbacks () =
      OCaml from view update callbacks"
 ;;
 
-let test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay () =
+let test_swiftui_structural_text_edits_handoff_keyboard_until_next_focus () =
   let source = read_file swiftui_source_path in
   require
-    (not (contains source ~substring:"BonsaiNativeKeyboardHandoff"))
-    "delete-at-start should not use a hidden text field to hold first responder";
+    (contains source ~substring:"private final class BonsaiNativeKeyboardHandoff")
+    "structural text edits should keep a native first responder while OCaml waits for \
+     Persisted before publishing the next focused snapshot";
   require
-    (not (contains source ~substring:"retainKeyboard(from:"))
-    "delete-at-start should let the newly focused row become first responder";
+    (contains source ~substring:"BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: self)")
+    "delete-at-start should retain the keyboard before dispatching the structural OCaml \
+     event";
+  require
+    (contains source ~substring:"BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: textField)")
+    "Return should retain the keyboard before dispatching the insert event";
+  require
+    (contains source ~substring:"BonsaiNativeKeyboardHandoff.shared.completeHandoff()")
+    "new focused text fields should release the handoff after becoming first responder";
   require
     (not (contains source ~substring:"asyncAfter(deadline: .now() + 0.05)"))
     "delete-at-start focus should not rely on short timed retries";
@@ -2784,7 +2792,7 @@ let () =
   test_swiftui_lazy_list_setters_skip_unchanged_published_values ();
   test_swiftui_navigation_setter_skips_unchanged_published_values ();
   test_swiftui_change_events_defer_from_view_update_callbacks ();
-  test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay ();
+  test_swiftui_structural_text_edits_handoff_keyboard_until_next_focus ();
   test_swiftui_delete_aware_text_change_updates_model_immediately ();
   test_swiftui_delete_aware_focus_requests_are_transition_scoped ();
   test_navigation_value_links_keep_primary_tap_for_link ();

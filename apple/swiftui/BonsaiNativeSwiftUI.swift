@@ -325,6 +325,52 @@ private func bonsaiDismissKeyboard() {
   )
 }
 
+private final class BonsaiNativeKeyboardHandoff {
+  static let shared = BonsaiNativeKeyboardHandoff()
+
+  private weak var holdingField: UITextField?
+
+  func retainKeyboard(from current: UITextField) {
+    guard current.isFirstResponder else { return }
+    guard let window = current.window else { return }
+
+    let field: UITextField
+    if let existing = holdingField {
+      field = existing
+    } else {
+      let next = UITextField(frame: CGRect(x: -4, y: -4, width: 1, height: 1))
+      next.alpha = 0.01
+      next.autocorrectionType = .no
+      next.spellCheckingType = .no
+      holdingField = next
+      field = next
+    }
+
+    if field.window !== window {
+      field.removeFromSuperview()
+      window.addSubview(field)
+    }
+    field.becomeFirstResponder()
+  }
+
+  func completeHandoff() {
+    guard let field = holdingField else { return }
+    if !field.isFirstResponder {
+      field.removeFromSuperview()
+      holdingField = nil
+    }
+  }
+
+  func cancelHandoff() {
+    guard let field = holdingField else { return }
+    if field.isFirstResponder {
+      field.resignFirstResponder()
+    }
+    field.removeFromSuperview()
+    holdingField = nil
+  }
+}
+
 private func bonsaiPerformLightHapticFeedback() {
   let generator = UIImpactFeedbackGenerator(style: .light)
   generator.prepare()
@@ -2628,6 +2674,7 @@ private final class BonsaiNativeDeleteAwareUITextField: UITextField {
     }
 
     if caretAtStart {
+      BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: self)
       onDeleteBackwardAtStart?()
       return
     }
@@ -2666,6 +2713,7 @@ private final class BonsaiNativeDeleteAwareUITextField: UITextField {
     guard window != nil else { return }
     guard !isFirstResponder else { return }
     becomeFirstResponder()
+    BonsaiNativeKeyboardHandoff.shared.completeHandoff()
     let end = endOfDocument
     selectedTextRange = textRange(from: end, to: end)
   }
@@ -2747,6 +2795,7 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
     }
 
     func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+      BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: textField)
       parent.onSubmit()
       return false
     }
@@ -5982,6 +6031,9 @@ public func bonsai_native_swiftui_set_list_focused_row_index(
   let nextFocusedRowIndex = focusedRowIndex < 0 ? nil : Int(focusedRowIndex)
   if node.listFocusedRowIndex != nextFocusedRowIndex {
     node.listFocusedRowIndex = nextFocusedRowIndex
+  }
+  if nextFocusedRowIndex == nil {
+    BonsaiNativeKeyboardHandoff.shared.cancelHandoff()
   }
 }
 
