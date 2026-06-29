@@ -242,6 +242,10 @@ validate_environment() {
 find_source_dir() {
   local package=$1
   local source
+  if [[ -f $repo_root/$package.opam ]]; then
+    printf '%s\n' "$repo_root"
+    return 0
+  fi
   source=$(
     find "$sources_dir" -maxdepth 1 -type d \( -name "$package" -o -name "$package.*" \) \
       | sort \
