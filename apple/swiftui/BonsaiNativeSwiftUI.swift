@@ -330,7 +330,7 @@ private final class BonsaiNativeKeyboardHandoff {
 
   private weak var holdingField: UITextField?
 
-  func retainKeyboard(from current: UITextField) {
+  func retainKeyboard(from current: UIView) {
     guard current.isFirstResponder else { return }
     guard let window = current.window else { return }
 
@@ -2597,6 +2597,36 @@ private struct BonsaiNativeTextFieldView: View {
             model.sendClick(node.textFieldDeleteBackwardAtStartEventId)
           }
         )
+      } else if node.textFieldAxis == 1 && node.textFieldDeleteBackwardAtStartEventId != nil {
+        BonsaiNativeDeleteAwareTextView(
+          placeholder: node.placeholder ?? "",
+          text: Binding(
+            get: { node.text },
+            set: { value in
+              node.text = value
+            }
+          ),
+          isFocused: node.isTextFieldFocused,
+          onChange: { value in
+            node.text = value
+            let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
+              name: "text_change",
+              listID: node.id
+            )
+            model.sendChange(node.changeEventId, text: value, deferOnMain: false)
+            BonsaiNativeListVirtualizationProbe.shared.operationFinished(
+              name: "text_change",
+              listID: node.id,
+              startedAt: startedAt
+            )
+          },
+          onSubmit: {
+            model.sendClick(node.clickEventId)
+          },
+          onDeleteBackwardAtStart: {
+            model.sendClick(node.textFieldDeleteBackwardAtStartEventId)
+          }
+        )
       } else {
         if node.textFieldAxis == 1 {
           TextField(
@@ -2655,6 +2685,186 @@ private struct BonsaiNativeTextFieldView: View {
       if isFocused {
         isTextFieldFocused = true
       }
+    }
+  }
+}
+
+private final class BonsaiNativeDeleteAwareUITextView: UITextView {
+  var onDeleteBackwardAtStart: (() -> Void)?
+  private let placeholderLabel = UILabel()
+  private var wantsFocus = false
+
+  var placeholder: String = "" {
+    didSet {
+      placeholderLabel.text = placeholder
+      updatePlaceholderVisibility()
+    }
+  }
+
+  override var font: UIFont? {
+    didSet {
+      placeholderLabel.font = font
+    }
+  }
+
+  override init(frame: CGRect, textContainer: NSTextContainer?) {
+    super.init(frame: frame, textContainer: textContainer)
+    placeholderLabel.textColor = .placeholderText
+    placeholderLabel.numberOfLines = 1
+    placeholderLabel.translatesAutoresizingMaskIntoConstraints = false
+    addSubview(placeholderLabel)
+    NSLayoutConstraint.activate([
+      placeholderLabel.leadingAnchor.constraint(equalTo: leadingAnchor),
+      placeholderLabel.topAnchor.constraint(equalTo: topAnchor),
+      placeholderLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor),
+    ])
+  }
+
+  required init?(coder: NSCoder) {
+    fatalError("init(coder:) has not been implemented")
+  }
+
+  override func deleteBackward() {
+    let caretAtStart: Bool
+    if let selectedTextRange {
+      caretAtStart =
+        selectedTextRange.isEmpty
+        && offset(from: beginningOfDocument, to: selectedTextRange.start) == 0
+    } else {
+      caretAtStart = text?.isEmpty ?? true
+    }
+
+    if caretAtStart {
+      BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: self)
+      onDeleteBackwardAtStart?()
+      return
+    }
+    super.deleteBackward()
+    updatePlaceholderVisibility()
+  }
+
+  override func didMoveToWindow() {
+    super.didMoveToWindow()
+    focusIfRequested()
+  }
+
+  func requestFocus() {
+    guard !wantsFocus || !isFirstResponder else { return }
+    wantsFocus = true
+    focusIfRequested()
+    if !isFirstResponder {
+      retryFocusOnNextMainTurns(remaining: 3)
+    }
+  }
+
+  func clearFocusRequest() {
+    wantsFocus = false
+  }
+
+  func updatePlaceholderVisibility() {
+    placeholderLabel.isHidden = !(text?.isEmpty ?? true)
+  }
+
+  private func retryFocusOnNextMainTurns(remaining: Int) {
+    guard remaining > 0 else { return }
+    DispatchQueue.main.async { [weak self] in
+      guard let self else { return }
+      focusIfRequested()
+      retryFocusOnNextMainTurns(remaining: remaining - 1)
+    }
+  }
+
+  private func focusIfRequested() {
+    guard wantsFocus else { return }
+    guard window != nil else { return }
+    guard !isFirstResponder else { return }
+    becomeFirstResponder()
+    BonsaiNativeKeyboardHandoff.shared.completeHandoff()
+    let end = endOfDocument
+    selectedTextRange = textRange(from: end, to: end)
+  }
+
+  override func resignFirstResponder() -> Bool {
+    wantsFocus = false
+    return super.resignFirstResponder()
+  }
+}
+
+private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
+  let placeholder: String
+  @Binding var text: String
+  let isFocused: Bool
+  let onChange: (String) -> Void
+  let onSubmit: () -> Void
+  let onDeleteBackwardAtStart: () -> Void
+
+  func makeCoordinator() -> Coordinator {
+    Coordinator(self)
+  }
+
+  func makeUIView(context: Context) -> BonsaiNativeDeleteAwareUITextView {
+    let textView = BonsaiNativeDeleteAwareUITextView(frame: .zero)
+    textView.delegate = context.coordinator
+    textView.backgroundColor = .clear
+    textView.isScrollEnabled = false
+    textView.textContainerInset = .zero
+    textView.textContainer.lineFragmentPadding = 0
+    textView.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
+    textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+    textView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+    textView.onDeleteBackwardAtStart = onDeleteBackwardAtStart
+    return textView
+  }
+
+  func updateUIView(_ textView: BonsaiNativeDeleteAwareUITextView, context: Context) {
+    context.coordinator.parent = self
+    textView.placeholder = placeholder
+    textView.font = bonsaiNativePreferredUIFont(size: 18, weight: .regular)
+    if textView.text != text {
+      textView.text = text
+      textView.updatePlaceholderVisibility()
+    }
+    textView.onDeleteBackwardAtStart = onDeleteBackwardAtStart
+    let shouldRequestFocus = isFocused && !context.coordinator.lastIsFocused
+    if shouldRequestFocus {
+      textView.requestFocus()
+    } else if !isFocused {
+      textView.clearFocusRequest()
+    }
+    context.coordinator.lastIsFocused = isFocused
+  }
+
+  final class Coordinator: NSObject, UITextViewDelegate {
+    var parent: BonsaiNativeDeleteAwareTextView
+    var lastIsFocused = false
+
+    init(_ parent: BonsaiNativeDeleteAwareTextView) {
+      self.parent = parent
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+      updateText(textView.text ?? "")
+      (textView as? BonsaiNativeDeleteAwareUITextView)?.updatePlaceholderVisibility()
+    }
+
+    private func updateText(_ text: String) {
+      if parent.text != text {
+        parent.text = text
+        parent.onChange(text)
+      }
+    }
+
+    func textView(
+      _ textView: UITextView,
+      shouldChangeTextIn range: NSRange,
+      replacementText text: String
+    ) -> Bool {
+      if text == "\n" {
+        BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: textView)
+        parent.onSubmit()
+        return false
+      }
+      return true
     }
   }
 }

@@ -1503,6 +1503,30 @@ let test_swiftui_delete_aware_text_change_updates_model_immediately () =
      stale rendered row"
 ;;
 
+let test_swiftui_vertical_delete_aware_text_fields_wrap () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private final class BonsaiNativeDeleteAwareUITextView")
+    "vertical delete-aware text fields should use UITextView because UITextField cannot \
+     wrap text";
+  require
+    (contains source ~substring:"BonsaiNativeDeleteAwareTextView(")
+    "vertical delete-aware text fields should render the multiline delete-aware wrapper";
+  require
+    (contains source ~substring:"textView.isScrollEnabled = false")
+    "multiline block editors should grow and wrap instead of scrolling inside one row";
+  require
+    (contains source ~substring:"replacementText text: String")
+    "multiline block editors should keep Return mapped to submit for structural insert";
+  require
+    (contains source ~substring:"if text == \"\\n\"")
+    "multiline block editors should intercept Return before UIKit inserts a newline";
+  require
+    (contains source ~substring:"BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: textView)")
+    "Return in a multiline block editor should keep the keyboard while OCaml persists \
+     the inserted block"
+;;
+
 let test_swiftui_delete_aware_focus_requests_are_transition_scoped () =
   let source = read_file swiftui_source_path in
   require
@@ -2794,6 +2818,7 @@ let () =
   test_swiftui_change_events_defer_from_view_update_callbacks ();
   test_swiftui_structural_text_edits_handoff_keyboard_until_next_focus ();
   test_swiftui_delete_aware_text_change_updates_model_immediately ();
+  test_swiftui_vertical_delete_aware_text_fields_wrap ();
   test_swiftui_delete_aware_focus_requests_are_transition_scoped ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
