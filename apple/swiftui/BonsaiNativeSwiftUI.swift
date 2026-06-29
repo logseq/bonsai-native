@@ -816,6 +816,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   var lazyListRowKeyByIndex: [Int: String] = [:]
   var lazyListRetainedOrder: [Int] = []
   var lazyListVisibleIndices: Set<Int> = []
+  var lazyListVisibleIndexCounts: [Int: Int] = [:]
   weak var lazyListScrollView: UIScrollView?
   var pendingLazyListRowCount: Int?
   var pendingLazyListRowCountDeadline: CFTimeInterval?
@@ -2715,14 +2716,10 @@ private struct BonsaiNativeTextFieldView: View {
     }
     .focused($isTextFieldFocused)
     .onAppear {
-      if node.isTextFieldFocused {
-        isTextFieldFocused = true
-      }
+      isTextFieldFocused = node.isTextFieldFocused
     }
     .onChange(of: node.isTextFieldFocused) { _, isFocused in
-      if isFocused {
-        isTextFieldFocused = true
-      }
+      isTextFieldFocused = isFocused
     }
   }
 }
@@ -2797,6 +2794,9 @@ private final class BonsaiNativeDeleteAwareUITextView: UITextView {
 
   func clearFocusRequest() {
     wantsFocus = false
+    if isFirstResponder {
+      _ = resignFirstResponder()
+    }
   }
 
   func updatePlaceholderVisibility() {
@@ -2945,6 +2945,9 @@ private final class BonsaiNativeDeleteAwareUITextField: UITextField {
 
   func clearFocusRequest() {
     wantsFocus = false
+    if isFirstResponder {
+      _ = resignFirstResponder()
+    }
   }
 
   private func retryFocusOnNextMainTurns(remaining: Int) {
@@ -3688,13 +3691,33 @@ private struct BonsaiNativeNodeView: View {
     let targetID: AnyHashable
     if node.lazyListProviderId != nil {
       guard index >= 0 && index < node.lazyListRowCount else { return }
-      targetID = AnyHashable(index)
+      if node.lazyListVisibleIndices.contains(index) {
+        BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+          "focused_row_scroll_skip_visible list=\(node.id.uuidString) index=\(index) rows=\(node.lazyListRowCount) visible=\(node.lazyListVisibleIndices.sorted())"
+        )
+        return
+      }
+      targetID = AnyHashable(bonsaiNativeLazyRowKeyHint(owner: node, index: index))
     } else {
       guard node.children.indices.contains(index) else { return }
       targetID = AnyHashable(node.children[index].id)
     }
+    BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+      "focused_row_scroll_queued list=\(node.id.uuidString) index=\(index) lazy=\(node.lazyListProviderId != nil) rows=\(node.lazyListProviderId == nil ? node.children.count : node.lazyListRowCount) visible=\(node.lazyListVisibleIndices.sorted()) target=\(targetID)"
+    )
     DispatchQueue.main.async {
-      withAnimation(.easeInOut(duration: 0.18)) {
+      if node.lazyListProviderId != nil && node.lazyListVisibleIndices.contains(index) {
+        BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+          "focused_row_scroll_skip_visible_at_execute list=\(node.id.uuidString) index=\(index) rows=\(node.lazyListRowCount) visible=\(node.lazyListVisibleIndices.sorted())"
+        )
+        return
+      }
+      BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+        "focused_row_scroll_execute list=\(node.id.uuidString) index=\(index) lazy=\(node.lazyListProviderId != nil) visible=\(node.lazyListVisibleIndices.sorted()) target=\(targetID)"
+      )
+      var transaction = Transaction()
+      transaction.animation = nil
+      withTransaction(transaction) {
         proxy.scrollTo(targetID)
       }
     }
@@ -3707,7 +3730,7 @@ private struct BonsaiNativeNodeView: View {
     guard node.listFocusedRowDisappearEventId != nil else { return }
     guard listScrollBlurSentForFocusedIndex != focusedIndex else { return }
     listScrollBlurSentForFocusedIndex = focusedIndex
-    BonsaiNativeListVirtualizationProbe.shared.debug(
+    BonsaiNativeListVirtualizationProbe.shared.debugAlways(
       "list_scroll_blur_focused_row list=\(node.id.uuidString) focused_index=\(focusedIndex)"
     )
     model.sendClick(node.listFocusedRowDisappearEventId)
@@ -3726,7 +3749,7 @@ private struct BonsaiNativeNodeView: View {
       scrollToIndex: { index in
         guard let proxy else { return }
         if node.lazyListProviderId != nil {
-          proxy.scrollTo(index, anchor: .top)
+          proxy.scrollTo(bonsaiNativeLazyRowKeyHint(owner: node, index: index), anchor: .top)
         } else if node.children.indices.contains(index) {
           proxy.scrollTo(node.children[index].id, anchor: .top)
         }
@@ -5219,6 +5242,7 @@ private struct BonsaiNativeCameraPicker: UIViewControllerRepresentable {
 private final class BonsaiNativeLazyListRowState {
   var isVisible = false
   var focusedDisappearToken: UUID?
+  var refreshToken = 0
 }
 
 private struct BonsaiNativeLazyListRowView: View, Equatable {
@@ -5231,6 +5255,7 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
   let model: BonsaiNativeHostModel
   @State private var loadGeneration = 0
   @State private var renderedChild: BonsaiNativeNode?
+  @State private var renderedChildKey: String?
   @State private var rowState = BonsaiNativeLazyListRowState()
 
   static func == (lhs: BonsaiNativeLazyListRowView, rhs: BonsaiNativeLazyListRowView) -> Bool {
@@ -5247,7 +5272,6 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     let _ = loadGeneration
     let _ = BonsaiNativeFrameProbe.shared.markLazyRowBody()
     let _ = BonsaiNativeListVirtualizationProbe.shared.rowBodyEvaluated(listID: listID)
-    let displayedChild = renderedChild ?? cachedRenderedChild
     Group {
       if let child = displayedChild {
         BonsaiNativeNodeView(node: child, model: model)
@@ -5267,19 +5291,19 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
       rowState.focusedDisappearToken = nil
       trackVisibleIndexAppear()
       loadRowIfNeeded()
-      if let child = renderedChild ?? cachedRenderedChild {
+      if let child = displayedChild {
         markRowAppeared(child)
       }
       reportListPerf()
     }
     .onChange(of: refreshGeneration) { _, generation in
       if generation != 0 {
-        refreshRow()
+        scheduleRefreshRow()
       }
     }
     .onChange(of: key) { _, _ in
       DispatchQueue.main.async {
-        renderedChild = cachedRenderedChild
+        setRenderedChild(cachedRenderedChild)
         loadRowIfNeeded()
       }
     }
@@ -5310,12 +5334,29 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     return rendered
   }
 
+  private var displayedChild: BonsaiNativeNode? {
+    guard renderedChildKey == key else { return cachedRenderedChild }
+    return renderedChild ?? cachedRenderedChild
+  }
+
+  private func setRenderedChild(_ child: BonsaiNativeNode?) {
+    renderedChild = child
+    renderedChildKey = child == nil ? nil : key
+  }
+
   private func trackVisibleIndexAppear() {
+    owner.lazyListVisibleIndexCounts[index, default: 0] += 1
     owner.lazyListVisibleIndices.insert(index)
   }
 
   private func trackVisibleIndexDisappear() {
-    owner.lazyListVisibleIndices.remove(index)
+    let nextCount = (owner.lazyListVisibleIndexCounts[index] ?? 0) - 1
+    if nextCount > 0 {
+      owner.lazyListVisibleIndexCounts[index] = nextCount
+    } else {
+      owner.lazyListVisibleIndexCounts[index] = nil
+      owner.lazyListVisibleIndices.remove(index)
+    }
   }
 
   private func renderRowIfNeeded() -> BonsaiNativeNode? {
@@ -5371,14 +5412,14 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
 
   private func loadRowIfNeeded() {
     if let cached = cachedRenderedChild {
-      renderedChild = cached
+      setRenderedChild(cached)
       return
     }
     DispatchQueue.main.async {
       guard rowState.isVisible else { return }
-      guard renderedChild == nil else { return }
+      guard displayedChild == nil else { return }
       if let child = renderRowIfNeeded() {
-        renderedChild = child
+        setRenderedChild(child)
         markRowAppeared(child)
       }
     }
@@ -5429,7 +5470,7 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     bindHostModel(owner.hostModel, to: rendered)
     owner.lazyListRowsByIndex[index] = rendered
     owner.lazyListRowKeyByIndex[index] = resolvedKey
-    renderedChild = rendered
+    setRenderedChild(rendered)
     touchRetainedIndex(index)
     loadGeneration &+= 1
     BonsaiNativeListVirtualizationProbe.shared.rowRefreshed(
@@ -5438,6 +5479,16 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     )
     trimRetainedRows()
     reportListPerf()
+  }
+
+  private func scheduleRefreshRow() {
+    rowState.refreshToken &+= 1
+    let token = rowState.refreshToken
+    let rowState = rowState
+    DispatchQueue.main.async {
+      guard rowState.refreshToken == token else { return }
+      refreshRow()
+    }
   }
 
   private func scheduleFocusedRowDisappear() {
@@ -5449,7 +5500,17 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
       guard rowState.focusedDisappearToken == token else { return }
       guard !rowState.isVisible else { return }
+      guard !owner.lazyListVisibleIndices.contains(index) else {
+        rowState.focusedDisappearToken = nil
+        BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+          "focused_row_disappear_blur_skip_visible_index list=\(owner.id.uuidString) index=\(index) visible=\(owner.lazyListVisibleIndices.sorted())"
+        )
+        return
+      }
       guard owner.listFocusedRowIndex == index else { return }
+      BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+        "focused_row_disappear_blur_send list=\(owner.id.uuidString) index=\(index) visible=\(owner.lazyListVisibleIndices.sorted())"
+      )
       model.sendClick(owner.listFocusedRowDisappearEventId)
       rowState.focusedDisappearToken = nil
     }
@@ -6051,6 +6112,9 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
     node.lazyListRowKeyByIndex[index] = nil
   }
   node.lazyListRetainedOrder.removeAll { staleIndices.contains($0) }
+  for index in outOfRangeIndices {
+    node.lazyListVisibleIndexCounts[index] = nil
+  }
   node.lazyListVisibleIndices.subtract(outOfRangeIndices)
   if shouldDeferLazyListRowCountPublish(
     node: node,
@@ -6084,7 +6148,7 @@ private func shouldDeferLazyListRowCountPublish(
   let appendDelta = rowCount - node.lazyListRowCount
   guard appendDelta > 0 else { return false }
   let isLargeAppend = appendDelta >= minDeferredLazyListAppendRowCount
-  guard isLargeAppend || providerInvalidatedIndices.isEmpty else { return false }
+  guard isLargeAppend else { return false }
   let scrollViewIsActive: Bool
   if let scrollView = node.lazyListScrollView {
     scrollViewIsActive = scrollView.isDragging || scrollView.isDecelerating || scrollView.isTracking
@@ -6218,6 +6282,7 @@ public func bonsai_native_swiftui_clear_lazy_list_rows(_ pointer: UnsafeMutableR
   node.lazyListIdentityKeyByIndex.removeAll()
   node.lazyListRetainedOrder.removeAll()
   node.lazyListVisibleIndices.removeAll()
+  node.lazyListVisibleIndexCounts.removeAll()
   node.lazyListInvalidatedIndices.removeAll()
 }
 
@@ -6290,6 +6355,9 @@ public func bonsai_native_swiftui_set_list_focused_row_index(
   guard let node = nativeNode(from: pointer) else { return }
   let nextFocusedRowIndex = focusedRowIndex < 0 ? nil : Int(focusedRowIndex)
   if node.listFocusedRowIndex != nextFocusedRowIndex {
+    BonsaiNativeListVirtualizationProbe.shared.debugAlways(
+      "focused_row_index_set list=\(node.id.uuidString) old=\(String(describing: node.listFocusedRowIndex)) new=\(String(describing: nextFocusedRowIndex)) lazy=\(node.lazyListProviderId != nil) rows=\(node.lazyListProviderId == nil ? node.children.count : node.lazyListRowCount) visible=\(node.lazyListVisibleIndices.sorted())"
+    )
     node.listFocusedRowIndex = nextFocusedRowIndex
   }
   if nextFocusedRowIndex == nil {

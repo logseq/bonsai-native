@@ -13,7 +13,7 @@ concurrency:
 jobs:
   test:
     name: OCaml tests
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout
@@ -21,8 +21,7 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y pkg-config
+          brew install pkg-config ripgrep
 
       - name: Set up OCaml
         uses: ocaml/setup-ocaml@v3

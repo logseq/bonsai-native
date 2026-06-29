@@ -469,8 +469,9 @@ let test_swiftui_lazy_list_defers_missing_visible_row_render () =
     "SwiftUI lazy list rows should construct missing cached rows through one shared \
      render path";
   require
-    (contains source ~substring:"let displayedChild = renderedChild ?? cachedRenderedChild")
-    "SwiftUI lazy list row bodies should only read existing row state/cache";
+    (contains source ~substring:"if let child = displayedChild")
+    "SwiftUI lazy list row bodies should only read existing row state/cache through the \
+     displayed-child helper";
   require
     (contains source ~substring:"Color.clear\n          .frame(height: 44)")
     "SwiftUI lazy list rows should use a stable placeholder while row rendering is \
@@ -697,12 +698,13 @@ let test_swiftui_lazy_list_visible_index_tracking_stays_off_scroll_hot_path () =
     (contains source ~substring:"trackVisibleIndexDisappear()")
     "lazy row disappear should delegate visible-index tracking to a guarded helper";
   require
-    (contains source ~substring:"owner.lazyListVisibleIndices.insert(index)")
-    "visible-index bookkeeping should track mounted row positions so native List diffing \
-     can resolve real row keys for visible delete/reorder updates";
+    (contains source ~substring:"owner.lazyListVisibleIndexCounts[index, default: 0] += 1")
+    "visible-index bookkeeping should count mounted row positions because SwiftUI can \
+     overlap old and new views for the same index during focus and structural edits";
   require
-    (contains source ~substring:"owner.lazyListVisibleIndices.remove(index)")
-    "visible-index bookkeeping should remove positions when rows leave the viewport";
+    (contains source ~substring:"owner.lazyListVisibleIndexCounts[index] = nextCount")
+    "visible-index bookkeeping should keep positions visible until the last overlapping \
+     row view for that index disappears";
   require
     (not
        (contains source
@@ -769,9 +771,11 @@ let test_swiftui_lazy_list_foreach_resolves_keys_only_for_visible_rows () =
     "the C bridge should pass native identity key updates without asking SwiftUI ForEach \
      to call OCaml";
   require
-    (not (contains source ~substring:"proxy.scrollTo(\n            bonsaiNativeLazyRowKey"))
-    "scroll-to-index should use the same range identity as ForEach instead of resolving \
-     OCaml row keys"
+    (contains source
+       ~substring:
+         "targetID = AnyHashable(bonsaiNativeLazyRowKeyHint(owner: node, index: index))")
+    "lazy focused-row scrolling should target the same native key hint identity as \
+     ForEach, without resolving OCaml row keys during SwiftUI diffing"
 ;;
 
 let test_swiftui_lazy_row_body_does_not_render_rows_synchronously () =
@@ -780,8 +784,8 @@ let test_swiftui_lazy_row_body_does_not_render_rows_synchronously () =
     (contains source ~substring:"@State private var renderedChild")
     "lazy row view should hold rendered row nodes in row-local state";
   require
-    (contains source ~substring:"let displayedChild = renderedChild ?? cachedRenderedChild")
-    "lazy row body may read existing state/cache";
+    (contains source ~substring:"if let child = displayedChild")
+    "lazy row body may read existing state/cache through the displayed-child helper";
   require
     (not (contains source ~substring:"let renderedChild = cachedRenderedChild ?? renderRowIfNeeded()"))
     "lazy row body must not synchronously call OCaml row render while SwiftUI is \
@@ -893,9 +897,25 @@ let test_swiftui_lazy_list_refreshes_visible_rows_after_provider_update () =
     (contains source ~substring:"private var cachedRenderedChild: BonsaiNativeNode?")
     "SwiftUI lazy row wrappers should read rendered child nodes from the owner row cache";
   require
+    (contains source ~substring:"private var displayedChild: BonsaiNativeNode?")
+    "SwiftUI lazy row wrappers should derive the displayed child through a helper that can \
+     reject stale row-local state after native List reuses a cell";
+  require
+    (contains source ~substring:"guard renderedChildKey == key else { return cachedRenderedChild }")
+    "row-local rendered children must be tied to the current stable row key so a focused \
+     editor cannot leak into the reused add-block placeholder row";
+  require
     (contains source ~substring:".onChange(of: refreshGeneration)")
     "SwiftUI lazy rows should refresh when OCaml invalidates their own source index, even \
      if the row key is unchanged";
+  require
+    (contains source ~substring:"scheduleRefreshRow()")
+    "invalidated visible rows should defer their row-provider refresh to the next main turn \
+     so SwiftUI does not synchronously re-enter OCaml while publishing list rows";
+  require
+    (not (contains source ~substring:"if generation != 0 {\n        refreshRow()"))
+    "provider invalidation should not call the OCaml row renderer directly from SwiftUI's \
+     synchronous onChange/update dispatch path";
   require
     (contains source ~substring:"private func refreshRow()")
     "SwiftUI lazy rows should call the OCaml row provider again for visible cached rows";
@@ -979,8 +999,13 @@ let test_swiftui_lazy_list_defers_append_row_count_while_scrolling () =
     "load-more appends should still be deferrable when the old add/load-more footer rows \
      are stale";
   require
-    (contains source ~substring:"guard isLargeAppend || providerInvalidatedIndices.isEmpty")
-    "small structural row invalidations must still publish immediately";
+    (contains source ~substring:"guard isLargeAppend else { return false }")
+    "small structural appends from Add/Enter must publish immediately; only load-more \
+     sized appends may wait for scroll idle";
+  require
+    (not (contains source ~substring:"guard isLargeAppend || providerInvalidatedIndices.isEmpty"))
+    "pure one-row appends must not be deferred just because the backing UIScrollView is \
+     still tracking a tap or keyboard interaction";
   require
     (contains source ~substring:"scrollView.isDragging || scrollView.isDecelerating || scrollView.isTracking")
     "pure append row-count publishes should be delayed while the backing UIScrollView is \
@@ -1488,6 +1513,12 @@ let test_swiftui_structural_text_edits_handoff_keyboard_until_next_focus () =
     (contains source ~substring:"if node.isTextFieldFocused != isFocused")
     "text-field focus setters should not publish unchanged focus values";
   require
+    (contains source ~substring:"isTextFieldFocused = node.isTextFieldFocused")
+    "SwiftUI text fields should synchronize false as well as true focus state on appear";
+  require
+    (contains source ~substring:"isTextFieldFocused = isFocused")
+    "SwiftUI text fields should clear stale focus when OCaml focuses the next snapshot row";
+  require
     (contains source ~substring:"override func didMoveToWindow()")
     "delete-aware text fields should focus when the replacement row is mounted"
 ;;
@@ -1550,6 +1581,15 @@ let test_swiftui_delete_aware_focus_requests_are_transition_scoped () =
   require
     (contains source ~substring:"wantsFocus = false")
     "delete-aware text fields should clear pending focus when UIKit moves first responder away"
+  ;
+  require
+    (contains source ~substring:"func clearFocusRequest()")
+    "delete-aware text fields should expose one shared path for clearing rendered focus";
+  require
+    (contains source ~substring:"if isFirstResponder {\n      _ = resignFirstResponder()\n    }")
+    "when OCaml publishes a snapshot where a delete-aware editor is no longer focused, \
+     UIKit must resign the old first responder so keyboard input cannot keep targeting a \
+     reused list row"
 ;;
 
 let counter graph =
@@ -2790,11 +2830,39 @@ let test_list_marks_focused_row_for_native_scroll () =
 let test_focused_row_scroll_keeps_row_visible_without_centering () =
   let source = read_file swiftui_source_path in
   require
+    (contains
+       source
+       ~substring:"if node.lazyListVisibleIndices.contains(index)")
+    "focusing an already visible lazy row should not issue a scroll because it can make \
+     SwiftUI recycle visible rows and bounce focus";
+  require
+    (not
+       (contains
+          source
+          ~substring:
+            "withAnimation(.easeInOut(duration: 0.18)) {\n        proxy.scrollTo(targetID)"))
+    "focused row reveal should not animate because a tap-to-focus must not move or recycle \
+     rows under the user's finger";
+  require
     (not (contains source ~substring:"proxy.scrollTo(index, anchor: .center)"))
     "focused row scrolling should keep the row visible without forcing it to the center";
   require
     (contains source ~substring:"proxy.scrollTo(targetID)")
     "focused row scrolling should let SwiftUI choose the minimal scroll needed to reveal it"
+;;
+
+let test_focused_lazy_row_replacement_does_not_blur_visible_index () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"lazyListVisibleIndexCounts")
+    "focused row visibility must be reference-counted because SwiftUI can call appear for \
+     the editor row before disappear for the replaced display row";
+  require
+    (contains
+       source
+       ~substring:"guard !owner.lazyListVisibleIndices.contains(index) else")
+    "when a focused lazy row is replaced in-place by its editor row, the old row view may \
+     disappear, but the same index is still visible and must not send Blur_block"
 ;;
 
 let () =
@@ -2904,5 +2972,6 @@ let () =
   test_toolbar_item_can_render_share_link ();
   test_movable_rows_move_only_the_group_children ();
   test_list_marks_focused_row_for_native_scroll ();
+  test_focused_lazy_row_replacement_does_not_blur_visible_index ();
   test_focused_row_scroll_keeps_row_visible_without_centering ()
 ;;

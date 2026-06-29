@@ -10,7 +10,8 @@
   "Platform-independent OCaml node tree, event bridge, and component runtime for native backends.")
  (depends
   (ocaml (>= 5.1.0))
-  dune))
+  dune
+  melange))
 
 (package
  (name bonsai_android)

@@ -10,6 +10,18 @@
 (rule
  (alias runtest)
  (deps
+  ../scripts/check-ci-workflow.sh
+  (source_tree ../.github)
+  ../dune-project
+  ../bonsai_native.opam)
+ (action
+  (chdir
+   %{workspace_root}
+   (run /bin/bash scripts/check-ci-workflow.sh))))
+
+(rule
+ (alias runtest)
+ (deps
   (source_tree ..))
  (action
   (chdir
