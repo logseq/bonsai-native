@@ -96,6 +96,16 @@ external run_application
 
 external run_on_main : (unit -> unit) -> unit = "bonsai_apple_swiftui_run_on_main"
 
+external run_on_main_when_scroll_idle
+  :  (unit -> unit)
+  -> unit
+  = "bonsai_apple_swiftui_run_on_main_when_scroll_idle"
+
+external run_on_main_after_rendered_frame
+  :  (unit -> unit)
+  -> unit
+  = "bonsai_apple_swiftui_run_on_main_after_rendered_frame"
+
 external set_native_clipboard_text
   :  string
   -> unit
@@ -348,6 +358,12 @@ external set_native_lazy_list_rows
   -> int array
   -> unit
   = "bonsai_apple_swiftui_set_lazy_list_rows"
+
+external set_native_lazy_list_rows_published_event
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_lazy_list_rows_published_event"
 
 external clear_native_lazy_list_rows
   :  native
@@ -1042,6 +1058,10 @@ module Backend = struct
     ; mutable sidebar_event_ids : int list
     ; mutable sidebar_search_event_id : int option
     ; mutable lazy_list_provider_id : int option
+    ; mutable lazy_list_native_length : int option
+    ; mutable lazy_list_native_version : int option
+    ; mutable lazy_list_native_stale_indices : int list
+    ; mutable lazy_list_rows_published_event_id : int option
     ; mutable controller : controller option
     }
 
@@ -1084,6 +1104,10 @@ module Backend = struct
     ; sidebar_event_ids = []
     ; sidebar_search_event_id = None
     ; lazy_list_provider_id = None
+    ; lazy_list_native_length = None
+    ; lazy_list_native_version = None
+    ; lazy_list_native_stale_indices = []
+    ; lazy_list_rows_published_event_id = None
     ; controller = None
     }
   ;;
@@ -1091,6 +1115,11 @@ module Backend = struct
   let clear_lazy_list_provider view =
     Option.iter view.lazy_list_provider_id ~f:(Hashtbl.remove lazy_list_providers);
     view.lazy_list_provider_id <- None;
+    view.lazy_list_native_length <- None;
+    view.lazy_list_native_version <- None;
+    view.lazy_list_native_stale_indices <- [];
+    Option.iter view.lazy_list_rows_published_event_id ~f:(Hashtbl.remove event_handlers);
+    view.lazy_list_rows_published_event_id <- None;
     clear_native_lazy_list_rows view.native
   ;;
 
@@ -1292,8 +1321,15 @@ module Backend = struct
       (Array.of_list (List.map children ~f:(fun child -> child.native)))
   ;;
 
+  let should_publish_lazy_list_rows view ~length ~version ~stale_indices =
+    not
+      (Option.equal Int.equal view.lazy_list_native_length (Some length)
+       && Option.equal Int.equal view.lazy_list_native_version (Some version)
+       && List.equal Int.equal view.lazy_list_native_stale_indices stale_indices)
+  ;;
+
   let set_lazy_list_rows view ~length ~version ~stale_indices ~key_row ~render_row
-      ~release_row =
+      ~release_row ~on_rows_published =
     let provider_id =
       match view.lazy_list_provider_id with
       | Some provider_id -> provider_id
@@ -1304,8 +1340,25 @@ module Backend = struct
         provider_id
     in
     Hashtbl.set lazy_list_providers ~key:provider_id ~data:{ key_row; render_row; release_row };
-    set_native_lazy_list_rows view.native provider_id length version
-      (Array.of_list stale_indices)
+    Option.iter view.lazy_list_rows_published_event_id ~f:(Hashtbl.remove event_handlers);
+    let rows_published_event_id =
+      match on_rows_published with
+      | None ->
+        view.lazy_list_rows_published_event_id <- None;
+        no_event
+      | Some on_rows_published ->
+        let event_id = install_handler None (Click on_rows_published) in
+        view.lazy_list_rows_published_event_id <- Some event_id;
+        event_id
+    in
+    if should_publish_lazy_list_rows view ~length ~version ~stale_indices
+    then (
+      view.lazy_list_native_length <- Some length;
+      view.lazy_list_native_version <- Some version;
+      view.lazy_list_native_stale_indices <- stale_indices;
+      set_native_lazy_list_rows_published_event view.native rows_published_event_id;
+      set_native_lazy_list_rows view.native provider_id length version
+        (Array.of_list stale_indices))
   ;;
 
   let set_list_behavior

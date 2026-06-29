@@ -28,6 +28,10 @@ val run_application
 
 val run_on_main : (unit -> unit) -> unit
 
+val run_on_main_when_scroll_idle : (unit -> unit) -> unit
+
+val run_on_main_after_rendered_frame : (unit -> unit) -> unit
+
 val controller : Backend.view -> controller
 val update_controller : controller -> Backend.view -> unit
 val release_controller : controller -> unit

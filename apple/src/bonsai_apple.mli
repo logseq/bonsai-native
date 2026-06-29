@@ -317,6 +317,7 @@ val lazy_list
   -> ?on_delete:(int -> unit Action.t)
   -> ?on_move:(from_index:int -> to_index:int -> unit Action.t)
   -> ?on_focused_row_disappear:unit Action.t
+  -> ?on_rows_published:unit Action.t
   -> ?edit_mode:bool
   -> ?focused_row_key:string
   -> ?focused_row_index:int
@@ -866,6 +867,7 @@ module Renderer : sig
       -> key_row:(int -> string)
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
+      -> on_rows_published:(unit -> unit) option
       -> unit
 
     val set_tabs

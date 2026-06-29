@@ -29,8 +29,15 @@ typedef bool (*bonsai_native_launch_callback)(
   void *delegate,
   void *application,
   void *launch_options);
+typedef void (*bonsai_native_main_callback)(void *context);
 
 extern void bonsai_native_swiftui_run_application(bonsai_native_launch_callback callback);
+extern void bonsai_native_swiftui_run_on_main_when_scroll_idle(
+  void *context,
+  bonsai_native_main_callback callback);
+extern void bonsai_native_swiftui_run_on_main_after_rendered_frame(
+  void *context,
+  bonsai_native_main_callback callback);
 extern void bonsai_native_swiftui_set_clipboard_text(const char *text);
 extern void bonsai_native_swiftui_set_clipboard_image_file(const char *path);
 extern void bonsai_native_swiftui_toggle_audio_file_playback(const char *path);
@@ -81,6 +88,9 @@ extern void bonsai_native_swiftui_set_lazy_list_rows(
   int32_t version,
   int32_t *invalidated_indices,
   int32_t invalidated_index_count);
+extern void bonsai_native_swiftui_set_lazy_list_rows_published_event(
+  void *node,
+  int32_t event_id);
 extern void bonsai_native_swiftui_clear_lazy_list_rows(void *node);
 extern void bonsai_native_swiftui_register_lazy_list_callbacks(
   bonsai_native_lazy_row_key_callback key_callback,
@@ -457,6 +467,36 @@ CAMLprim value bonsai_apple_swiftui_run_on_main(value callback)
   main_callback->callback = callback;
   caml_register_generational_global_root(&main_callback->callback);
   dispatch_async_f(dispatch_get_main_queue(), main_callback, run_ocaml_callback_on_main);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_run_on_main_when_scroll_idle(value callback)
+{
+  CAMLparam1(callback);
+  struct bonsai_main_callback *main_callback = malloc(sizeof(struct bonsai_main_callback));
+  if (main_callback == NULL) {
+    caml_failwith("Unable to allocate scroll-idle main-thread callback");
+  }
+  main_callback->callback = callback;
+  caml_register_generational_global_root(&main_callback->callback);
+  bonsai_native_swiftui_run_on_main_when_scroll_idle(
+    main_callback,
+    run_ocaml_callback_on_main);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_run_on_main_after_rendered_frame(value callback)
+{
+  CAMLparam1(callback);
+  struct bonsai_main_callback *main_callback = malloc(sizeof(struct bonsai_main_callback));
+  if (main_callback == NULL) {
+    caml_failwith("Unable to allocate rendered-frame main-thread callback");
+  }
+  main_callback->callback = callback;
+  caml_register_generational_global_root(&main_callback->callback);
+  bonsai_native_swiftui_run_on_main_after_rendered_frame(
+    main_callback,
+    run_ocaml_callback_on_main);
   CAMLreturn(Val_unit);
 }
 
@@ -998,6 +1038,17 @@ CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows(
     invalidated_index_values,
     (int32_t)invalidated_index_count);
   free(invalidated_index_values);
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows_published_event(
+  value node,
+  value event_id)
+{
+  CAMLparam2(node, event_id);
+  bonsai_native_swiftui_set_lazy_list_rows_published_event(
+    pointer_val(node),
+    (int32_t)Int_val(event_id));
   CAMLreturn(Val_unit);
 }
 

@@ -5,10 +5,38 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 public typealias BonsaiNativeEventCallback = @convention(c) (Int32, UnsafePointer<CChar>?) -> Void
+public typealias BonsaiNativeLazyRowRenderCallback =
+  @convention(c) (Int32, Int32) -> UnsafeMutableRawPointer?
+public typealias BonsaiNativeLazyRowKeyCallback =
+  @convention(c) (Int32, Int32) -> UnsafeMutablePointer<CChar>?
+public typealias BonsaiNativeLazyRowReleaseCallback =
+  @convention(c) (Int32, Int32) -> Void
 public typealias BonsaiNativeHTTPCallback =
   @convention(c) (UnsafeMutableRawPointer?, Bool, UnsafePointer<CChar>?) -> Void
 public typealias BonsaiNativeLaunchCallback =
   @convention(c) (UnsafeMutableRawPointer?, UnsafeMutableRawPointer?, UnsafeMutableRawPointer?) -> Bool
+public typealias BonsaiNativeMainCallback =
+  @convention(c) (UnsafeMutableRawPointer?) -> Void
+
+@_cdecl("bonsai_native_swiftui_run_on_main_when_scroll_idle")
+public func bonsai_native_swiftui_run_on_main_when_scroll_idle(
+  _ context: UnsafeMutableRawPointer?,
+  _ callback: BonsaiNativeMainCallback?
+) {
+  DispatchQueue.main.async {
+    callback?(context)
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_run_on_main_after_rendered_frame")
+public func bonsai_native_swiftui_run_on_main_after_rendered_frame(
+  _ context: UnsafeMutableRawPointer?,
+  _ callback: BonsaiNativeMainCallback?
+) {
+  DispatchQueue.main.async {
+    callback?(context)
+  }
+}
 
 @_cdecl("bonsai_native_swiftui_set_clipboard_text")
 public func bonsai_native_swiftui_set_clipboard_text(_ textPointer: UnsafePointer<CChar>?) {
@@ -407,6 +435,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var listMoveEventId: Int32?
   @Published var isListEditMode = false
   @Published var listFocusedRowIndex: Int?
+  @Published var listFocusedRowDisappearEventId: Int32?
   @Published var exportFilename = ""
   @Published var exportContentType = ""
   @Published var exportContent = ""
@@ -2034,6 +2063,44 @@ public func bonsai_native_swiftui_set_children(
   }
 }
 
+@_cdecl("bonsai_native_swiftui_set_lazy_list_rows")
+public func bonsai_native_swiftui_set_lazy_list_rows(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ providerId: Int32,
+  _ count: Int32,
+  _ version: Int32,
+  _ invalidatedIndexPointer: UnsafePointer<Int32>?,
+  _ invalidatedIndexCount: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  if count <= 0 && !node.children.isEmpty {
+    node.children = []
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_clear_lazy_list_rows")
+public func bonsai_native_swiftui_clear_lazy_list_rows(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  if !node.children.isEmpty {
+    node.children = []
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_set_lazy_list_rows_published_event")
+public func bonsai_native_swiftui_set_lazy_list_rows_published_event(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ eventId: Int32
+) {
+}
+
+@_cdecl("bonsai_native_swiftui_register_lazy_list_callbacks")
+public func bonsai_native_swiftui_register_lazy_list_callbacks(
+  _ keyCallback: BonsaiNativeLazyRowKeyCallback?,
+  _ renderCallback: BonsaiNativeLazyRowRenderCallback?,
+  _ releaseCallback: BonsaiNativeLazyRowReleaseCallback?
+) {
+}
+
 @_cdecl("bonsai_native_swiftui_set_list_behavior")
 public func bonsai_native_swiftui_set_list_behavior(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2069,6 +2136,18 @@ public func bonsai_native_swiftui_set_list_focused_row_index(
   let nextFocusedRowIndex = focusedRowIndex < 0 ? nil : Int(focusedRowIndex)
   if node.listFocusedRowIndex != nextFocusedRowIndex {
     node.listFocusedRowIndex = nextFocusedRowIndex
+  }
+}
+
+@_cdecl("bonsai_native_swiftui_set_list_focused_row_disappear_event")
+public func bonsai_native_swiftui_set_list_focused_row_disappear_event(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  let nextEventId = eventId < 0 ? nil : eventId
+  if node.listFocusedRowDisappearEventId != nextEventId {
+    node.listFocusedRowDisappearEventId = nextEventId
   }
 }
 
