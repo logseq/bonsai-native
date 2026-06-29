@@ -51,7 +51,12 @@ type frame =
   { width : float option
   ; height : float option
   ; max_width : float option
+  ; alignment : frame_alignment option
   }
+
+and frame_alignment =
+  | Center
+  | Leading
 
 type row_action_style =
   | Default
@@ -162,6 +167,10 @@ type text_field_clear_button =
 type axis =
   | Vertical
   | Horizontal
+
+type horizontal_stack_alignment =
+  | Stack_center
+  | Stack_top
 
 type button_style =
   | Bordered
@@ -291,7 +300,11 @@ val text_editor
 val progress_view : value:float -> node
 val congrats_effect : unit -> node
 val vstack : ?spacing:float -> node list -> node
-val hstack : ?spacing:float -> node list -> node
+val hstack
+  :  ?spacing:float
+  -> ?alignment:horizontal_stack_alignment
+  -> node list
+  -> node
 val zstack : node list -> node
 val grid : ?columns:int -> ?spacing:float -> node list -> node
 val spacer : unit -> node
@@ -541,7 +554,13 @@ val liquid_glass_panel
   -> node
 
 val context_menu : row_action list -> node -> node
-val frame : ?width:float -> ?height:float -> ?max_width:float -> node -> node
+val frame
+  :  ?width:float
+  -> ?height:float
+  -> ?max_width:float
+  -> ?alignment:frame_alignment
+  -> node
+  -> node
 val navigation_title : string -> node -> node
 
 val searchable
@@ -845,6 +864,7 @@ module Renderer : sig
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
+    val set_horizontal_stack_alignment : view -> horizontal_stack_alignment -> unit
     val set_grid : view -> columns:int -> spacing:float -> unit
     val set_children : view -> keyed:string option list -> view list -> unit
 

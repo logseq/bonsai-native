@@ -331,6 +331,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var hideListRowSeparator = false
   @Published var placeholder: String?
   @Published var spacing: CGFloat?
+  @Published var horizontalStackAlignment = VerticalAlignment.center
   @Published var children: [BonsaiNativeNode] = []
   @Published var clickEventId: Int32?
   @Published var navigationActivateEventId: Int32?
@@ -382,6 +383,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var frameWidth: CGFloat?
   @Published var frameHeight: CGFloat?
   @Published var frameMaxWidth: CGFloat?
+  @Published var frameAlignment = Alignment.topLeading
   @Published var tabs: [BonsaiNativeTab] = []
   @Published var selectedTabId = ""
   @Published var tabSelectEventId: Int32?
@@ -756,7 +758,7 @@ private struct BonsaiNativeNodeView: View {
     case .verticalStack:
       VStack(alignment: .leading, spacing: node.spacing) { childViews }
     case .horizontalStack:
-      HStack(alignment: .center, spacing: node.spacing) { childViews }
+      HStack(alignment: node.horizontalStackAlignment, spacing: node.spacing) { childViews }
     case .zStack:
       ZStack { childViews }
     case .grid:
@@ -1420,9 +1422,9 @@ private struct BonsaiNativeNodeView: View {
                     .frame(
                       width: node.frameWidth,
                       height: node.frameHeight,
-                      alignment: .topLeading
+                      alignment: node.frameAlignment
                     )
-                    .frame(maxWidth: node.frameMaxWidth, alignment: .topLeading)
+                    .frame(maxWidth: node.frameMaxWidth, alignment: node.frameAlignment)
                   )
                 )
               )
@@ -2039,6 +2041,11 @@ public func bonsai_native_swiftui_set_spacing(_ pointer: UnsafeMutableRawPointer
   nativeNode(from: pointer)?.spacing = spacing < 0 ? nil : CGFloat(spacing)
 }
 
+@_cdecl("bonsai_native_swiftui_set_horizontal_stack_alignment")
+public func bonsai_native_swiftui_set_horizontal_stack_alignment(_ pointer: UnsafeMutableRawPointer?, _ alignment: Int32) {
+  nativeNode(from: pointer)?.horizontalStackAlignment = alignment == 1 ? .top : .center
+}
+
 @_cdecl("bonsai_native_swiftui_set_grid")
 public func bonsai_native_swiftui_set_grid(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2567,12 +2574,14 @@ public func bonsai_native_swiftui_set_frame(
   _ pointer: UnsafeMutableRawPointer?,
   _ width: Double,
   _ height: Double,
-  _ maxWidth: Double
+  _ maxWidth: Double,
+  _ alignment: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   node.frameWidth = width < 0 ? nil : CGFloat(width)
   node.frameHeight = height < 0 ? nil : CGFloat(height)
   node.frameMaxWidth = maxWidth < 0 ? nil : CGFloat(maxWidth)
+  node.frameAlignment = alignment == 1 ? .leading : .topLeading
 }
 
 @_cdecl("bonsai_native_swiftui_set_regular_material_panel")

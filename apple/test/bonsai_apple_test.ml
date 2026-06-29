@@ -2345,6 +2345,37 @@ let test_frame_renders_max_width () =
     "frame should expose max width for SwiftUI maxWidth layout"
 ;;
 
+let test_swiftui_frame_supports_leading_alignment () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"@Published var frameAlignment")
+    "frame modifiers should carry explicit alignment to SwiftUI";
+  require
+    (contains source ~substring:"alignment: node.frameAlignment.swiftUIAlignment")
+    "SwiftUI frame modifiers should use the published alignment instead of default \
+     center alignment";
+  require
+    (contains source ~substring:"node.frameAlignment = BonsaiNativeFrameAlignment(rawValue:")
+    "native frame setter should publish the OCaml alignment value"
+;;
+
+let test_swiftui_horizontal_stack_supports_top_alignment () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"@Published var horizontalStackAlignment")
+    "horizontal stacks should carry explicit vertical alignment to SwiftUI";
+  require
+    (contains source ~substring:"HStack(alignment: node.horizontalStackAlignment.swiftUIVerticalAlignment")
+    "SwiftUI horizontal stacks should use the published vertical alignment";
+  require
+    (contains source ~substring:"bonsai_native_swiftui_set_horizontal_stack_alignment")
+    "native stack alignment setter should publish the OCaml alignment value"
+  ;
+  require
+    (contains source ~substring:"BonsaiNativeHorizontalStackAlignment(rawValue: alignment)")
+    "native stack alignment setter should decode the OCaml alignment value"
+;;
+
 let test_file_image_can_render_swift_image_file_style () =
   Backend.reset ();
   let component _graph =
@@ -2836,6 +2867,8 @@ let () =
   test_pill_text_field_uses_liquid_glass_chrome ();
   test_plain_text_field_renders_plain_style ();
   test_frame_renders_max_width ();
+  test_swiftui_frame_supports_leading_alignment ();
+  test_swiftui_horizontal_stack_supports_top_alignment ();
   test_file_image_can_render_swift_image_file_style ();
   test_swiftui_image_view_supports_remote_urls ();
   test_swiftui_image_view_reserves_requested_height_before_load ();

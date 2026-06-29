@@ -294,7 +294,12 @@ type frame =
   { width : float option
   ; height : float option
   ; max_width : float option
+  ; alignment : frame_alignment option
   }
+
+and frame_alignment =
+  | Center
+  | Leading
 
 type row_action_style =
   | Default
@@ -512,6 +517,10 @@ type axis =
   | Vertical
   | Horizontal
 
+type horizontal_stack_alignment =
+  | Stack_center
+  | Stack_top
+
 type backend_kind =
   | Label
   | Button
@@ -598,6 +607,7 @@ type node =
   | Stack_node of
       { axis : axis
       ; spacing : float option
+      ; horizontal_alignment : horizontal_stack_alignment
       ; children : node list
       }
   | Z_stack_node of node list
@@ -1076,8 +1086,14 @@ let text_editor ?placeholder ~text ~on_change () =
 
 let progress_view ~value = Progress_view_node { value }
 let congrats_effect () = Congrats_effect_node
-let vstack ?spacing children = Stack_node { axis = Vertical; spacing; children }
-let hstack ?spacing children = Stack_node { axis = Horizontal; spacing; children }
+let vstack ?spacing children =
+  Stack_node
+    { axis = Vertical; spacing; horizontal_alignment = Stack_center; children }
+;;
+
+let hstack ?spacing ?(alignment = Stack_center) children =
+  Stack_node { axis = Horizontal; spacing; horizontal_alignment = alignment; children }
+;;
 let zstack children = Z_stack_node children
 let grid ?(columns = 2) ?(spacing = 10.) children = Grid_node { columns; spacing; children }
 let spacer () = Spacer_node
@@ -1539,8 +1555,8 @@ let liquid_glass_panel
 ;;
 
 let context_menu actions node = Modified_node (Context_menu actions, node)
-let frame ?width ?height ?max_width node =
-  Modified_node (Frame { width; height; max_width }, node)
+let frame ?width ?height ?max_width ?alignment node =
+  Modified_node (Frame { width; height; max_width; alignment }, node)
 ;;
 
 let navigation_title title node = Modified_node (Navigation_title title, node)
@@ -1742,6 +1758,7 @@ module Renderer = struct
     val set_toggle : view -> is_on:bool -> on_change:(bool -> unit) -> unit
     val set_progress : view -> value:float -> unit
     val set_spacing : view -> float option -> unit
+    val set_horizontal_stack_alignment : view -> horizontal_stack_alignment -> unit
     val set_grid : view -> columns:int -> spacing:float -> unit
     val set_children : view -> keyed:string option list -> view list -> unit
 
@@ -1987,14 +2004,26 @@ module Renderer = struct
       let float value = string_of_float value in
       let int = string_of_int in
       let list values = "[" ^ String.concat ~sep:"," values ^ "]" in
-      let frame_value ({ width; height; max_width } : frame) =
+      let frame_alignment_name = function
+        | Center -> "center"
+        | Leading -> "leading"
+      in
+      let horizontal_stack_alignment_name = function
+        | Stack_center -> "center"
+        | Stack_top -> "top"
+      in
+      let frame_value ({ width; height; max_width; alignment } : frame) =
         opt (Option.map width ~f:float)
         ^ "x"
         ^ opt (Option.map height ~f:float)
         ^
-        match max_width with
-        | None -> ""
-        | Some max_width -> ":" ^ float max_width
+        (match max_width with
+         | None -> ""
+         | Some max_width -> ":" ^ float max_width)
+        ^
+        (match alignment with
+         | None -> ""
+         | Some alignment -> ":" ^ frame_alignment_name alignment)
       in
       let text_attrs { style; weight; color } =
         string_of_int (Obj.magic style)
@@ -2177,11 +2206,13 @@ module Renderer = struct
         | Text_editor_node { text; placeholder; on_change = _ } ->
           "text-editor:" ^ text ^ ":" ^ opt placeholder
         | Progress_view_node { value } -> "progress-view:" ^ float value
-        | Stack_node { axis; spacing; children } ->
+        | Stack_node { axis; spacing; horizontal_alignment; children } ->
           "stack:"
           ^ string_of_int (Obj.magic axis)
           ^ ":"
           ^ opt (Option.map spacing ~f:float)
+          ^ ":"
+          ^ horizontal_stack_alignment_name horizontal_alignment
           ^ ":"
           ^ list (List.map children ~f:fingerprint)
         | Grid_node { columns; spacing; children } ->
@@ -2642,8 +2673,9 @@ module Renderer = struct
          Backend.set_on_change t.view None;
          Backend.set_enabled t.view true;
          replace_children []
-       | Stack_node { spacing; children; _ } ->
+       | Stack_node { spacing; horizontal_alignment; children; _ } ->
          Backend.set_spacing t.view spacing;
+         Backend.set_horizontal_stack_alignment t.view horizontal_alignment;
          Backend.set_on_click t.view None;
          Backend.set_on_change t.view None;
          reconcile_positional t children
@@ -3469,6 +3501,7 @@ module For_testing = struct
       ; mutable stepper_range : (int * int) option
       ; mutable stepper_step : int option
       ; mutable on_stepper_change : (int -> unit) option
+      ; mutable horizontal_stack_alignment : horizontal_stack_alignment
       ; mutable selected_date : string option
       ; mutable on_select_date : (string -> unit) option
       ; mutable selected_color : string option
@@ -3592,6 +3625,7 @@ module For_testing = struct
       ; stepper_range = None
       ; stepper_step = None
       ; on_stepper_change = None
+      ; horizontal_stack_alignment = Stack_center
       ; selected_date = None
       ; on_select_date = None
       ; selected_color = None
@@ -3745,6 +3779,11 @@ module For_testing = struct
     ;;
 
     let set_spacing _view _spacing = mutate ()
+
+    let set_horizontal_stack_alignment view alignment =
+      mutate ();
+      view.horizontal_stack_alignment <- alignment
+    ;;
 
     let set_grid view ~columns ~spacing =
       mutate ();
@@ -4034,14 +4073,18 @@ module For_testing = struct
            | _ -> None)
     ;;
 
-    let kind_name = function
+    let kind_name view =
+      match view.kind with
       | Label -> "label"
       | Button -> "button"
       | Text_field -> "text-field"
       | Text_editor -> "text-editor"
       | Toggle -> "toggle"
       | Stack Vertical -> "stack(vertical)"
-      | Stack Horizontal -> "stack(horizontal)"
+      | Stack Horizontal -> (
+          match view.horizontal_stack_alignment with
+          | Stack_top -> "stack(horizontal-top)"
+          | Stack_center -> "stack(horizontal)")
       | Z_stack -> "zstack"
       | Grid -> "grid"
       | Spacer -> "spacer"
@@ -4077,7 +4120,12 @@ module For_testing = struct
       | Custom_view kind -> "custom(" ^ kind ^ ")"
     ;;
 
-    let rendered_frame_value ({ width; height; max_width } : frame) =
+    let rendered_frame_alignment_name = function
+      | Center -> "center"
+      | Leading -> "leading"
+    ;;
+
+    let rendered_frame_value ({ width; height; max_width; alignment } : frame) =
       let value = function
         | None -> "_"
         | Some value -> string_of_float value
@@ -4086,9 +4134,13 @@ module For_testing = struct
       ^ "x"
       ^ value height
       ^
-      match max_width with
-      | None -> ""
-      | Some max_width -> ":" ^ string_of_float max_width
+      (match max_width with
+       | None -> ""
+       | Some max_width -> ":" ^ string_of_float max_width)
+      ^
+      (match alignment with
+       | None -> ""
+       | Some alignment -> ":" ^ rendered_frame_alignment_name alignment)
     ;;
 
     let modifier_name = function
@@ -4841,7 +4893,7 @@ module For_testing = struct
           | _ -> [])
       in
       ((spaces
-        ^ kind_name view.kind
+        ^ kind_name view
         ^ "#"
         ^ Int.to_string view.id
         ^ key

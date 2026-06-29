@@ -337,6 +337,12 @@ external set_native_spacing
   -> unit
   = "bonsai_apple_swiftui_set_spacing"
 
+external set_native_horizontal_stack_alignment
+  :  native
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_horizontal_stack_alignment"
+
 external set_native_grid
   :  native
   -> int
@@ -803,6 +809,7 @@ external set_native_frame
   -> float
   -> float
   -> float
+  -> int
   -> unit
   = "bonsai_apple_swiftui_set_frame"
 
@@ -1315,6 +1322,16 @@ module Backend = struct
 
   let set_progress view ~value = set_native_progress view.native value
   let set_spacing view spacing = set_native_spacing view.native spacing
+
+  let set_horizontal_stack_alignment view alignment =
+    let alignment_id =
+      match alignment with
+      | Apple.Stack_center -> 0
+      | Apple.Stack_top -> 1
+    in
+    set_native_horizontal_stack_alignment view.native alignment_id
+  ;;
+
   let set_grid view ~columns ~spacing = set_native_grid view.native columns spacing
 
   let set_children view ~keyed:_ children =
@@ -2363,13 +2380,19 @@ module Backend = struct
       | Apple.Rendered_context_menu actions ->
         saw_context_menu := true;
         install_context_menu view ~schedule_event ~actions
-      | Apple.Rendered_frame { width; height; max_width } ->
+      | Apple.Rendered_frame { width; height; max_width; alignment } ->
         saw_frame := true;
+        let alignment_id =
+          match alignment with
+          | None | Some Apple.Center -> 0
+          | Some Apple.Leading -> 1
+        in
         set_native_frame
           view.native
           (Option.value width ~default:(-1.))
           (Option.value height ~default:(-1.))
           (Option.value max_width ~default:(-1.))
+          alignment_id
       | Apple.Rendered_navigation_title title ->
         saw_navigation_title := true;
         set_native_navigation_title view.native (Some title)
@@ -2408,7 +2431,7 @@ module Backend = struct
     if not !saw_liquid_glass_panel
     then set_native_liquid_glass_panel view.native (-1.) false (-1) 0.;
     if not !saw_context_menu then install_context_menu view ~schedule_event ~actions:[];
-    if not !saw_frame then set_native_frame view.native (-1.) (-1.) (-1.);
+    if not !saw_frame then set_native_frame view.native (-1.) (-1.) (-1.) 0;
     if not !saw_navigation_title then set_native_navigation_title view.native None;
     if not !saw_tap_action then set_tap_action view None;
     if not !saw_on_appear then set_on_appear view None;

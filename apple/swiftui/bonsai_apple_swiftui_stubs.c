@@ -79,6 +79,9 @@ extern void bonsai_native_swiftui_set_text_field_delete_backward_at_start(
 extern void bonsai_native_swiftui_set_toggle(void *node, bool is_on, int32_t event_id);
 extern void bonsai_native_swiftui_set_progress(void *node, double value);
 extern void bonsai_native_swiftui_set_spacing(void *node, double spacing);
+extern void bonsai_native_swiftui_set_horizontal_stack_alignment(
+  void *node,
+  int32_t alignment);
 extern void bonsai_native_swiftui_set_grid(void *node, int32_t columns, double spacing);
 extern void bonsai_native_swiftui_set_children(void *node, void **children, int32_t count);
 extern void bonsai_native_swiftui_set_lazy_list_rows(
@@ -274,7 +277,8 @@ extern void bonsai_native_swiftui_set_frame(
   void *node,
   double width,
   double height,
-  double max_width);
+  double max_width,
+  int32_t alignment);
 extern void bonsai_native_swiftui_clear_tabs(
   void *node,
   const char *selected,
@@ -980,6 +984,17 @@ CAMLprim value bonsai_apple_swiftui_set_spacing(value node, value spacing)
   bonsai_native_swiftui_set_spacing(
     pointer_val(node),
     Is_none(spacing) ? -1.0 : Double_val(Some_val(spacing)));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_set_horizontal_stack_alignment(
+  value node,
+  value alignment)
+{
+  CAMLparam2(node, alignment);
+  bonsai_native_swiftui_set_horizontal_stack_alignment(
+    pointer_val(node),
+    Int_val(alignment));
   CAMLreturn(Val_unit);
 }
 
@@ -1720,14 +1735,16 @@ CAMLprim value bonsai_apple_swiftui_set_frame(
   value node,
   value width,
   value height,
-  value max_width)
+  value max_width,
+  value alignment)
 {
-  CAMLparam4(node, width, height, max_width);
+  CAMLparam5(node, width, height, max_width, alignment);
   bonsai_native_swiftui_set_frame(
     pointer_val(node),
     Double_val(width),
     Double_val(height),
-    Double_val(max_width));
+    Double_val(max_width),
+    Int_val(alignment));
   CAMLreturn(Val_unit);
 }
 
