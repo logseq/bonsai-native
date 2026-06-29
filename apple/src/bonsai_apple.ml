@@ -813,6 +813,7 @@ and modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Toolbar of toolbar_item list
+  | Keyboard_toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
   | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
@@ -873,6 +874,7 @@ type 'view rendered_modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Rendered_toolbar of toolbar_item list
+  | Rendered_keyboard_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
@@ -1590,6 +1592,7 @@ let toolbar_item
 ;;
 
 let toolbar items node = Modified_node (Toolbar items, node)
+let keyboard_toolbar items node = Modified_node (Keyboard_toolbar items, node)
 let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
 let on_appear ~on_appear node = Modified_node (On_appear { on_appear }, node)
 let keyboard_dismiss_controls node = Modified_node (Keyboard_dismiss_controls, node)
@@ -2101,6 +2104,8 @@ module Renderer = struct
           ->
           "searchable:" ^ text ^ ":" ^ opt (Option.map is_presented ~f:bool) ^ ":" ^ opt prompt
         | Toolbar items -> "toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
+        | Keyboard_toolbar items ->
+          "keyboard-toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
         | Tap_action _ -> "tap-action"
         | On_appear _ -> "on-appear"
         | Keyboard_dismiss_controls -> "keyboard-dismiss-controls"
@@ -3323,6 +3328,7 @@ module Renderer = struct
           | Searchable { text; is_presented; prompt; on_change; on_presented_change } ->
             Rendered_searchable { text; is_presented; prompt; on_change; on_presented_change }
           | Toolbar items -> Rendered_toolbar items
+          | Keyboard_toolbar items -> Rendered_keyboard_toolbar items
           | Tap_action { on_click } -> Rendered_tap_action { on_click }
           | On_appear { on_appear } -> Rendered_on_appear { on_appear }
           | Keyboard_dismiss_controls -> Rendered_keyboard_dismiss_controls
@@ -4180,6 +4186,7 @@ module For_testing = struct
       | Rendered_navigation_title _ -> "navigation-title"
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
+      | Rendered_keyboard_toolbar _ -> "keyboard-toolbar"
       | Rendered_tap_action _ -> "tap-action"
       | Rendered_on_appear _ -> "on-appear"
       | Rendered_keyboard_dismiss_controls -> "keyboard-dismiss-controls"
@@ -4500,6 +4507,49 @@ module For_testing = struct
         | None -> ""
         | Some panel -> panel
       in
+      let toolbar_items_text items =
+        items
+        |> List.map ~f:(fun (item : toolbar_item) ->
+          let system_image =
+            match item.system_image with
+            | None -> ""
+            | Some system_image -> ":image=" ^ system_image
+          in
+          let menu =
+            match item.menu_actions with
+            | [] -> ""
+            | menu_actions ->
+              let action_text =
+                menu_actions
+                |> List.concat_map ~f:(fun (action : toolbar_menu_action) ->
+                  let system_image = Option.value action.system_image ~default:"none" in
+                  let style =
+                    match action.style with
+                    | Default -> "default"
+                    | Destructive -> "destructive"
+                  in
+                  let action_text = action.title ^ ":" ^ system_image ^ ":" ^ style in
+                  if action.starts_section then [ "divider"; action_text ] else [ action_text ])
+                |> String.concat ~sep:","
+              in
+              ":menu=[" ^ action_text ^ "]"
+          in
+          let share_url =
+            match item.share_url with
+            | None -> ""
+            | Some url -> ":share-url=" ^ url
+          in
+          sprintf
+            "%s:%s:%s%s%s%s%s"
+            item.id
+            item.title
+            (if item.is_enabled then "enabled" else "disabled")
+            system_image
+            (if item.is_title_visible then "" else ":title-hidden")
+            share_url
+            menu)
+        |> String.concat ~sep:","
+      in
       let toolbar =
         match
           List.find_map view.modifiers ~f:(function
@@ -4508,56 +4558,18 @@ module For_testing = struct
         with
         | None -> ""
         | Some items ->
-          let item_text =
-            items
-            |> List.map ~f:(fun (item : toolbar_item) ->
-              let system_image =
-                match item.system_image with
-                | None -> ""
-                | Some system_image -> ":image=" ^ system_image
-              in
-              let menu =
-                match item.menu_actions with
-                | [] -> ""
-                | menu_actions ->
-                  let action_text =
-                    menu_actions
-                    |> List.concat_map ~f:(fun (action : toolbar_menu_action) ->
-                      let system_image =
-                        Option.value action.system_image ~default:"none"
-                      in
-                      let style =
-                        match action.style with
-                        | Default -> "default"
-                        | Destructive -> "destructive"
-                      in
-                      let action_text = action.title ^ ":" ^ system_image ^ ":" ^ style in
-                      if action.starts_section
-                      then [ "divider"; action_text ]
-                      else [ action_text ])
-                    |> String.concat ~sep:","
-                  in
-                  ":menu=[" ^ action_text ^ "]"
-              in
-              let share_url =
-                match item.share_url with
-                | None -> ""
-                | Some url -> ":share-url=" ^ url
-              in
-              sprintf
-                "%s:%s:%s%s%s%s%s"
-                item.id
-                item.title
-                (if item.is_enabled then "enabled" else "disabled")
-                system_image
-                (if item.is_title_visible then "" else ":title-hidden")
-                share_url
-                menu)
-            |> String.concat ~sep:","
-          in
           " toolbar=["
-          ^ item_text
+          ^ toolbar_items_text items
           ^ "] toolbar-presentation=system-toolbaritem toolbaritem-chrome=system-default"
+      in
+      let keyboard_toolbar =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_keyboard_toolbar items -> Some items
+            | _ -> None)
+        with
+        | None -> ""
+        | Some items -> " keyboard-toolbar=[" ^ toolbar_items_text items ^ "]"
       in
       let context_menu =
         match
@@ -4978,6 +4990,7 @@ module For_testing = struct
         ^ modifiers
         ^ sheet_detents
         ^ toolbar
+        ^ keyboard_toolbar
         ^ navigation_title
         ^ alert
         ^ confirmation_dialog
@@ -5441,6 +5454,21 @@ module For_testing = struct
         then schedule_event_exn view item.on_click
         else failwithf "Toolbar item %S is disabled" id ()
       | None -> failwithf "View has no toolbar item with id %S" id ()
+    ;;
+
+    let click_keyboard_toolbar_item_exn view ~path ~id =
+      let view = find_visible_exn view ~path in
+      match
+        List.find_map view.modifiers ~f:(function
+          | Rendered_keyboard_toolbar items ->
+            List.find items ~f:(fun item -> String.equal item.id id)
+          | _ -> None)
+      with
+      | Some item ->
+        if item.is_enabled
+        then schedule_event_exn view item.on_click
+        else failwithf "Keyboard toolbar item %S is disabled" id ()
+      | None -> failwithf "View has no keyboard toolbar item with id %S" id ()
     ;;
 
     let click_sheet_toolbar_item_exn view ~path ~id =

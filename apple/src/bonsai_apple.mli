@@ -585,6 +585,7 @@ val toolbar_item
   -> toolbar_item
 
 val toolbar : toolbar_item list -> node -> node
+val keyboard_toolbar : toolbar_item list -> node -> node
 val tap_action : on_click:unit Action.t -> node -> node
 val on_appear : on_appear:unit Action.t -> node -> node
 val keyboard_dismiss_controls : node -> node
@@ -705,6 +706,7 @@ type modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Toolbar of toolbar_item list
+  | Keyboard_toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
   | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
@@ -765,6 +767,7 @@ type 'view rendered_modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Rendered_toolbar of toolbar_item list
+  | Rendered_keyboard_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
   | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
@@ -1258,6 +1261,7 @@ module For_testing : sig
 
     val change_search_exn : view -> path:int list -> text:string -> unit
     val click_toolbar_item_exn : view -> path:int list -> id:string -> unit
+    val click_keyboard_toolbar_item_exn : view -> path:int list -> id:string -> unit
 
     val click_toolbar_menu_action_exn
       :  view

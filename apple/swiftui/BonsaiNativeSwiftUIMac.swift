@@ -369,6 +369,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var confirmationDialogActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
+  @Published var keyboardToolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
   @Published var secondarySystemGroupedPanelCornerRadius: CGFloat?
@@ -2509,6 +2510,12 @@ public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPoint
   node.toolbarItems = []
 }
 
+@_cdecl("bonsai_native_swiftui_clear_keyboard_toolbar")
+public func bonsai_native_swiftui_clear_keyboard_toolbar(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.keyboardToolbarItems = []
+}
+
 @_cdecl("bonsai_native_swiftui_append_toolbar_item")
 public func bonsai_native_swiftui_append_toolbar_item(
   _ pointer: UnsafeMutableRawPointer?,
@@ -2530,6 +2537,33 @@ public func bonsai_native_swiftui_append_toolbar_item(
       eventId: eventId < 0 ? nil : eventId,
       isEnabled: isEnabled,
       shareURL: shareURLPointer.map(String.init(cString:)),
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_keyboard_toolbar_item")
+public func bonsai_native_swiftui_append_keyboard_toolbar_item(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isTitleVisible: Bool,
+  _ isEnabled: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let idPointer,
+        let titlePointer else { return }
+  node.keyboardToolbarItems.append(
+    BonsaiNativeToolbarItem(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      isTitleVisible: isTitleVisible,
+      eventId: eventId < 0 ? nil : eventId,
+      isEnabled: isEnabled,
+      shareURL: nil,
       menuActions: []
     )
   )

@@ -518,6 +518,14 @@ let test_swiftui_lazy_list_uses_native_list_for_row_actions () =
     "lazy provider native List rows should expose native row move"
 ;;
 
+let test_swiftui_lazy_list_rows_hide_native_separators_at_container () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:".equatable()\n    .listRowSeparator(.hidden)")
+    "lazy list rows should hide native List separators on the row container so app rows \
+     do not need per-row separator modifiers"
+;;
+
 let test_swiftui_native_list_disables_implicit_row_count_animation () =
   let source = read_file swiftui_source_path in
   require
@@ -2669,6 +2677,48 @@ let test_keyboard_dismiss_controls_renders () =
     "keyboard dismiss controls should be visible to native renderers"
 ;;
 
+let test_keyboard_toolbar_renders_native_keyboard_items () =
+  Backend.reset ();
+  let component _graph =
+    Apple.text_field ~text:"" ~on_change:(fun _ -> Apple.Action.ignore) ()
+    |> Apple.keyboard_toolbar
+         [
+           Apple.toolbar_item ~id:"indent" ~title:"Indent"
+             ~system_image:"increase.indent" ~is_title_visible:false
+             ~on_click:Apple.Action.ignore ();
+           Apple.toolbar_item ~id:"dismiss-keyboard" ~title:"Dismiss keyboard"
+             ~system_image:"keyboard.chevron.compact.down" ~is_title_visible:false
+             ~on_click:Apple.Action.ignore ();
+         ]
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered
+       ~substring:
+         "keyboard-toolbar=[indent:Indent:enabled:image=increase.indent:title-hidden,dismiss-keyboard:Dismiss keyboard:enabled:image=keyboard.chevron.compact.down:title-hidden]")
+    ("keyboard toolbar should render native keyboard-placement items:\n" ^ rendered)
+;;
+
+let test_keyboard_toolbar_accessory_is_stable_during_text_updates () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"keyboardAccessorySignature")
+    "UIKit keyboard accessory views should track a signature for the installed toolbar";
+  require
+    (contains source ~substring:"if textView.keyboardAccessorySignature != keyboardAccessorySignature")
+    "UITextView accessory toolbar should only be replaced when toolbar items change";
+  require
+    (contains source ~substring:"if textField.keyboardAccessorySignature != keyboardAccessorySignature")
+    "UITextField accessory toolbar should only be replaced when toolbar items change"
+;;
+
 let test_scroll_dismisses_keyboard_renders () =
   Backend.reset ();
   let component _graph =
@@ -3011,6 +3061,7 @@ let () =
   test_swiftui_lazy_list_uses_native_row_provider ();
   test_swiftui_lazy_list_defers_missing_visible_row_render ();
   test_swiftui_lazy_list_uses_native_list_for_row_actions ();
+  test_swiftui_lazy_list_rows_hide_native_separators_at_container ();
   test_swiftui_native_list_disables_implicit_row_count_animation ();
   test_swiftui_lazy_list_move_updates_visible_order_immediately ();
   test_swiftui_lazy_list_delete_leaves_native_delete_transaction ();
@@ -3081,6 +3132,8 @@ let () =
   test_youtube_iframe_does_not_steal_list_row_gestures ();
   test_swiftui_prefers_inter_for_typography ();
   test_keyboard_dismiss_controls_renders ();
+  test_keyboard_toolbar_renders_native_keyboard_items ();
+  test_keyboard_toolbar_accessory_is_stable_during_text_updates ();
   test_scroll_dismisses_keyboard_renders ();
   test_secondary_fill_panel_renders ();
   test_context_menu_renders_and_clicks_actions ();

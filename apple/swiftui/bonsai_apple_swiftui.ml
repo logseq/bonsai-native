@@ -783,6 +783,23 @@ external append_native_toolbar_item
   = "bonsai_apple_swiftui_append_toolbar_item_bytecode"
     "bonsai_apple_swiftui_append_toolbar_item"
 
+external clear_native_keyboard_toolbar
+  :  native
+  -> unit
+  = "bonsai_apple_swiftui_clear_keyboard_toolbar"
+
+external append_native_keyboard_toolbar_item
+  :  native
+  -> string
+  -> string
+  -> string option
+  -> bool
+  -> bool
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_keyboard_toolbar_item_bytecode"
+    "bonsai_apple_swiftui_append_keyboard_toolbar_item"
+
 external append_native_toolbar_menu_action
   :  native
   -> string
@@ -1063,6 +1080,7 @@ module Backend = struct
     ; mutable alert_event_ids : int list
     ; mutable confirmation_dialog_event_ids : int list
     ; mutable toolbar_event_ids : int list
+    ; mutable keyboard_toolbar_event_ids : int list
     ; mutable picker_select_event_id : int option
     ; mutable list_event_ids : int list
     ; mutable menu_event_ids : int list
@@ -1109,6 +1127,7 @@ module Backend = struct
     ; alert_event_ids = []
     ; confirmation_dialog_event_ids = []
     ; toolbar_event_ids = []
+    ; keyboard_toolbar_event_ids = []
     ; picker_select_event_id = None
     ; list_event_ids = []
     ; menu_event_ids = []
@@ -1151,6 +1170,8 @@ module Backend = struct
     List.iter view.alert_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.confirmation_dialog_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
+    List.iter view.keyboard_toolbar_event_ids ~f:(fun event_id ->
+      clear_handler (Some event_id));
     clear_handler view.picker_select_event_id;
     List.iter view.list_event_ids ~f:(Hashtbl.remove event_handlers);
     List.iter view.menu_event_ids ~f:(Hashtbl.remove event_handlers);
@@ -2289,6 +2310,33 @@ module Backend = struct
     clear_native_toolbar view.native
   ;;
 
+  let install_keyboard_toolbar view ~schedule_event items =
+    List.iter view.keyboard_toolbar_event_ids ~f:(fun event_id ->
+      clear_handler (Some event_id));
+    view.keyboard_toolbar_event_ids <- [];
+    clear_native_keyboard_toolbar view.native;
+    List.iter items ~f:(fun (item : Apple.toolbar_item) ->
+      let event_id =
+        install_handler None (Click (fun () -> schedule_event item.on_click))
+      in
+      view.keyboard_toolbar_event_ids <- event_id :: view.keyboard_toolbar_event_ids;
+      append_native_keyboard_toolbar_item
+        view.native
+        item.id
+        item.title
+        item.system_image
+        item.is_title_visible
+        item.is_enabled
+        event_id)
+  ;;
+
+  let clear_keyboard_toolbar view =
+    List.iter view.keyboard_toolbar_event_ids ~f:(fun event_id ->
+      clear_handler (Some event_id));
+    view.keyboard_toolbar_event_ids <- [];
+    clear_native_keyboard_toolbar view.native
+  ;;
+
   let set_modifiers view ~schedule_event modifiers =
     let saw_searchable = ref false in
     let saw_sheet = ref false in
@@ -2297,6 +2345,7 @@ module Backend = struct
     let saw_safe_area_inset_bottom = ref false in
     let saw_alert = ref false in
     let saw_toolbar = ref false in
+    let saw_keyboard_toolbar = ref false in
     let saw_padding = ref false in
     let saw_regular_material_panel = ref false in
     let saw_secondary_system_grouped_panel = ref false in
@@ -2415,6 +2464,9 @@ module Backend = struct
       | Apple.Rendered_toolbar items ->
         saw_toolbar := true;
         install_toolbar view ~schedule_event items
+      | Apple.Rendered_keyboard_toolbar items ->
+        saw_keyboard_toolbar := true;
+        install_keyboard_toolbar view ~schedule_event items
       | Apple.Rendered_tap_action { on_click } ->
         saw_tap_action := true;
         set_tap_action view (Some (fun () -> schedule_event on_click))
@@ -2437,6 +2489,7 @@ module Backend = struct
     if not !saw_safe_area_inset_bottom then set_safe_area_inset_bottom view None;
     if not !saw_alert then clear_alert view;
     if not !saw_toolbar then clear_toolbar view;
+    if not !saw_keyboard_toolbar then clear_keyboard_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
     if not !saw_regular_material_panel
     then set_native_regular_material_panel view.native (-1.);

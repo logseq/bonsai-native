@@ -1,6 +1,7 @@
 import AVFoundation
 import CryptoKit
 import Foundation
+import ObjectiveC
 import OSLog
 import PhotosUI
 import QuartzCore
@@ -739,6 +740,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var confirmationDialogActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
+  @Published var keyboardToolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
   @Published var secondarySystemGroupedPanelCornerRadius: CGFloat?
@@ -1497,7 +1499,9 @@ private final class BonsaiNativeHostModel: ObservableObject {
     animation: Animation? = nil,
     deferOnMain: Bool = true
   ) {
-    guard let eventId else { return }
+    guard let eventId else {
+      return
+    }
     dispatchEvent(animation: animation, deferOnMain: deferOnMain) { [callback] in
       callback?(eventId, nil)
     }
@@ -2082,18 +2086,36 @@ private func recognizeText(in data: Data) async -> String? {
 
 private struct BonsaiNativeKeyboardDismissControlsModifier: ViewModifier {
   @ObservedObject var node: BonsaiNativeNode
+  let model: BonsaiNativeHostModel
 
   @ViewBuilder
   func body(content: Content) -> some View {
 #if os(iOS)
-    if node.keyboardDismissControls {
+    if node.keyboardDismissControls || !node.keyboardToolbarItems.isEmpty {
       content
         .scrollDismissesKeyboard(.interactively)
         .toolbar {
           ToolbarItemGroup(placement: .keyboard) {
+            ForEach(node.keyboardToolbarItems) { item in
+              Button {
+                if let eventId = item.eventId {
+                  model.sendClick(eventId)
+                }
+              } label: {
+                keyboardToolbarLabel(item)
+              }
+              .disabled(!item.isEnabled)
+            }
             Spacer()
-            Button("Done") {
+            Button {
               bonsaiDismissKeyboard()
+            } label: {
+              if node.keyboardToolbarItems.isEmpty {
+                Text("Done")
+              } else {
+                Image(systemName: "keyboard.chevron.compact.down")
+                  .accessibilityLabel("Dismiss keyboard")
+              }
             }
           }
         }
@@ -2103,6 +2125,20 @@ private struct BonsaiNativeKeyboardDismissControlsModifier: ViewModifier {
 #else
     content
 #endif
+  }
+
+  @ViewBuilder
+  private func keyboardToolbarLabel(_ item: BonsaiNativeToolbarItem) -> some View {
+    if let systemImage = item.systemImage {
+      if item.isTitleVisible {
+        Label(item.title, systemImage: systemImage)
+      } else {
+        Image(systemName: systemImage)
+          .accessibilityLabel(item.title)
+      }
+    } else {
+      Text(item.title)
+    }
   }
 }
 
@@ -2224,7 +2260,7 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
         )
       )
     )
-      .modifier(BonsaiNativeKeyboardDismissControlsModifier(node: node))
+      .modifier(BonsaiNativeKeyboardDismissControlsModifier(node: node, model: model))
       .modifier(BonsaiNativeScrollDismissesKeyboardModifier(node: node))
       .modifier(BonsaiNativeListRowSeparatorModifier(node: node))
       .modifier(BonsaiNativeSearchModifier(node: node, model: model))
@@ -2625,6 +2661,8 @@ private struct BonsaiNativeTextFieldView: View {
           ),
           isFocused: node.isTextFieldFocused,
           clearButtonMode: node.textFieldClearButton,
+          keyboardToolbarItems: node.keyboardToolbarItems,
+          model: model,
           onChange: { value in
             node.text = value
             let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
@@ -2655,6 +2693,8 @@ private struct BonsaiNativeTextFieldView: View {
             }
           ),
           isFocused: node.isTextFieldFocused,
+          keyboardToolbarItems: node.keyboardToolbarItems,
+          model: model,
           onChange: { value in
             node.text = value
             let startedAt = BonsaiNativeListVirtualizationProbe.shared.operationStarted(
@@ -2735,6 +2775,7 @@ private struct BonsaiNativeTextFieldView: View {
 
 private final class BonsaiNativeDeleteAwareUITextView: UITextView {
   var onDeleteBackwardAtStart: (() -> Void)?
+  var keyboardAccessorySignature: String?
   private let placeholderLabel = UILabel()
   private var wantsFocus = false
 
@@ -2837,10 +2878,113 @@ private final class BonsaiNativeDeleteAwareUITextView: UITextView {
   }
 }
 
+private var bonsaiNativeKeyboardAccessoryHandlerKey: UInt8 = 0
+
+private final class BonsaiNativeKeyboardAccessoryHandler: NSObject {
+  private let eventIds: [Int32?]
+  private let onClick: (Int32) -> Void
+  private let onDismiss: () -> Void
+
+  init(eventIds: [Int32?], onClick: @escaping (Int32) -> Void, onDismiss: @escaping () -> Void) {
+    self.eventIds = eventIds
+    self.onClick = onClick
+    self.onDismiss = onDismiss
+  }
+
+  @objc func activateItem(_ sender: UIBarButtonItem) {
+    guard sender.tag >= 0 && sender.tag < eventIds.count else { return }
+    if let eventId = eventIds[sender.tag] {
+      onClick(eventId)
+    }
+  }
+
+  @objc func dismissKeyboard(_ sender: UIBarButtonItem) {
+    onDismiss()
+  }
+}
+
+private func bonsaiNativeKeyboardAccessorySignature(_ items: [BonsaiNativeToolbarItem]) -> String {
+  items
+    .map { item in
+      [
+        item.id,
+        item.title,
+        item.systemImage ?? "",
+        String(item.isTitleVisible),
+        String(item.isEnabled),
+        String(describing: item.eventId),
+      ].joined(separator: ":")
+    }
+    .joined(separator: "|")
+}
+
+private func bonsaiNativeKeyboardAccessoryToolbar(
+  items: [BonsaiNativeToolbarItem],
+  onClick: @escaping (Int32) -> Void,
+  onDismiss: @escaping () -> Void
+) -> UIToolbar? {
+  guard !items.isEmpty else {
+    return nil
+  }
+
+  let toolbar = UIToolbar()
+  let handler =
+    BonsaiNativeKeyboardAccessoryHandler(
+      eventIds: items.map(\.eventId),
+      onClick: onClick,
+      onDismiss: onDismiss
+    )
+  toolbar.isTranslucent = true
+  toolbar.items =
+    items.enumerated().map { index, item in
+      let button: UIBarButtonItem
+      if let systemImage = item.systemImage, let image = UIImage(systemName: systemImage) {
+        button =
+          UIBarButtonItem(
+            image: image,
+            style: .plain,
+            target: handler,
+            action: #selector(BonsaiNativeKeyboardAccessoryHandler.activateItem(_:))
+          )
+      } else {
+        button =
+          UIBarButtonItem(
+            title: item.title,
+            style: .plain,
+            target: handler,
+            action: #selector(BonsaiNativeKeyboardAccessoryHandler.activateItem(_:))
+          )
+      }
+      button.tag = index
+      button.accessibilityLabel = item.title
+      button.isEnabled = item.isEnabled
+      return button
+    }
+    + [
+      UIBarButtonItem(systemItem: .flexibleSpace),
+      UIBarButtonItem(
+        image: UIImage(systemName: "keyboard.chevron.compact.down"),
+        style: .plain,
+        target: handler,
+        action: #selector(BonsaiNativeKeyboardAccessoryHandler.dismissKeyboard(_:))
+      ),
+    ]
+  objc_setAssociatedObject(
+    toolbar,
+    &bonsaiNativeKeyboardAccessoryHandlerKey,
+    handler,
+    .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+  )
+  toolbar.sizeToFit()
+  return toolbar
+}
+
 private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
   let placeholder: String
   @Binding var text: String
   let isFocused: Bool
+  let keyboardToolbarItems: [BonsaiNativeToolbarItem]
+  let model: BonsaiNativeHostModel
   let onChange: (String) -> Void
   let onSubmit: () -> Void
   let onDeleteBackwardAtStart: () -> Void
@@ -2872,6 +3016,25 @@ private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
       textView.updatePlaceholderVisibility()
     }
     textView.onDeleteBackwardAtStart = onDeleteBackwardAtStart
+    let keyboardAccessorySignature =
+      bonsaiNativeKeyboardAccessorySignature(keyboardToolbarItems)
+    if textView.keyboardAccessorySignature != keyboardAccessorySignature {
+      textView.keyboardAccessorySignature = keyboardAccessorySignature
+      textView.inputAccessoryView = bonsaiNativeKeyboardAccessoryToolbar(
+        items: keyboardToolbarItems,
+        onClick: { eventId in
+          BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: textView)
+          context.coordinator.model.sendClick(eventId, deferOnMain: false)
+        },
+        onDismiss: {
+          textView.clearFocusRequest()
+          bonsaiDismissKeyboard()
+        }
+      )
+      if textView.isFirstResponder {
+        textView.reloadInputViews()
+      }
+    }
     let shouldRequestFocus = isFocused && !context.coordinator.lastIsFocused
     if shouldRequestFocus {
       textView.requestFocus()
@@ -2884,9 +3047,11 @@ private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
   final class Coordinator: NSObject, UITextViewDelegate {
     var parent: BonsaiNativeDeleteAwareTextView
     var lastIsFocused = false
+    let model: BonsaiNativeHostModel
 
     init(_ parent: BonsaiNativeDeleteAwareTextView) {
       self.parent = parent
+      self.model = parent.model
     }
 
     func textViewDidChange(_ textView: UITextView) {
@@ -2918,6 +3083,7 @@ private struct BonsaiNativeDeleteAwareTextView: UIViewRepresentable {
 
 private final class BonsaiNativeDeleteAwareUITextField: UITextField {
   var onDeleteBackwardAtStart: (() -> Void)?
+  var keyboardAccessorySignature: String?
   private var wantsFocus = false
 
   override func deleteBackward() {
@@ -2989,6 +3155,8 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
   @Binding var text: String
   let isFocused: Bool
   let clearButtonMode: Int32
+  let keyboardToolbarItems: [BonsaiNativeToolbarItem]
+  let model: BonsaiNativeHostModel
   let onChange: (String) -> Void
   let onSubmit: () -> Void
   let onDeleteBackwardAtStart: () -> Void
@@ -3022,6 +3190,25 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
       textField.text = text
     }
     textField.onDeleteBackwardAtStart = onDeleteBackwardAtStart
+    let keyboardAccessorySignature =
+      bonsaiNativeKeyboardAccessorySignature(keyboardToolbarItems)
+    if textField.keyboardAccessorySignature != keyboardAccessorySignature {
+      textField.keyboardAccessorySignature = keyboardAccessorySignature
+      textField.inputAccessoryView = bonsaiNativeKeyboardAccessoryToolbar(
+        items: keyboardToolbarItems,
+        onClick: { eventId in
+          BonsaiNativeKeyboardHandoff.shared.retainKeyboard(from: textField)
+          context.coordinator.model.sendClick(eventId, deferOnMain: false)
+        },
+        onDismiss: {
+          textField.clearFocusRequest()
+          bonsaiDismissKeyboard()
+        }
+      )
+      if textField.isFirstResponder {
+        textField.reloadInputViews()
+      }
+    }
     let shouldRequestFocus = isFocused && !context.coordinator.lastIsFocused
     if shouldRequestFocus {
       textField.requestFocus()
@@ -3034,9 +3221,11 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
   final class Coordinator: NSObject, UITextFieldDelegate {
     var parent: BonsaiNativeDeleteAwareTextField
     var lastIsFocused = false
+    let model: BonsaiNativeHostModel
 
     init(_ parent: BonsaiNativeDeleteAwareTextField) {
       self.parent = parent
+      self.model = parent.model
     }
 
     @objc func textFieldEditingChanged(_ textField: UITextField) {
@@ -3673,6 +3862,7 @@ private struct BonsaiNativeNodeView: View {
       model: model
     )
     .equatable()
+    .listRowSeparator(.hidden)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
@@ -7151,6 +7341,12 @@ public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPoint
   node.toolbarItems = []
 }
 
+@_cdecl("bonsai_native_swiftui_clear_keyboard_toolbar")
+public func bonsai_native_swiftui_clear_keyboard_toolbar(_ pointer: UnsafeMutableRawPointer?) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.keyboardToolbarItems = []
+}
+
 @_cdecl("bonsai_native_swiftui_append_toolbar_item")
 public func bonsai_native_swiftui_append_toolbar_item(
   _ pointer: UnsafeMutableRawPointer?,
@@ -7174,6 +7370,33 @@ public func bonsai_native_swiftui_append_toolbar_item(
       eventId: eventId < 0 ? nil : eventId,
       isEnabled: isEnabled,
       shareURL: shareURLPointer.map(String.init(cString:)),
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_keyboard_toolbar_item")
+public func bonsai_native_swiftui_append_keyboard_toolbar_item(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isTitleVisible: Bool,
+  _ isEnabled: Bool,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let idPointer,
+        let titlePointer else { return }
+  node.keyboardToolbarItems.append(
+    BonsaiNativeToolbarItem(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      isTitleVisible: isTitleVisible,
+      eventId: eventId < 0 ? nil : eventId,
+      isEnabled: isEnabled,
+      shareURL: nil,
       menuActions: []
     )
   )
