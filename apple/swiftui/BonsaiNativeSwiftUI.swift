@@ -2669,6 +2669,11 @@ private final class BonsaiNativeDeleteAwareUITextField: UITextField {
     let end = endOfDocument
     selectedTextRange = textRange(from: end, to: end)
   }
+
+  override func resignFirstResponder() -> Bool {
+    wantsFocus = false
+    return super.resignFirstResponder()
+  }
 }
 
 private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
@@ -2709,15 +2714,18 @@ private struct BonsaiNativeDeleteAwareTextField: UIViewRepresentable {
       textField.text = text
     }
     textField.onDeleteBackwardAtStart = onDeleteBackwardAtStart
-    if isFocused {
+    let shouldRequestFocus = isFocused && !context.coordinator.lastIsFocused
+    if shouldRequestFocus {
       textField.requestFocus()
-    } else {
+    } else if !isFocused {
       textField.clearFocusRequest()
     }
+    context.coordinator.lastIsFocused = isFocused
   }
 
   final class Coordinator: NSObject, UITextFieldDelegate {
     var parent: BonsaiNativeDeleteAwareTextField
+    var lastIsFocused = false
 
     init(_ parent: BonsaiNativeDeleteAwareTextField) {
       self.parent = parent

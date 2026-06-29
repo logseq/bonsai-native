@@ -1495,6 +1495,31 @@ let test_swiftui_delete_aware_text_change_updates_model_immediately () =
      stale rendered row"
 ;;
 
+let test_swiftui_delete_aware_focus_requests_are_transition_scoped () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"var lastIsFocused = false")
+    "delete-aware text fields should remember the previous rendered focus state";
+  require
+    (contains
+       source
+       ~substring:"let shouldRequestFocus = isFocused && !context.coordinator.lastIsFocused")
+    "delete-aware text fields should only request focus when rendered focus changes to true";
+  require
+    (contains source ~substring:"context.coordinator.lastIsFocused = isFocused")
+    "delete-aware text fields should update the previous rendered focus state after each render";
+  require
+    (not (contains source ~substring:"if isFocused {\n      textField.requestFocus()"))
+    "delete-aware text fields should not re-request focus on every render while true because \
+     removed SwiftUI rows can briefly render stale focused state";
+  require
+    (contains source ~substring:"override func resignFirstResponder() -> Bool")
+    "delete-aware text fields should observe first-responder loss";
+  require
+    (contains source ~substring:"wantsFocus = false")
+    "delete-aware text fields should clear pending focus when UIKit moves first responder away"
+;;
+
 let counter graph =
   let count, set_count = Apple.state graph ~key:"count" 0 in
   Apple.vstack
@@ -2751,6 +2776,7 @@ let () =
   test_swiftui_change_events_defer_from_view_update_callbacks ();
   test_swiftui_delete_at_start_does_not_use_keyboard_handoff_delay ();
   test_swiftui_delete_aware_text_change_updates_model_immediately ();
+  test_swiftui_delete_aware_focus_requests_are_transition_scoped ();
   test_navigation_value_links_keep_primary_tap_for_link ();
   test_image_semantic_color_renders ();
   test_button_label_renders_custom_clickable_content ();
