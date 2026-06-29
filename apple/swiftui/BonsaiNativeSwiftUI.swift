@@ -30,6 +30,7 @@ private var bonsaiNativeLazyRowKeyCallback: BonsaiNativeLazyRowKeyCallback?
 private var bonsaiNativeLazyRowReleaseCallback: BonsaiNativeLazyRowReleaseCallback?
 private let minDeferredLazyListAppendRowCount = 16
 private let maxDeferredLazyListRowCountPublishDelay: CFTimeInterval = 0.25
+private let coalescedStructuralLazyListRowCountPublishDelay: CFTimeInterval = 0.12
 
 private enum BonsaiNativeFrameAlignment: Int32 {
   case center = 0
@@ -811,7 +812,9 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var lazyListVersion = 0
   var lazyListRowsPublishedEventId: Int32?
   var lazyListInvalidatedIndices: Set<Int> = []
+  var lazyListIdentityKeysByIndex: [String] = []
   var lazyListIdentityKeyByIndex: [Int: String] = [:]
+  var lazyListRowsByKey: [String: BonsaiNativeNode] = [:]
   var lazyListRowsByIndex: [Int: BonsaiNativeNode] = [:]
   var lazyListRowKeyByIndex: [Int: String] = [:]
   var lazyListRetainedOrder: [Int] = []
@@ -819,6 +822,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   var lazyListVisibleIndexCounts: [Int: Int] = [:]
   weak var lazyListScrollView: UIScrollView?
   var pendingLazyListRowCount: Int?
+  var pendingLazyListRowCountInvalidatedCount = 0
   var pendingLazyListRowCountDeadline: CFTimeInterval?
   var pendingLazyListRowCountWorkItem: DispatchWorkItem?
   var pendingLazyListRowCountGeneration = 0
@@ -1925,9 +1929,15 @@ private struct BonsaiNativeLazyListPositions: RandomAccessCollection {
   let endIndex: Int
 
   subscript(position: Int) -> BonsaiNativeLazyListPosition {
-    BonsaiNativeLazyListPosition(
+    if position >= 0 && position < owner.lazyListIdentityKeysByIndex.count {
+      return BonsaiNativeLazyListPosition(
+        index: position,
+        id: owner.lazyListIdentityKeysByIndex[position]
+      )
+    }
+    return BonsaiNativeLazyListPosition(
       index: position,
-      id: bonsaiNativeLazyRowKeyHint(owner: owner, index: position)
+      id: bonsaiNativePublishedLazyRowKey(owner: owner, index: position)
     )
   }
 }
@@ -3465,7 +3475,7 @@ private struct BonsaiNativeNodeView: View {
       ForEach(lazyListPositions()) { position in
         lazyListRowPosition(
           providerId: providerId,
-          position: position.index
+          position: position
         )
       }
         .onDelete { offsets in
@@ -3543,7 +3553,7 @@ private struct BonsaiNativeNodeView: View {
       lazyListRow(
         providerId: providerId,
         index: index,
-        key: bonsaiNativeLazyRowKeyHint(owner: node, index: index),
+        key: position.id,
         refreshGeneration: node.lazyListInvalidatedIndices.contains(index)
           ? node.lazyListVersion
           : 0
@@ -3635,13 +3645,13 @@ private struct BonsaiNativeNodeView: View {
 
   private func lazyListRowPosition(
     providerId: Int32,
-    position: Int
+    position: BonsaiNativeLazyListPosition
   ) -> some View {
-    let sourceIndex = position
+    let sourceIndex = position.index
     return lazyListRow(
       providerId: providerId,
       index: sourceIndex,
-      key: bonsaiNativeLazyRowKeyHint(owner: node, index: sourceIndex),
+      key: position.id,
       refreshGeneration: node.lazyListInvalidatedIndices.contains(sourceIndex)
         ? node.lazyListVersion
         : 0
@@ -3697,7 +3707,7 @@ private struct BonsaiNativeNodeView: View {
         )
         return
       }
-      targetID = AnyHashable(bonsaiNativeLazyRowKeyHint(owner: node, index: index))
+      targetID = AnyHashable(bonsaiNativePublishedLazyRowKey(owner: node, index: index))
     } else {
       guard node.children.indices.contains(index) else { return }
       targetID = AnyHashable(node.children[index].id)
@@ -3755,7 +3765,7 @@ private struct BonsaiNativeNodeView: View {
       scrollToIndex: { index in
         guard let proxy else { return }
         if node.lazyListProviderId != nil {
-          proxy.scrollTo(bonsaiNativeLazyRowKeyHint(owner: node, index: index), anchor: .top)
+          proxy.scrollTo(bonsaiNativePublishedLazyRowKey(owner: node, index: index), anchor: .top)
         } else if node.children.indices.contains(index) {
           proxy.scrollTo(node.children[index].id, anchor: .top)
         }
@@ -5247,6 +5257,8 @@ private struct BonsaiNativeCameraPicker: UIViewControllerRepresentable {
 
 private final class BonsaiNativeLazyListRowState {
   var isVisible = false
+  var visibleIndex: Int?
+  var visibleKey: String?
   var focusedDisappearToken: UUID?
   var refreshToken = 0
 }
@@ -5309,9 +5321,17 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
       }
     }
     .onChange(of: key) { _, _ in
+      if rowState.isVisible {
+        trackVisibleIndexAppear()
+      }
       DispatchQueue.main.async {
         setRenderedChild(cachedRenderedChild)
         loadRowIfNeeded()
+      }
+    }
+    .onChange(of: index) { _, _ in
+      if rowState.isVisible {
+        trackVisibleIndexAppear()
       }
     }
     .onDisappear {
@@ -5332,13 +5352,15 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
   }
 
   private var cachedRenderedChild: BonsaiNativeNode? {
-    guard let rendered = owner.lazyListRowsByIndex[index] else { return nil }
-    if let renderedKey = owner.lazyListRowKeyByIndex[index],
-       let identityKey = owner.lazyListIdentityKeyByIndex[index],
-       renderedKey != identityKey {
-      return nil
+    if let rendered = owner.lazyListRowsByIndex[index],
+       let renderedKey = owner.lazyListRowKeyByIndex[index],
+       renderedKey == key {
+      return rendered
     }
-    return rendered
+    if let rendered = owner.lazyListRowsByKey[key] {
+      return rendered
+    }
+    return nil
   }
 
   private var displayedChild: BonsaiNativeNode? {
@@ -5356,18 +5378,29 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
   }
 
   private func trackVisibleIndexAppear() {
+    if rowState.visibleIndex == index && rowState.visibleKey == key {
+      return
+    }
+    if rowState.visibleIndex != nil || rowState.visibleKey != nil {
+      trackVisibleIndexDisappear()
+    }
     owner.lazyListVisibleIndexCounts[index, default: 0] += 1
     owner.lazyListVisibleIndices.insert(index)
+    rowState.visibleIndex = index
+    rowState.visibleKey = key
   }
 
   private func trackVisibleIndexDisappear() {
-    let nextCount = (owner.lazyListVisibleIndexCounts[index] ?? 0) - 1
+    guard let visibleIndex = rowState.visibleIndex else { return }
+    let nextCount = (owner.lazyListVisibleIndexCounts[visibleIndex] ?? 0) - 1
     if nextCount > 0 {
-      owner.lazyListVisibleIndexCounts[index] = nextCount
+      owner.lazyListVisibleIndexCounts[visibleIndex] = nextCount
     } else {
-      owner.lazyListVisibleIndexCounts[index] = nil
-      owner.lazyListVisibleIndices.remove(index)
+      owner.lazyListVisibleIndexCounts[visibleIndex] = nil
+      owner.lazyListVisibleIndices.remove(visibleIndex)
     }
+    rowState.visibleIndex = nil
+    rowState.visibleKey = nil
   }
 
   private func renderRowIfNeeded() -> BonsaiNativeNode? {
@@ -5410,6 +5443,7 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
     bindHostModel(owner.hostModel, to: rendered)
     owner.lazyListRowsByIndex[index] = rendered
     owner.lazyListRowKeyByIndex[index] = resolvedKey
+    owner.lazyListRowsByKey[resolvedKey] = rendered
     touchRetainedIndex(index)
     BonsaiNativeListVirtualizationProbe.shared.rowRendered(
       listID: listID,
@@ -5447,48 +5481,17 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
 
   private func refreshRow() {
     guard rowState.isVisible else { return }
-    let resolvedKey = bonsaiNativeLazyRowKey(
-      owner: owner,
-      providerId: providerId,
-      index: index
-    )
-    guard let renderCallback = bonsaiNativeLazyRowRenderCallback else {
-      BonsaiNativeListVirtualizationProbe.shared.debug(
-        "lazy_row_refresh_missing_callback provider=\(providerId) index=\(index)"
-      )
+    guard let rendered = cachedRenderedChild else {
+      setRenderedChild(nil)
       return
     }
-    let renderStartedAt = CACurrentMediaTime()
-    guard let pointer = renderCallback(providerId, Int32(index)) else {
-      BonsaiNativeListVirtualizationProbe.shared.debug(
-        "lazy_row_refresh_nil_pointer provider=\(providerId) index=\(index)"
-      )
-      return
-    }
-    let renderElapsedMs = (CACurrentMediaTime() - renderStartedAt) * 1000
-    BonsaiNativeFrameProbe.shared.markLazyRowRender(
-      listID: listID,
-      index: index,
-      elapsedMs: renderElapsedMs,
-      totalRows: owner.lazyListRowCount
-    )
-    guard let rendered = nativeNode(from: pointer) else {
-      BonsaiNativeListVirtualizationProbe.shared.debug(
-        "lazy_row_refresh_missing_node provider=\(providerId) index=\(index)"
-      )
-      return
-    }
-    bindHostModel(owner.hostModel, to: rendered)
-    owner.lazyListRowsByIndex[index] = rendered
-    owner.lazyListRowKeyByIndex[index] = resolvedKey
     setRenderedChild(rendered)
     touchRetainedIndex(index)
     loadGeneration &+= 1
     BonsaiNativeListVirtualizationProbe.shared.rowRefreshed(
       listID: listID,
-      elapsedMs: renderElapsedMs
+      elapsedMs: 0
     )
-    trimRetainedRows()
     reportListPerf()
   }
 
@@ -5553,8 +5556,10 @@ private struct BonsaiNativeLazyListRowView: View, Equatable {
 
   private func releaseCachedRow(index: Int, rendered: BonsaiNativeNode) {
     guard owner.lazyListRowsByIndex[index] === rendered else { return }
+    let key = owner.lazyListRowKeyByIndex[index]
     owner.lazyListRowsByIndex[index] = nil
     owner.lazyListRowKeyByIndex[index] = nil
+    removeLazyRowKeyCacheIfUnused(node: owner, index: index, key: key, rendered: rendered)
     owner.lazyListRetainedOrder.removeAll { $0 == index }
     let releaseStartedAt = CACurrentMediaTime()
     bonsaiNativeLazyRowReleaseCallback?(providerId, Int32(index))
@@ -5602,12 +5607,54 @@ private func bonsaiNativeLazyRowKey(
   return key
 }
 
-private func bonsaiNativeLazyRowKeyHint(owner: BonsaiNativeNode, index: Int) -> String {
+private func bonsaiNativePublishedLazyRowKey(owner: BonsaiNativeNode, index: Int) -> String {
   if let cached = owner.lazyListIdentityKeyByIndex[index] {
     BonsaiNativeListVirtualizationProbe.shared.rowKeyCacheHit(listID: owner.id)
     return cached
   }
-  return "lazy-row-\(index)"
+  fatalError("Missing published lazy row key for index \(index)")
+}
+
+private func setLazyListCachedRows(
+  node: BonsaiNativeNode,
+  rowCount: Int,
+  cachedIndexPointer: UnsafePointer<Int32>?,
+  cachedKeyPointer: UnsafePointer<UnsafePointer<CChar>?>?,
+  cachedRowPointer: UnsafePointer<UnsafeMutableRawPointer?>?,
+  cachedRowCount: Int32
+) {
+  guard let cachedIndexPointer, let cachedKeyPointer, let cachedRowPointer else { return }
+  for offset in 0..<Int(cachedRowCount) {
+    let index = Int(cachedIndexPointer[offset])
+    guard index >= 0 && index < rowCount else { continue }
+    guard let keyPointer = cachedKeyPointer[offset] else { continue }
+    guard let row = nativeNode(from: cachedRowPointer[offset]) else { continue }
+    let key = String(cString: keyPointer)
+    bindHostModel(node.hostModel, to: row)
+    node.lazyListRowsByIndex[index] = row
+    node.lazyListRowKeyByIndex[index] = key
+    node.lazyListRowsByKey[key] = row
+    node.lazyListIdentityKeyByIndex[index] = key
+    node.lazyListRetainedOrder.removeAll { $0 == index }
+    node.lazyListRetainedOrder.append(index)
+  }
+}
+
+private func removeLazyRowKeyCacheIfUnused(
+  node: BonsaiNativeNode,
+  index: Int,
+  key: String?,
+  rendered: BonsaiNativeNode
+) {
+  guard let key else { return }
+  guard node.lazyListRowsByKey[key] === rendered else { return }
+  guard let currentIndex = node.lazyListIdentityKeysByIndex.firstIndex(of: key) else {
+    node.lazyListRowsByKey[key] = nil
+    return
+  }
+  if currentIndex == index || node.lazyListRowsByIndex[currentIndex] === rendered {
+    node.lazyListRowsByKey[key] = nil
+  }
 }
 
 private func bonsaiNativeUncachedLazyRowKey(providerId: Int32, index: Int) -> String {
@@ -6064,7 +6111,11 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
   _ invalidatedIndexCount: Int32,
   _ identityIndexPointer: UnsafePointer<Int32>?,
   _ identityKeyPointer: UnsafePointer<UnsafePointer<CChar>?>?,
-  _ identityKeyCount: Int32
+  _ identityKeyCount: Int32,
+  _ cachedIndexPointer: UnsafePointer<Int32>?,
+  _ cachedKeyPointer: UnsafePointer<UnsafePointer<CChar>?>?,
+  _ cachedRowPointer: UnsafePointer<UnsafeMutableRawPointer?>?,
+  _ cachedRowCount: Int32
 ) {
   guard let node = nativeNode(from: pointer) else { return }
   if !node.children.isEmpty {
@@ -6096,33 +6147,48 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
   if node.lazyListVersion != nextVersion {
     node.lazyListVersion = nextVersion
   }
+  var nextIdentityKeyByIndex = node.lazyListIdentityKeyByIndex
+  var nextIdentityKeysByIndex = node.lazyListIdentityKeysByIndex
+  if let identityIndexPointer, let identityKeyPointer {
+    nextIdentityKeyByIndex.reserveCapacity(max(nextIdentityKeyByIndex.count, Int(identityKeyCount)))
+    nextIdentityKeysByIndex = Array(repeating: "", count: rowCount)
+    for offset in 0..<Int(identityKeyCount) {
+      let index = Int(identityIndexPointer[offset])
+      guard index >= 0 && index < rowCount else { continue }
+      guard let keyPointer = identityKeyPointer[offset] else { continue }
+      let key = String(cString: keyPointer)
+      nextIdentityKeyByIndex[index] = key
+      nextIdentityKeysByIndex[index] = key
+    }
+  }
   let knownIndices =
     Set(node.lazyListRowsByIndex.keys)
-      .union(node.lazyListIdentityKeyByIndex.keys)
+      .union(nextIdentityKeyByIndex.keys)
       .union(node.lazyListVisibleIndices)
   let outOfRangeIndices = Set(knownIndices.filter { index in
     index < 0 || index >= rowCount
   })
   let staleIndices = outOfRangeIndices.union(providerInvalidatedIndices)
-  let staleIdentityKeyIndices = Set(node.lazyListIdentityKeyByIndex.keys.filter { index in
-    index < 0 || index >= rowCount
-  }).union(providerInvalidatedIndices)
-  for index in staleIdentityKeyIndices {
-    node.lazyListIdentityKeyByIndex[index] = nil
-  }
-  if let identityIndexPointer, let identityKeyPointer {
-    for offset in 0..<Int(identityKeyCount) {
-      let index = Int(identityIndexPointer[offset])
-      guard index >= 0 && index < rowCount else { continue }
-      guard let keyPointer = identityKeyPointer[offset] else { continue }
-      node.lazyListIdentityKeyByIndex[index] = String(cString: keyPointer)
-    }
-  }
+  node.lazyListIdentityKeyByIndex = nextIdentityKeyByIndex
+  node.lazyListIdentityKeysByIndex = nextIdentityKeysByIndex
   for index in staleIndices {
+    let rendered = node.lazyListRowsByIndex[index]
+    let key = node.lazyListRowKeyByIndex[index]
     node.lazyListRowsByIndex[index] = nil
     node.lazyListRowKeyByIndex[index] = nil
+    if let rendered {
+      removeLazyRowKeyCacheIfUnused(node: node, index: index, key: key, rendered: rendered)
+    }
   }
   node.lazyListRetainedOrder.removeAll { staleIndices.contains($0) }
+  setLazyListCachedRows(
+    node: node,
+    rowCount: rowCount,
+    cachedIndexPointer: cachedIndexPointer,
+    cachedKeyPointer: cachedKeyPointer,
+    cachedRowPointer: cachedRowPointer,
+    cachedRowCount: cachedRowCount
+  )
   for index in outOfRangeIndices {
     node.lazyListVisibleIndexCounts[index] = nil
   }
@@ -6141,6 +6207,21 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
       invalidatedCount: providerInvalidatedIndices.count
     )
     scheduleDeferredLazyListRowCountPublish(node, rowCount)
+  } else if node.lazyListRowCount > 0,
+            node.lazyListRowCount != rowCount,
+            !providerInvalidatedIndices.isEmpty {
+    BonsaiNativeFrameProbe.shared.logLazyRowCountEvent(
+      name: "lazy_row_count_coalesced",
+      listID: node.id,
+      oldCount: node.lazyListRowCount,
+      newCount: rowCount,
+      invalidatedCount: providerInvalidatedIndices.count
+    )
+    scheduleCoalescedStructuralLazyListRowCountPublish(
+      node,
+      rowCount,
+      invalidatedCount: providerInvalidatedIndices.count
+    )
   } else {
     publishLazyListRowCount(
       node,
@@ -6148,6 +6229,45 @@ public func bonsai_native_swiftui_set_lazy_list_rows(
       invalidatedCount: providerInvalidatedIndices.count
     )
   }
+}
+
+private func scheduleCoalescedStructuralLazyListRowCountPublish(
+  _ node: BonsaiNativeNode,
+  _ rowCount: Int,
+  invalidatedCount: Int
+) {
+  node.pendingLazyListRowCountWorkItem?.cancel()
+  node.pendingLazyListRowCount = rowCount
+  node.pendingLazyListRowCountInvalidatedCount = invalidatedCount
+  node.pendingLazyListRowCountDeadline = nil
+  node.pendingLazyListRowCountGeneration += 1
+  let generation = node.pendingLazyListRowCountGeneration
+  let workItem = DispatchWorkItem { [weak node] in
+    guard let node else { return }
+    guard node.pendingLazyListRowCountGeneration == generation else { return }
+    guard let pendingRowCount = node.pendingLazyListRowCount else { return }
+    let pendingInvalidatedCount = node.pendingLazyListRowCountInvalidatedCount
+    BonsaiNativeFrameProbe.shared.logLazyRowCountEvent(
+      name: "lazy_row_count_coalesced_publish",
+      listID: node.id,
+      oldCount: node.lazyListRowCount,
+      newCount: pendingRowCount,
+      invalidatedCount: pendingInvalidatedCount
+    )
+    applyLazyListRowCount(
+      node,
+      pendingRowCount,
+      invalidatedCount: pendingInvalidatedCount
+    )
+    node.pendingLazyListRowCount = nil
+    node.pendingLazyListRowCountInvalidatedCount = 0
+    node.pendingLazyListRowCountWorkItem = nil
+  }
+  node.pendingLazyListRowCountWorkItem = workItem
+  DispatchQueue.main.asyncAfter(
+    deadline: .now() + coalescedStructuralLazyListRowCountPublishDelay,
+    execute: workItem
+  )
 }
 
 private func shouldDeferLazyListRowCountPublish(
@@ -6182,6 +6302,7 @@ private func scheduleDeferredLazyListRowCountPublish(
       CACurrentMediaTime() + maxDeferredLazyListRowCountPublishDelay
   }
   node.pendingLazyListRowCount = rowCount
+  node.pendingLazyListRowCountInvalidatedCount = 0
   node.pendingLazyListRowCountGeneration += 1
   let generation = node.pendingLazyListRowCountGeneration
   if shouldScheduleMaxLatencyTimer {
@@ -6230,6 +6351,7 @@ private func publishDeferredLazyListRowCountIfReady(
     )
     applyLazyListRowCount(node, pendingRowCount, invalidatedCount: 0)
     node.pendingLazyListRowCount = nil
+    node.pendingLazyListRowCountInvalidatedCount = 0
     node.pendingLazyListRowCountDeadline = nil
     node.pendingLazyListRowCountWorkItem = nil
   }
@@ -6245,11 +6367,13 @@ private func publishLazyListRowCount(
   node.pendingLazyListRowCountGeneration += 1
   if node.lazyListRowCount == rowCount {
     node.pendingLazyListRowCount = nil
+    node.pendingLazyListRowCountInvalidatedCount = 0
     node.pendingLazyListRowCountDeadline = nil
     return
   }
   applyLazyListRowCount(node, rowCount, invalidatedCount: invalidatedCount)
   node.pendingLazyListRowCount = nil
+  node.pendingLazyListRowCountInvalidatedCount = 0
   node.pendingLazyListRowCountDeadline = nil
 }
 
@@ -6287,9 +6411,12 @@ public func bonsai_native_swiftui_clear_lazy_list_rows(_ pointer: UnsafeMutableR
   }
   node.lazyListRowsPublishedEventId = nil
   node.pendingLazyListRowCountDeadline = nil
+  node.pendingLazyListRowCountInvalidatedCount = 0
   publishLazyListRowCount(node, 0)
   node.lazyListRowsByIndex.removeAll()
   node.lazyListRowKeyByIndex.removeAll()
+  node.lazyListRowsByKey.removeAll()
+  node.lazyListIdentityKeysByIndex.removeAll()
   node.lazyListIdentityKeyByIndex.removeAll()
   node.lazyListRetainedOrder.removeAll()
   node.lazyListVisibleIndices.removeAll()

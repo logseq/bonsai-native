@@ -1779,6 +1779,7 @@ module Renderer = struct
       -> version:int
       -> stale_indices:int list
       -> identity_keys:(int * string) list
+      -> cached_rows:(int * string * view) list
       -> key_row:(int -> string)
       -> render_row:(int -> view)
       -> release_row:(int -> unit)
@@ -1980,6 +1981,9 @@ module Renderer = struct
         t.lazy_rows;
       index_by_key
     ;;
+
+    let lazy_list_initial_cache_count = 96
+    let lazy_list_focused_cache_radius = 0
 
     let find_lazy_row_by_key lazy_row_index_by_key t ~target_index ~target_key =
       match Hashtbl.find lazy_row_index_by_key target_key with
@@ -2785,22 +2789,14 @@ module Renderer = struct
                             ~target_index:index ~target_key:row_key
                         with
                         | Some (_, moved) when String.equal moved.state_key row_state_key ->
-                          index :: stale_indices, true
+                          stale_indices, true
                         | Some _ | None -> index :: stale_indices, order_changed)
                  t.lazy_rows
                  ([], false))
          in
          debug_log "lazy_list_stale_indices count=%d order_changed=%b"
            (List.length stale_indices) order_changed;
-         let identity_keys =
-           Hashtbl.fold
-             (fun index cached keys ->
-                if index >= 0 && index < length
-                then (index, cached.identity_key) :: keys
-                else keys)
-             t.lazy_rows
-             []
-         in
+         let identity_keys = List.init length (fun index -> index, key index) in
          let stale_indices_to_destroy =
            List.filter (fun index -> index < 0 || index >= length) stale_indices
          in
@@ -2859,6 +2855,34 @@ module Renderer = struct
              Hashtbl.remove t.lazy_rows index;
              destroy cached.mounted
          in
+         let cached_row_indices = Int.Hash_set.create () in
+         let add_cached_row_index index =
+           if index >= 0 && index < length then Hash_set.add cached_row_indices index
+         in
+         List.iter stale_indices ~f:add_cached_row_index;
+         if Hashtbl.length t.lazy_rows = 0
+         then
+           for index = 0 to min (length - 1) (lazy_list_initial_cache_count - 1) do
+             add_cached_row_index index
+           done;
+         Option.iter focused_row_index ~f:(fun index ->
+             for row_index =
+                   max 0 (index - lazy_list_focused_cache_radius)
+                 to
+                   min (length - 1) (index + lazy_list_focused_cache_radius)
+             do
+               add_cached_row_index row_index
+             done);
+         let cached_rows =
+           debug_time "lazy_list_render_cached_rows" (fun () ->
+               Hashtbl.fold
+                 (fun index () rows ->
+                    let row_key = key index in
+                    let rendered = render_row index in
+                    (index, row_key, rendered) :: rows)
+                 cached_row_indices
+                 [])
+         in
          debug_time "lazy_list_set_handlers" (fun () ->
              Backend.set_on_click t.view None;
              Backend.set_on_change t.view None;
@@ -2883,6 +2907,7 @@ module Renderer = struct
              Backend.set_lazy_list_rows t.view ~length ~version:t.lazy_list_version
                ~stale_indices
                ~identity_keys
+               ~cached_rows
                ~key_row:key
                ~render_row ~release_row
                ~on_rows_published:
@@ -3822,6 +3847,7 @@ module For_testing = struct
     ;;
 
     let set_lazy_list_rows view ~length ~version:_ ~stale_indices:_ ~identity_keys:_
+        ~cached_rows:_
         ~key_row
         ~render_row
         ~release_row:_

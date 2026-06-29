@@ -93,7 +93,11 @@ extern void bonsai_native_swiftui_set_lazy_list_rows(
   int32_t invalidated_index_count,
   int32_t *identity_indices,
   const char **identity_keys,
-  int32_t identity_key_count);
+  int32_t identity_key_count,
+  int32_t *cached_indices,
+  const char **cached_keys,
+  void **cached_row_pointers,
+  int32_t cached_row_count);
 extern void bonsai_native_swiftui_set_lazy_list_rows_published_event(
   void *node,
   int32_t event_id);
@@ -1034,10 +1038,13 @@ CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows(
   value version,
   value invalidated_indices,
   value identity_indices,
-  value identity_keys)
+  value identity_keys,
+  value cached_indices,
+  value cached_keys,
+  value cached_rows)
 {
   CAMLparam5(node, provider_id, count, version, invalidated_indices);
-  CAMLxparam2(identity_indices, identity_keys);
+  CAMLxparam5(identity_indices, identity_keys, cached_indices, cached_keys, cached_rows);
 
   mlsize_t invalidated_index_count = Wosize_val(invalidated_indices);
   int32_t *invalidated_index_values = NULL;
@@ -1074,6 +1081,41 @@ CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows(
     }
   }
 
+  mlsize_t cached_index_count = Wosize_val(cached_indices);
+  mlsize_t cached_key_count = Wosize_val(cached_keys);
+  mlsize_t cached_row_count = Wosize_val(cached_rows);
+  if (cached_index_count != cached_key_count || cached_index_count != cached_row_count) {
+    free(invalidated_index_values);
+    free(identity_index_values);
+    free(identity_key_values);
+    caml_failwith("Lazy list cached row arrays must have the same length");
+  }
+  int32_t *cached_index_values = NULL;
+  const char **cached_key_values = NULL;
+  void **cached_row_pointers = NULL;
+  if (cached_row_count > 0) {
+    cached_index_values = malloc(sizeof(int32_t) * cached_row_count);
+    cached_key_values = malloc(sizeof(const char *) * cached_row_count);
+    cached_row_pointers = malloc(sizeof(void *) * cached_row_count);
+    if (
+      cached_index_values == NULL ||
+      cached_key_values == NULL ||
+      cached_row_pointers == NULL) {
+      free(invalidated_index_values);
+      free(identity_index_values);
+      free(identity_key_values);
+      free(cached_index_values);
+      free(cached_key_values);
+      free(cached_row_pointers);
+      caml_failwith("Unable to allocate lazy list cached row arrays");
+    }
+    for (mlsize_t index = 0; index < cached_row_count; index++) {
+      cached_index_values[index] = (int32_t)Int_val(Field(cached_indices, index));
+      cached_key_values[index] = String_val(Field(cached_keys, index));
+      cached_row_pointers[index] = pointer_val(Field(cached_rows, index));
+    }
+  }
+
   bonsai_native_swiftui_set_lazy_list_rows(
     pointer_val(node),
     Int_val(provider_id),
@@ -1083,10 +1125,17 @@ CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows(
     (int32_t)invalidated_index_count,
     identity_index_values,
     identity_key_values,
-    (int32_t)identity_key_count);
+    (int32_t)identity_key_count,
+    cached_index_values,
+    cached_key_values,
+    cached_row_pointers,
+    (int32_t)cached_row_count);
   free(invalidated_index_values);
   free(identity_index_values);
   free(identity_key_values);
+  free(cached_index_values);
+  free(cached_key_values);
+  free(cached_row_pointers);
   CAMLreturn(Val_unit);
 }
 
@@ -1102,7 +1151,10 @@ CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows_bytecode(
     argv[3],
     argv[4],
     argv[5],
-    argv[6]);
+    argv[6],
+    argv[7],
+    argv[8],
+    argv[9]);
 }
 
 CAMLprim value bonsai_apple_swiftui_set_lazy_list_rows_published_event(
