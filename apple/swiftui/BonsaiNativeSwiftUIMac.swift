@@ -301,6 +301,24 @@ private struct BonsaiNativeToolbarItem: Identifiable {
   var menuActions: [BonsaiNativeRowAction]
 }
 
+private enum BonsaiNativeToolbarPlacement: Int32 {
+  case automatic = 0
+  case bottomBar = 1
+}
+
+private enum BonsaiNativeToolbarContentKind: Int32 {
+  case group = 0
+  case spacer = 1
+}
+
+private struct BonsaiNativeToolbarContent: Identifiable {
+  let id: String
+  let kind: BonsaiNativeToolbarContentKind
+  let placement: BonsaiNativeToolbarPlacement
+  let fixed: Bool
+  var items: [BonsaiNativeToolbarItem]
+}
+
 private final class BonsaiNativeNode: ObservableObject, Identifiable {
   let id = UUID()
   let kind: NodeKind
@@ -337,6 +355,8 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var navigationActivateEventId: Int32?
   @Published var navigationDeactivateEventId: Int32?
   @Published var tapEventId: Int32?
+  @Published var horizontalSwipeLeftEventId: Int32?
+  @Published var horizontalSwipeRightEventId: Int32?
   @Published var appearEventId: Int32?
   @Published var changeEventId: Int32?
   @Published var isSearchable = false
@@ -369,6 +389,7 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var confirmationDialogActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
+  @Published var toolbarContents: [BonsaiNativeToolbarContent] = []
   @Published var keyboardToolbarItems: [BonsaiNativeToolbarItem] = []
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
@@ -930,6 +951,9 @@ private struct BonsaiNativeNodeView: View {
     case .customView:
       if node.text == "congrats-effect" {
         BonsaiNativeCongratsEffectView()
+      } else if node.text == "system-grouped-background" {
+        Color(nsColor: .windowBackgroundColor)
+          .ignoresSafeArea(.container, edges: .all)
       } else {
         Text(node.text)
       }
@@ -2196,6 +2220,17 @@ public func bonsai_native_swiftui_set_tap_action(_ pointer: UnsafeMutableRawPoin
   nativeNode(from: pointer)?.tapEventId = eventId < 0 ? nil : eventId
 }
 
+@_cdecl("bonsai_native_swiftui_set_horizontal_swipe")
+public func bonsai_native_swiftui_set_horizontal_swipe(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ leftEventId: Int32,
+  _ rightEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.horizontalSwipeLeftEventId = leftEventId < 0 ? nil : leftEventId
+  node.horizontalSwipeRightEventId = rightEventId < 0 ? nil : rightEventId
+}
+
 @_cdecl("bonsai_native_swiftui_set_on_appear")
 public func bonsai_native_swiftui_set_on_appear(_ pointer: UnsafeMutableRawPointer?, _ eventId: Int32) {
   nativeNode(from: pointer)?.appearEventId = eventId < 0 ? nil : eventId
@@ -2508,6 +2543,44 @@ public func bonsai_native_swiftui_set_navigation_title(
 public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPointer?) {
   guard let node = nativeNode(from: pointer) else { return }
   node.toolbarItems = []
+  node.toolbarContents = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_group")
+public func bonsai_native_swiftui_append_toolbar_group(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ placement: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer else { return }
+  node.toolbarContents.append(
+    BonsaiNativeToolbarContent(
+      id: String(cString: idPointer),
+      kind: .group,
+      placement: BonsaiNativeToolbarPlacement(rawValue: placement) ?? .automatic,
+      fixed: false,
+      items: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_spacer")
+public func bonsai_native_swiftui_append_toolbar_spacer(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ placement: Int32,
+  _ fixed: Bool
+) {
+  guard let node = nativeNode(from: pointer), let idPointer else { return }
+  node.toolbarContents.append(
+    BonsaiNativeToolbarContent(
+      id: String(cString: idPointer),
+      kind: .spacer,
+      placement: BonsaiNativeToolbarPlacement(rawValue: placement) ?? .automatic,
+      fixed: fixed,
+      items: []
+    )
+  )
 }
 
 @_cdecl("bonsai_native_swiftui_clear_keyboard_toolbar")
@@ -2529,6 +2602,40 @@ public func bonsai_native_swiftui_append_toolbar_item(
 ) {
   guard let node = nativeNode(from: pointer), let idPointer, let titlePointer else { return }
   node.toolbarItems.append(
+    BonsaiNativeToolbarItem(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      isTitleVisible: isTitleVisible,
+      eventId: eventId < 0 ? nil : eventId,
+      isEnabled: isEnabled,
+      shareURL: shareURLPointer.map(String.init(cString:)),
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_group_item")
+public func bonsai_native_swiftui_append_toolbar_group_item(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ groupIdPointer: UnsafePointer<CChar>?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isTitleVisible: Bool,
+  _ isEnabled: Bool,
+  _ shareURLPointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let groupIdPointer,
+        let idPointer,
+        let titlePointer else { return }
+  let groupId = String(cString: groupIdPointer)
+  guard let groupIndex = node.toolbarContents.firstIndex(where: {
+    $0.id == groupId && $0.kind == .group
+  }) else { return }
+  node.toolbarContents[groupIndex].items.append(
     BonsaiNativeToolbarItem(
       id: String(cString: idPointer),
       title: String(cString: titlePointer),
@@ -2584,19 +2691,29 @@ public func bonsai_native_swiftui_append_toolbar_menu_action(
 ) {
   guard let node = nativeNode(from: pointer), let itemIdPointer, let titlePointer else { return }
   let itemId = String(cString: itemIdPointer)
-  guard let index = node.toolbarItems.firstIndex(where: { $0.id == itemId }) else { return }
-  node.toolbarItems[index].menuActions.append(
-    BonsaiNativeRowAction(
-      title: String(cString: titlePointer),
-      systemImage: systemImagePointer.map(String.init(cString:)),
-      style: style,
-      eventId: eventId < 0 ? nil : eventId,
-      startsSection: startsSection,
-      exportFilename: exportFilenamePointer.map(String.init(cString:)),
-      exportContentType: exportContentTypePointer.map(String.init(cString:)),
-      exportContent: exportContentPointer.map(String.init(cString:))
-    )
+  let action = BonsaiNativeRowAction(
+    title: String(cString: titlePointer),
+    systemImage: systemImagePointer.map(String.init(cString:)),
+    style: style,
+    eventId: eventId < 0 ? nil : eventId,
+    startsSection: startsSection,
+    exportFilename: exportFilenamePointer.map(String.init(cString:)),
+    exportContentType: exportContentTypePointer.map(String.init(cString:)),
+    exportContent: exportContentPointer.map(String.init(cString:))
   )
+  if let index = node.toolbarItems.firstIndex(where: { $0.id == itemId }) {
+    node.toolbarItems[index].menuActions.append(action)
+    return
+  }
+  for contentIndex in node.toolbarContents.indices {
+    guard node.toolbarContents[contentIndex].kind == .group else { continue }
+    if let itemIndex = node.toolbarContents[contentIndex].items.firstIndex(where: {
+      $0.id == itemId
+    }) {
+      node.toolbarContents[contentIndex].items[itemIndex].menuActions.append(action)
+      return
+    }
+  }
 }
 
 @_cdecl("bonsai_native_swiftui_set_padding")

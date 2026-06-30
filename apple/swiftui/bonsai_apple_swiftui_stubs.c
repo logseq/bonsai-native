@@ -125,6 +125,10 @@ extern void bonsai_native_swiftui_set_navigation_link_callbacks(
   int32_t deactivate_event_id);
 extern void bonsai_native_swiftui_set_navigation_link_value(void *node, const char *value);
 extern void bonsai_native_swiftui_set_tap_action(void *node, int32_t event_id);
+extern void bonsai_native_swiftui_set_horizontal_swipe(
+  void *node,
+  int32_t left_event_id,
+  int32_t right_event_id);
 extern void bonsai_native_swiftui_set_on_appear(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_on_change(void *node, int32_t event_id);
 extern void bonsai_native_swiftui_set_list_row_subtitle(void *node, const char *subtitle);
@@ -236,8 +240,27 @@ extern void bonsai_native_swiftui_append_confirmation_dialog_action(
 extern void bonsai_native_swiftui_set_navigation_title(void *node, const char *title);
 extern void bonsai_native_swiftui_clear_toolbar(void *node);
 extern void bonsai_native_swiftui_clear_keyboard_toolbar(void *node);
+extern void bonsai_native_swiftui_append_toolbar_group(
+  void *node,
+  const char *id,
+  int32_t placement);
+extern void bonsai_native_swiftui_append_toolbar_spacer(
+  void *node,
+  const char *id,
+  int32_t placement,
+  bool fixed);
 extern void bonsai_native_swiftui_append_toolbar_item(
   void *node,
+  const char *id,
+  const char *title,
+  const char *system_image,
+  bool is_title_visible,
+  bool is_enabled,
+  const char *share_url,
+  int32_t event_id);
+extern void bonsai_native_swiftui_append_toolbar_group_item(
+  void *node,
+  const char *group_id,
   const char *id,
   const char *title,
   const char *system_image,
@@ -1259,6 +1282,19 @@ CAMLprim value bonsai_apple_swiftui_set_tap_action(value node, value event_id)
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_set_horizontal_swipe(
+  value node,
+  value left_event_id,
+  value right_event_id)
+{
+  CAMLparam3(node, left_event_id, right_event_id);
+  bonsai_native_swiftui_set_horizontal_swipe(
+    pointer_val(node),
+    Int_val(left_event_id),
+    Int_val(right_event_id));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_set_on_appear(value node, value event_id)
 {
   CAMLparam2(node, event_id);
@@ -1698,6 +1734,34 @@ CAMLprim value bonsai_apple_swiftui_clear_keyboard_toolbar(value node)
   CAMLreturn(Val_unit);
 }
 
+CAMLprim value bonsai_apple_swiftui_append_toolbar_group(
+  value node,
+  value id,
+  value placement)
+{
+  CAMLparam3(node, id, placement);
+  bonsai_native_swiftui_append_toolbar_group(
+    pointer_val(node),
+    String_val(id),
+    Int_val(placement));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_toolbar_spacer(
+  value node,
+  value id,
+  value placement,
+  value fixed)
+{
+  CAMLparam4(node, id, placement, fixed);
+  bonsai_native_swiftui_append_toolbar_spacer(
+    pointer_val(node),
+    String_val(id),
+    Int_val(placement),
+    Bool_val(fixed));
+  CAMLreturn(Val_unit);
+}
+
 CAMLprim value bonsai_apple_swiftui_append_toolbar_item(
   value node,
   value id,
@@ -1712,6 +1776,32 @@ CAMLprim value bonsai_apple_swiftui_append_toolbar_item(
   CAMLxparam3(is_enabled, share_url, event_id);
   bonsai_native_swiftui_append_toolbar_item(
     pointer_val(node),
+    String_val(id),
+    String_val(title),
+    option_string_val(system_image),
+    Bool_val(is_title_visible),
+    Bool_val(is_enabled),
+    option_string_val(share_url),
+    Int_val(event_id));
+  CAMLreturn(Val_unit);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_toolbar_group_item(
+  value node,
+  value group_id,
+  value id,
+  value title,
+  value system_image,
+  value is_title_visible,
+  value is_enabled,
+  value share_url,
+  value event_id)
+{
+  CAMLparam5(node, group_id, id, title, system_image);
+  CAMLxparam4(is_title_visible, is_enabled, share_url, event_id);
+  bonsai_native_swiftui_append_toolbar_group_item(
+    pointer_val(node),
+    String_val(group_id),
     String_val(id),
     String_val(title),
     option_string_val(system_image),
@@ -1769,6 +1859,23 @@ CAMLprim value bonsai_apple_swiftui_append_toolbar_item_bytecode(value *argv, in
     argv[5],
     argv[6],
     argv[7]);
+}
+
+CAMLprim value bonsai_apple_swiftui_append_toolbar_group_item_bytecode(
+  value *argv,
+  int argn)
+{
+  (void)argn;
+  return bonsai_apple_swiftui_append_toolbar_group_item(
+    argv[0],
+    argv[1],
+    argv[2],
+    argv[3],
+    argv[4],
+    argv[5],
+    argv[6],
+    argv[7],
+    argv[8]);
 }
 
 CAMLprim value bonsai_apple_swiftui_append_toolbar_menu_action(

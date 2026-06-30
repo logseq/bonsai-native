@@ -369,6 +369,22 @@ type toolbar_item =
   ; menu_actions : toolbar_menu_action list
   }
 
+type toolbar_placement =
+  | Automatic
+  | Bottom_bar
+
+type toolbar_content =
+  | Toolbar_group of
+      { id : string
+      ; placement : toolbar_placement
+      ; items : toolbar_item list
+      }
+  | Toolbar_spacer of
+      { id : string
+      ; placement : toolbar_placement
+      ; fixed : bool
+      }
+
 type text_style =
   | Large_title
   | Title
@@ -813,8 +829,13 @@ and modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Toolbar of toolbar_item list
+  | Toolbar_groups of toolbar_content list
   | Keyboard_toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
+  | Horizontal_swipe of
+      { on_left : unit Action.t
+      ; on_right : unit Action.t
+      }
   | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
   | Scroll_dismisses_keyboard
@@ -874,8 +895,13 @@ type 'view rendered_modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Rendered_toolbar of toolbar_item list
+  | Rendered_toolbar_groups of toolbar_content list
   | Rendered_keyboard_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
+  | Rendered_horizontal_swipe of
+      { on_left : unit Action.t
+      ; on_right : unit Action.t
+      }
   | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
   | Rendered_scroll_dismisses_keyboard
@@ -1592,8 +1618,20 @@ let toolbar_item
 ;;
 
 let toolbar items node = Modified_node (Toolbar items, node)
+let toolbar_group ?(placement = Automatic) ~id items =
+  Toolbar_group { id; placement; items }
+;;
+
+let toolbar_spacer ?(placement = Automatic) ?(fixed = true) ~id () =
+  Toolbar_spacer { id; placement; fixed }
+;;
+
+let toolbar_groups contents node = Modified_node (Toolbar_groups contents, node)
 let keyboard_toolbar items node = Modified_node (Keyboard_toolbar items, node)
 let tap_action ~on_click node = Modified_node (Tap_action { on_click }, node)
+let horizontal_swipe ~on_left ~on_right node =
+  Modified_node (Horizontal_swipe { on_left; on_right }, node)
+
 let on_appear ~on_appear node = Modified_node (On_appear { on_appear }, node)
 let keyboard_dismiss_controls node = Modified_node (Keyboard_dismiss_controls, node)
 let scroll_dismisses_keyboard node = Modified_node (Scroll_dismisses_keyboard, node)
@@ -2054,6 +2092,26 @@ module Renderer = struct
         ^ ":"
         ^ opt action.share_url
       in
+      let toolbar_placement_signature = function
+        | Automatic -> "automatic"
+        | Bottom_bar -> "bottom-bar"
+      in
+      let toolbar_content_signature = function
+        | Toolbar_group { id; placement; items } ->
+          "group:"
+          ^ id
+          ^ ":"
+          ^ toolbar_placement_signature placement
+          ^ ":"
+          ^ list (List.map items ~f:toolbar_item_signature)
+        | Toolbar_spacer { id; placement; fixed } ->
+          "spacer:"
+          ^ id
+          ^ ":"
+          ^ toolbar_placement_signature placement
+          ^ ":"
+          ^ bool fixed
+      in
       let menu_action_signature (action : menu_action) =
         action.id
         ^ ":"
@@ -2104,9 +2162,12 @@ module Renderer = struct
           ->
           "searchable:" ^ text ^ ":" ^ opt (Option.map is_presented ~f:bool) ^ ":" ^ opt prompt
         | Toolbar items -> "toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
+        | Toolbar_groups contents ->
+          "toolbar-groups:" ^ list (List.map contents ~f:toolbar_content_signature)
         | Keyboard_toolbar items ->
           "keyboard-toolbar:" ^ list (List.map items ~f:toolbar_item_signature)
         | Tap_action _ -> "tap-action"
+        | Horizontal_swipe _ -> "horizontal-swipe"
         | On_appear _ -> "on-appear"
         | Keyboard_dismiss_controls -> "keyboard-dismiss-controls"
         | Scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
@@ -3110,7 +3171,6 @@ module Renderer = struct
            ~max
            ~on_change:(Some (fun value -> t.schedule_event (on_change value)));
          Backend.set_on_click t.view None;
-         Backend.set_on_change t.view None;
          replace_children []
        | Stepper_node { title; value; min; max; step; on_change } ->
          Backend.set_stepper
@@ -3122,7 +3182,6 @@ module Renderer = struct
            ~step
            ~on_change:(Some (fun value -> t.schedule_event (on_change value)));
          Backend.set_on_click t.view None;
-         Backend.set_on_change t.view None;
          replace_children []
        | Date_picker_node { title; selected; on_select } ->
          Backend.set_date_picker
@@ -3131,7 +3190,6 @@ module Renderer = struct
            ~selected
            ~on_select:(Some (fun selected -> t.schedule_event (on_select selected)));
          Backend.set_on_click t.view None;
-         Backend.set_on_change t.view None;
          replace_children []
        | Color_picker_node { title; selected; on_select } ->
          Backend.set_color_picker
@@ -3140,7 +3198,6 @@ module Renderer = struct
            ~selected
            ~on_select:(Some (fun selected -> t.schedule_event (on_select selected)));
          Backend.set_on_click t.view None;
-         Backend.set_on_change t.view None;
          replace_children []
        | Menu_node { title; system_image; actions } ->
          Backend.set_menu
@@ -3159,7 +3216,6 @@ module Renderer = struct
            ~is_expanded
            ~on_change:(Some (fun is_expanded -> t.schedule_event (on_change is_expanded)));
          Backend.set_on_click t.view None;
-         Backend.set_on_change t.view None;
          reconcile_positional t children
        | Photo_picker_node
            { title
@@ -3328,8 +3384,11 @@ module Renderer = struct
           | Searchable { text; is_presented; prompt; on_change; on_presented_change } ->
             Rendered_searchable { text; is_presented; prompt; on_change; on_presented_change }
           | Toolbar items -> Rendered_toolbar items
+          | Toolbar_groups contents -> Rendered_toolbar_groups contents
           | Keyboard_toolbar items -> Rendered_keyboard_toolbar items
           | Tap_action { on_click } -> Rendered_tap_action { on_click }
+          | Horizontal_swipe { on_left; on_right } ->
+            Rendered_horizontal_swipe { on_left; on_right }
           | On_appear { on_appear } -> Rendered_on_appear { on_appear }
           | Keyboard_dismiss_controls -> Rendered_keyboard_dismiss_controls
           | Scroll_dismisses_keyboard -> Rendered_scroll_dismisses_keyboard
@@ -4186,8 +4245,10 @@ module For_testing = struct
       | Rendered_navigation_title _ -> "navigation-title"
       | Rendered_searchable _ -> "searchable"
       | Rendered_toolbar _ -> "toolbar"
+      | Rendered_toolbar_groups _ -> "toolbar-groups"
       | Rendered_keyboard_toolbar _ -> "keyboard-toolbar"
       | Rendered_tap_action _ -> "tap-action"
+      | Rendered_horizontal_swipe _ -> "horizontal-swipe"
       | Rendered_on_appear _ -> "on-appear"
       | Rendered_keyboard_dismiss_controls -> "keyboard-dismiss-controls"
       | Rendered_scroll_dismisses_keyboard -> "scroll-dismisses-keyboard"
@@ -4550,6 +4611,24 @@ module For_testing = struct
             menu)
         |> String.concat ~sep:","
       in
+      let toolbar_placement_text = function
+        | Automatic -> "automatic"
+        | Bottom_bar -> "bottom-bar"
+      in
+      let toolbar_content_text = function
+        | Toolbar_group { id; placement; items } ->
+          sprintf
+            "group:%s:%s:[%s]"
+            id
+            (toolbar_placement_text placement)
+            (toolbar_items_text items)
+        | Toolbar_spacer { id; placement; fixed } ->
+          sprintf
+            "spacer:%s:%s:%s"
+            id
+            (toolbar_placement_text placement)
+            (Bool.to_string fixed)
+      in
       let toolbar =
         match
           List.find_map view.modifiers ~f:(function
@@ -4561,6 +4640,18 @@ module For_testing = struct
           " toolbar=["
           ^ toolbar_items_text items
           ^ "] toolbar-presentation=system-toolbaritem toolbaritem-chrome=system-default"
+      in
+      let toolbar_groups =
+        match
+          List.find_map view.modifiers ~f:(function
+            | Rendered_toolbar_groups contents -> Some contents
+            | _ -> None)
+        with
+        | None -> ""
+        | Some contents ->
+          " toolbar-groups=["
+          ^ (contents |> List.map ~f:toolbar_content_text |> String.concat ~sep:",")
+          ^ "] toolbar-presentation=system-toolbaritem-groups toolbaritem-chrome=system-default"
       in
       let keyboard_toolbar =
         match
@@ -4990,6 +5081,7 @@ module For_testing = struct
         ^ modifiers
         ^ sheet_detents
         ^ toolbar
+        ^ toolbar_groups
         ^ keyboard_toolbar
         ^ navigation_title
         ^ alert
@@ -5030,7 +5122,7 @@ module For_testing = struct
     let find_visible_exn view ~path = find_exn view ~path |> visible_view
     let show_at_path view ~path = show (find_exn view ~path)
 
-    let safe_area_inset_bottom_content_exn view =
+    let safe_area_inset_bottom_content view =
       match
         List.find_map view.modifiers ~f:(function
           | Rendered_safe_area_inset_bottom { content } -> Some content
@@ -5040,8 +5132,21 @@ module For_testing = struct
       | None -> failwith "View has no bottom safe-area inset"
     ;;
 
+    let find_safe_area_host_exn view ~path =
+      let view = find_exn view ~path in
+      match safe_area_inset_bottom_content view with
+      | _ -> view
+      | exception Failure _ -> visible_view view
+    ;;
+
+    let safe_area_inset_bottom_content_exn view =
+      match safe_area_inset_bottom_content view with
+      | content -> content
+      | exception Failure _ -> safe_area_inset_bottom_content (visible_view view)
+    ;;
+
     let show_safe_area_inset_bottom_exn view ~path =
-      show (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
+      show (safe_area_inset_bottom_content_exn (find_safe_area_host_exn view ~path))
     ;;
 
     let navigation_link_label_or_self view =
@@ -5082,7 +5187,7 @@ module For_testing = struct
 
     let click_safe_area_inset_bottom_exn view ~path ~inset_path =
       click_exn
-        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_safe_area_host_exn view ~path))
         ~path:inset_path
     ;;
 
@@ -5105,7 +5210,7 @@ module For_testing = struct
 
     let change_safe_area_inset_bottom_text_exn view ~path ~inset_path ~text =
       change_text_exn
-        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_safe_area_host_exn view ~path))
         ~path:inset_path
         ~text
     ;;
@@ -5225,7 +5330,7 @@ module For_testing = struct
 
     let submit_safe_area_inset_bottom_text_exn view ~path ~inset_path =
       submit_text_exn
-        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_safe_area_host_exn view ~path))
         ~path:inset_path
     ;;
 
@@ -5239,7 +5344,7 @@ module For_testing = struct
 
     let select_safe_area_inset_bottom_photo_exn view ~path ~inset_path ~image_id =
       select_photo_exn
-        (safe_area_inset_bottom_content_exn (find_visible_exn view ~path))
+        (safe_area_inset_bottom_content_exn (find_safe_area_host_exn view ~path))
         ~path:inset_path
         ~image_id
     ;;
@@ -5442,12 +5547,21 @@ module For_testing = struct
     ;;
 
     let click_toolbar_item_exn view ~path ~id =
-      let view = find_visible_exn view ~path in
-      match
-        List.find_map view.modifiers ~f:(function
-          | Rendered_toolbar items ->
+      let raw_view = find_exn view ~path in
+      let views = [ raw_view; visible_view raw_view ] in
+      let find_grouped_item contents =
+        List.find_map contents ~f:(function
+          | Toolbar_group { items; _ } ->
             List.find items ~f:(fun item -> String.equal item.id id)
-          | _ -> None)
+          | Toolbar_spacer _ -> None)
+      in
+      match
+        List.find_map views ~f:(fun view ->
+            List.find_map view.modifiers ~f:(function
+              | Rendered_toolbar items ->
+                List.find items ~f:(fun item -> String.equal item.id id)
+              | Rendered_toolbar_groups contents -> find_grouped_item contents
+              | _ -> None))
       with
       | Some item ->
         if item.is_enabled

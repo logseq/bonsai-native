@@ -126,6 +126,22 @@ type toolbar_item =
   ; menu_actions : toolbar_menu_action list
   }
 
+type toolbar_placement =
+  | Automatic
+  | Bottom_bar
+
+type toolbar_content =
+  | Toolbar_group of
+      { id : string
+      ; placement : toolbar_placement
+      ; items : toolbar_item list
+      }
+  | Toolbar_spacer of
+      { id : string
+      ; placement : toolbar_placement
+      ; fixed : bool
+      }
+
 type text_style =
   | Large_title
   | Title
@@ -585,8 +601,27 @@ val toolbar_item
   -> toolbar_item
 
 val toolbar : toolbar_item list -> node -> node
+val toolbar_group
+  :  ?placement:toolbar_placement
+  -> id:string
+  -> toolbar_item list
+  -> toolbar_content
+
+val toolbar_spacer
+  :  ?placement:toolbar_placement
+  -> ?fixed:bool
+  -> id:string
+  -> unit
+  -> toolbar_content
+
+val toolbar_groups : toolbar_content list -> node -> node
 val keyboard_toolbar : toolbar_item list -> node -> node
 val tap_action : on_click:unit Action.t -> node -> node
+val horizontal_swipe
+  :  on_left:unit Action.t
+  -> on_right:unit Action.t
+  -> node
+  -> node
 val on_appear : on_appear:unit Action.t -> node -> node
 val keyboard_dismiss_controls : node -> node
 val scroll_dismisses_keyboard : node -> node
@@ -706,8 +741,13 @@ type modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Toolbar of toolbar_item list
+  | Toolbar_groups of toolbar_content list
   | Keyboard_toolbar of toolbar_item list
   | Tap_action of { on_click : unit Action.t }
+  | Horizontal_swipe of
+      { on_left : unit Action.t
+      ; on_right : unit Action.t
+      }
   | On_appear of { on_appear : unit Action.t }
   | Keyboard_dismiss_controls
   | Scroll_dismisses_keyboard
@@ -767,8 +807,13 @@ type 'view rendered_modifier =
       ; on_presented_change : (bool -> unit Action.t) option
       }
   | Rendered_toolbar of toolbar_item list
+  | Rendered_toolbar_groups of toolbar_content list
   | Rendered_keyboard_toolbar of toolbar_item list
   | Rendered_tap_action of { on_click : unit Action.t }
+  | Rendered_horizontal_swipe of
+      { on_left : unit Action.t
+      ; on_right : unit Action.t
+      }
   | Rendered_on_appear of { on_appear : unit Action.t }
   | Rendered_keyboard_dismiss_controls
   | Rendered_scroll_dismisses_keyboard

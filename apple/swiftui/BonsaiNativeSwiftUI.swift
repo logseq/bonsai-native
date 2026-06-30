@@ -26,6 +26,11 @@ public typealias BonsaiNativeLaunchCallback =
 public typealias BonsaiNativeMainCallback =
   @convention(c) (UnsafeMutableRawPointer?) -> Void
 
+private let bonsaiDatePickerDebugLogger = Logger(
+  subsystem: "com.logseq.simple-outliner",
+  category: "DatePickerDebug"
+)
+
 private var bonsaiNativeLazyRowRenderCallback: BonsaiNativeLazyRowRenderCallback?
 private var bonsaiNativeLazyRowKeyCallback: BonsaiNativeLazyRowKeyCallback?
 private var bonsaiNativeLazyRowReleaseCallback: BonsaiNativeLazyRowReleaseCallback?
@@ -321,16 +326,41 @@ private extension EnvironmentValues {
 
 private var bonsaiHomeBodyBackground: Color {
   Color(uiColor: UIColor { traits in
-    if traits.userInterfaceStyle == .dark {
-      return .systemBackground
-    }
-    return UIColor(
-      red: bonsaiLightBackgroundComponent,
-      green: bonsaiLightBackgroundComponent,
-      blue: bonsaiLightBackgroundComponent,
-      alpha: 1
-    )
+    bonsaiHomeBodyUIColor(for: traits)
   })
+}
+
+@ViewBuilder
+private func bonsaiHomeBodyBackgroundLayer() -> some View {
+  if #available(iOS 26.0, *) {
+    bonsaiHomeBodyBackground.backgroundExtensionEffect()
+  } else {
+    bonsaiHomeBodyBackground
+  }
+}
+
+private func bonsaiHomeBodyUIColor(for traits: UITraitCollection) -> UIColor {
+  if traits.userInterfaceStyle == .dark {
+    return .systemBackground
+  }
+  return UIColor(
+    red: bonsaiLightBackgroundComponent,
+    green: bonsaiLightBackgroundComponent,
+    blue: bonsaiLightBackgroundComponent,
+    alpha: 1
+  )
+}
+
+private func bonsaiConfigureNavigationBarAppearance(for traits: UITraitCollection) {
+  let appearance = UINavigationBarAppearance()
+  appearance.configureWithTransparentBackground()
+  appearance.shadowColor = .clear
+
+  let navigationBar = UINavigationBar.appearance()
+  navigationBar.standardAppearance = appearance
+  navigationBar.scrollEdgeAppearance = appearance
+  navigationBar.compactAppearance = appearance
+  navigationBar.compactScrollEdgeAppearance = appearance
 }
 
 private func bonsaiDrawerSidebarTopInset(_ inset: CGFloat) -> CGFloat {
@@ -518,8 +548,6 @@ private struct BonsaiCompactSidebarToolbarModifier: ViewModifier {
             .buttonBorderShape(.circle)
           }
         }
-        .toolbarBackground(.clear, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
     } else {
       content
     }
@@ -527,6 +555,29 @@ private struct BonsaiCompactSidebarToolbarModifier: ViewModifier {
 }
 
 private extension View {
+  func bonsaiBottomBarChrome() -> some View {
+    self
+  }
+
+  @ViewBuilder
+  func bonsaiContentUnderBottomBar() -> some View {
+    if #available(iOS 26.0, *) {
+      self.contentMargins(.bottom, 0, for: .scrollContent)
+    } else {
+      self
+    }
+  }
+
+  func bonsaiNavigationChrome() -> some View {
+    self
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .background {
+        bonsaiHomeBodyBackgroundLayer()
+          .ignoresSafeArea(.container, edges: .all)
+      }
+      .bonsaiBottomBarChrome()
+  }
+
   @ViewBuilder
   func bonsaiLiquidGlassButtonStyle() -> some View {
     if #available(iOS 26.0, *) {
@@ -617,6 +668,33 @@ private struct BonsaiNativeToolbarItem: Identifiable {
   let isEnabled: Bool
   let shareURL: String?
   var menuActions: [BonsaiNativeRowAction]
+}
+
+private enum BonsaiNativeToolbarPlacement: Int32 {
+  case automatic = 0
+  case bottomBar = 1
+
+  var swiftUIPlacement: ToolbarItemPlacement {
+    switch self {
+    case .automatic:
+      return .automatic
+    case .bottomBar:
+      return .bottomBar
+    }
+  }
+}
+
+private enum BonsaiNativeToolbarContentKind: Int32 {
+  case group = 0
+  case spacer = 1
+}
+
+private struct BonsaiNativeToolbarContent: Identifiable {
+  let id: String
+  let kind: BonsaiNativeToolbarContentKind
+  let placement: BonsaiNativeToolbarPlacement
+  let fixed: Bool
+  var items: [BonsaiNativeToolbarItem]
 }
 
 private struct BonsaiNativeExportDocument: FileDocument {
@@ -740,7 +818,10 @@ private final class BonsaiNativeNode: ObservableObject, Identifiable {
   @Published var confirmationDialogActions: [BonsaiNativeAlertAction] = []
   @Published var navigationTitle: String?
   @Published var toolbarItems: [BonsaiNativeToolbarItem] = []
+  @Published var toolbarContents: [BonsaiNativeToolbarContent] = []
   @Published var keyboardToolbarItems: [BonsaiNativeToolbarItem] = []
+  @Published var horizontalSwipeLeftEventId: Int32?
+  @Published var horizontalSwipeRightEventId: Int32?
   @Published var padding: EdgeInsets?
   @Published var regularMaterialPanelCornerRadius: CGFloat?
   @Published var secondarySystemGroupedPanelCornerRadius: CGFloat?
@@ -1513,9 +1594,20 @@ private final class BonsaiNativeHostModel: ObservableObject {
     animation: Animation? = nil,
     deferOnMain: Bool = true
   ) {
-    guard let eventId else { return }
+    guard let eventId else {
+      bonsaiDatePickerDebugLogger.notice(
+        "sendChange skipped nil event text=\(text, privacy: .public)"
+      )
+      return
+    }
+    bonsaiDatePickerDebugLogger.notice(
+      "sendChange queued event=\(eventId, privacy: .public) text=\(text, privacy: .public) defer=\(deferOnMain, privacy: .public)"
+    )
     dispatchEvent(animation: animation, deferOnMain: deferOnMain) { [callback, text] in
       text.withCString { pointer in
+        bonsaiDatePickerDebugLogger.notice(
+          "sendChange emit event=\(eventId, privacy: .public) text=\(text, privacy: .public)"
+        )
         callback?(eventId, pointer)
       }
     }
@@ -1949,8 +2041,13 @@ private struct BonsaiNativeRootView: View {
   @ObservedObject var model: BonsaiNativeHostModel
 
   var body: some View {
-    BonsaiNativeNodeView(node: model.root, model: model)
-      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    ZStack(alignment: .top) {
+      bonsaiHomeBodyBackgroundLayer()
+        .ignoresSafeArea(.container, edges: .all)
+      BonsaiNativeNodeView(node: model.root, model: model)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
   }
 }
 
@@ -1967,6 +2064,9 @@ private func makeHostingController(
   let model = BonsaiNativeHostModel(root: root, callback: callback)
   bindHostModel(model, to: root)
   let controller = BonsaiNativeHostingController(rootView: BonsaiNativeRootView(model: model))
+  bonsaiConfigureNavigationBarAppearance(for: controller.traitCollection)
+  controller.view.backgroundColor = bonsaiHomeBodyUIColor(for: controller.traitCollection)
+  controller.view.isOpaque = true
   objc_setAssociatedObject(controller, "BonsaiNativeSwiftUIModel", model, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
   return controller
 }
@@ -2219,12 +2319,50 @@ private struct BonsaiNativeNavigationTitleModifier: ViewModifier {
         .navigationTitle(title)
 #if os(iOS)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbarBackground(.clear, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
+        .bonsaiBottomBarChrome()
 #endif
     } else {
       content
     }
+  }
+}
+
+private struct BonsaiNativeHorizontalSwipeModifier: ViewModifier {
+  @ObservedObject var node: BonsaiNativeNode
+  let model: BonsaiNativeHostModel
+  @GestureState private var dragTranslation: CGSize = .zero
+
+  private var horizontalOffset: CGFloat {
+    let horizontal = dragTranslation.width
+    let vertical = dragTranslation.height
+    guard abs(horizontal) > abs(vertical) * 1.2 else { return 0 }
+    return max(-64, min(64, horizontal * 0.35))
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .contentShape(.rect)
+      .offset(x: horizontalOffset)
+      .animation(.spring(response: 0.24, dampingFraction: 0.82), value: horizontalOffset)
+      .simultaneousGesture(
+        DragGesture(minimumDistance: 20, coordinateSpace: .local)
+          .updating($dragTranslation) { value, state, _ in
+            state = value.translation
+          }
+          .onEnded { value in
+            let horizontal = value.translation.width
+            let vertical = value.translation.height
+            guard abs(horizontal) >= 44, abs(horizontal) > abs(vertical) * 1.4 else {
+              return
+            }
+            bonsaiPerformLightHapticFeedback()
+            if horizontal < 0 {
+              model.sendClick(node.horizontalSwipeLeftEventId)
+            } else {
+              model.sendClick(node.horizontalSwipeRightEventId)
+            }
+          }
+      )
   }
 }
 
@@ -2235,25 +2373,27 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
   func body(content: Content) -> some View {
     bottomSafeAreaInset(
       appearAction(
-        tapAction(
-          contextMenu(
-            regularMaterialPanel(
-              secondarySystemGroupedPanel(
-                secondaryFillPanel(
-                  liquidGlassPanel(
-                    content
-                      .padding(node.padding ?? EdgeInsets())
-                      .frame(
-                        width: node.frameWidth,
-                        height: node.frameHeight,
-                        alignment: node.frameAlignment.swiftUIAlignment
+        horizontalSwipeAction(
+          tapAction(
+            contextMenu(
+              regularMaterialPanel(
+                secondarySystemGroupedPanel(
+                  secondaryFillPanel(
+                    liquidGlassPanel(
+                      content
+                        .padding(node.padding ?? EdgeInsets())
+                        .frame(
+                          width: node.frameWidth,
+                          height: node.frameHeight,
+                          alignment: node.frameAlignment.swiftUIAlignment
+                        )
+                        .frame(
+                          maxWidth: node.frameMaxWidth,
+                          alignment: node.frameAlignment.swiftUIAlignment
+                        )
                       )
-                      .frame(
-                        maxWidth: node.frameMaxWidth,
-                        alignment: node.frameAlignment.swiftUIAlignment
-                      )
+                    )
                   )
-                )
               )
             )
           )
@@ -2361,6 +2501,16 @@ private struct BonsaiNativeNodeModifiers: ViewModifier {
             .presentationDetents(sheetPresentationDetents)
         }
       }
+  }
+
+  @ViewBuilder
+  private func horizontalSwipeAction<Content: View>(_ content: Content) -> some View {
+    if node.horizontalSwipeLeftEventId == nil && node.horizontalSwipeRightEventId == nil {
+      content
+    } else {
+      content
+        .modifier(BonsaiNativeHorizontalSwipeModifier(node: node, model: model))
+    }
   }
 
   private func bonsaiSheetContentHost<Content: View>(
@@ -3470,6 +3620,7 @@ private struct BonsaiNativeNodeView: View {
         childViews
       }
       .background(bonsaiHomeBodyBackground)
+      .bonsaiContentUnderBottomBar()
 
     case .list:
       listView
@@ -3483,9 +3634,13 @@ private struct BonsaiNativeNodeView: View {
           childViews
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+        .bonsaiBottomBarChrome()
         .modifier(BonsaiCompactSidebarToolbarModifier(toolbar: compactSidebarToolbar))
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+      .bonsaiBottomBarChrome()
 
     case .navigationPathStack:
       navigationPathStack
@@ -3587,6 +3742,9 @@ private struct BonsaiNativeNodeView: View {
     case .customView:
       if node.text == "congrats-effect" {
         BonsaiNativeCongratsEffectView()
+      } else if node.text == "system-grouped-background" {
+        bonsaiHomeBodyBackgroundLayer()
+          .ignoresSafeArea(.container, edges: .all)
       } else if let payload = youtubePayload(from: node.text) {
         BonsaiNativeDeferredYouTubeIframeView(payload: payload)
       } else {
@@ -3639,6 +3797,7 @@ private struct BonsaiNativeNodeView: View {
       BonsaiNativeScrollViewRegistrationView(listID: node.id, node: node)
         .frame(width: 0, height: 0)
     }
+    .bonsaiContentUnderBottomBar()
     .onAppear {
       listAppeared(proxy)
     }
@@ -3660,57 +3819,92 @@ private struct BonsaiNativeNodeView: View {
   @ViewBuilder
   private func nativeListRows() -> some View {
     if let providerId = node.lazyListProviderId {
-      ForEach(lazyListPositions()) { position in
-        lazyListRowPosition(
-          providerId: providerId,
-          position: position
-        )
-      }
-        .onDelete { offsets in
-          deleteLazyListRows(offsets: offsets)
+      if node.listDeleteEventId == nil {
+        ForEach(lazyListPositions()) { position in
+          lazyListRowPosition(
+            providerId: providerId,
+            position: position
+          )
         }
-        .onMove { source, destination in
-          moveLazyListRows(source: source, destination: destination)
-        }
-        .listRowInsets(EdgeInsets())
-    } else {
-      ForEach(node.children) { child in
-        BonsaiNativeNodeView(node: child, model: model)
+          .onMove { source, destination in
+            moveLazyListRows(source: source, destination: destination)
+          }
           .listRowInsets(EdgeInsets())
-          .onAppear {
-            BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
-              listID: node.id,
-              rowID: child.id,
-              totalRows: node.children.count
-            )
+          .listRowBackground(bonsaiHomeBodyBackground)
+      } else {
+        ForEach(lazyListPositions()) { position in
+          lazyListRowPosition(
+            providerId: providerId,
+            position: position
+          )
+        }
+          .onDelete { offsets in
+            deleteLazyListRows(offsets: offsets)
           }
-          .onDisappear {
-            BonsaiNativeListVirtualizationProbe.shared.rowDisappeared(
-              listID: node.id,
-              rowID: child.id,
-              totalRows: node.children.count
-            )
+          .onMove { source, destination in
+            moveLazyListRows(source: source, destination: destination)
           }
+          .listRowInsets(EdgeInsets())
+          .listRowBackground(bonsaiHomeBodyBackground)
       }
-      .onDelete { offsets in
-        guard let index = offsets.first else { return }
-        emitListChangeWithoutAnimation(
-          name: "native_delete",
-          listID: node.id,
-          eventId: node.listDeleteEventId,
-          text: String(index)
-        )
-      }
-      .onMove { source, destination in
-        guard let fromIndex = source.first else { return }
-        emitListChangeWithoutAnimation(
-          name: "native_move",
-          listID: node.id,
-          eventId: node.listMoveEventId,
-          text: "\(fromIndex):\(destination)"
-        )
+    } else {
+      if node.listDeleteEventId == nil {
+        nativeStaticListRows()
+          .onMove { source, destination in
+            moveStaticListRows(source: source, destination: destination)
+          }
+      } else {
+        nativeStaticListRows()
+          .onDelete { offsets in
+            deleteStaticListRows(offsets: offsets)
+          }
+          .onMove { source, destination in
+            moveStaticListRows(source: source, destination: destination)
+          }
       }
     }
+  }
+
+  private func nativeStaticListRows() -> some DynamicViewContent {
+    ForEach(node.children) { child in
+      BonsaiNativeNodeView(node: child, model: model)
+          .listRowInsets(EdgeInsets())
+        .listRowBackground(bonsaiHomeBodyBackground)
+        .onAppear {
+          BonsaiNativeListVirtualizationProbe.shared.rowAppeared(
+            listID: node.id,
+            rowID: child.id,
+            totalRows: node.children.count
+          )
+        }
+        .onDisappear {
+          BonsaiNativeListVirtualizationProbe.shared.rowDisappeared(
+            listID: node.id,
+            rowID: child.id,
+            totalRows: node.children.count
+          )
+        }
+    }
+  }
+
+  private func deleteStaticListRows(offsets: IndexSet) {
+    guard let index = offsets.first else { return }
+    emitListChangeWithoutAnimation(
+      name: "native_delete",
+      listID: node.id,
+      eventId: node.listDeleteEventId,
+      text: String(index)
+    )
+  }
+
+  private func moveStaticListRows(source: IndexSet, destination: Int) {
+    guard let fromIndex = source.first else { return }
+    emitListChangeWithoutAnimation(
+      name: "native_move",
+      listID: node.id,
+      eventId: node.listMoveEventId,
+      text: "\(fromIndex):\(destination)"
+    )
   }
 
   private func deleteLazyListRows(offsets: IndexSet) {
@@ -3863,6 +4057,7 @@ private struct BonsaiNativeNodeView: View {
     )
     .equatable()
     .listRowSeparator(.hidden)
+    .listRowBackground(bonsaiHomeBodyBackground)
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
@@ -4002,11 +4197,19 @@ private struct BonsaiNativeNodeView: View {
         if let index = node.navigationDestinationIds.firstIndex(of: destinationId),
            node.children.indices.contains(index + 1) {
           BonsaiNativeNodeView(node: node.children[index + 1], model: model)
+            .bonsaiNavigationChrome()
         } else {
           EmptyView()
+            .bonsaiNavigationChrome()
         }
       }
+      .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+      .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+      .bonsaiBottomBarChrome()
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+    .bonsaiBottomBarChrome()
   }
 
   @ViewBuilder
@@ -4103,6 +4306,9 @@ private struct BonsaiNativeNodeView: View {
       get: { Self.dateFormatter.date(from: node.selectedDateText) ?? Date() },
       set: { date in
         let selected = Self.dateFormatter.string(from: date)
+        bonsaiDatePickerDebugLogger.notice(
+          "datePicker setter node=\(node.id.uuidString, privacy: .public) old=\(node.selectedDateText, privacy: .public) selected=\(selected, privacy: .public) event=\(String(describing: node.changeEventId), privacy: .public)"
+        )
         node.selectedDateText = selected
         model.sendChange(node.changeEventId, text: selected)
       }
@@ -4111,6 +4317,7 @@ private struct BonsaiNativeNodeView: View {
 
   private var datePicker: some View {
     DatePicker(node.text, selection: datePickerDate, displayedComponents: .date)
+      .datePickerStyle(.graphical)
   }
 
   private var colorPickerColor: Binding<Color> {
@@ -4970,43 +5177,95 @@ private struct BonsaiNativeNodeView: View {
 
   private func applyModifiers<Content: View>(to content: Content) -> some View {
     content
-      .modifier(BonsaiNativeNodeModifiers(node: node, model: model))
+        .modifier(BonsaiNativeNodeModifiers(node: node, model: model))
       .toolbar {
         if !suppressNativeToolbar {
           nativeToolbarItems
         }
       }
+      .bonsaiBottomBarChrome()
   }
 
   @ToolbarContentBuilder
   private var nativeToolbarItems: some ToolbarContent {
-    ToolbarItemGroup(placement: .automatic) {
-      ForEach(node.toolbarItems) { item in
-        if let shareURL = item.shareURL, let url = URL(string: shareURL) {
-          ShareLink(item: url) {
-            toolbarActionLabel(item)
-          }
-          .disabled(!item.isEnabled)
-        } else if item.menuActions.isEmpty {
-          Button {
-            if let eventId = item.eventId {
-              model.sendClick(eventId)
-            }
-          } label: {
-            toolbarActionLabel(item)
-          }
-          .disabled(!item.isEnabled)
-        } else {
-          Menu {
-            ForEach(item.menuActions) { action in
-              toolbarMenuActionButton(action)
-            }
-          } label: {
-            toolbarMenuLabel(item)
-          }
-          .disabled(!item.isEnabled)
+    if !node.toolbarItems.isEmpty {
+      ToolbarItemGroup(placement: .automatic) {
+        ForEach(node.toolbarItems) { item in
+          toolbarItemView(item)
         }
       }
+    }
+    if node.toolbarContents.indices.contains(0) {
+      nativeToolbarContent(node.toolbarContents[0])
+    }
+    if node.toolbarContents.indices.contains(1) {
+      nativeToolbarContent(node.toolbarContents[1])
+    }
+    if node.toolbarContents.indices.contains(2) {
+      nativeToolbarContent(node.toolbarContents[2])
+    }
+    if node.toolbarContents.indices.contains(3) {
+      nativeToolbarContent(node.toolbarContents[3])
+    }
+    if node.toolbarContents.indices.contains(4) {
+      nativeToolbarContent(node.toolbarContents[4])
+    }
+    if node.toolbarContents.indices.contains(5) {
+      nativeToolbarContent(node.toolbarContents[5])
+    }
+    if node.toolbarContents.indices.contains(6) {
+      nativeToolbarContent(node.toolbarContents[6])
+    }
+    if node.toolbarContents.indices.contains(7) {
+      nativeToolbarContent(node.toolbarContents[7])
+    }
+  }
+
+  @ToolbarContentBuilder
+  private func nativeToolbarContent(_ content: BonsaiNativeToolbarContent) -> some ToolbarContent {
+    switch content.kind {
+    case .group:
+      ToolbarItemGroup(placement: content.placement.swiftUIPlacement) {
+        ForEach(content.items) { item in
+          toolbarItemView(item)
+        }
+      }
+    case .spacer:
+      if #available(iOS 26.0, *) {
+        if content.fixed {
+          ToolbarSpacer(.fixed, placement: content.placement.swiftUIPlacement)
+        } else {
+          ToolbarSpacer(placement: content.placement.swiftUIPlacement)
+        }
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func toolbarItemView(_ item: BonsaiNativeToolbarItem) -> some View {
+    if let shareURL = item.shareURL, let url = URL(string: shareURL) {
+      ShareLink(item: url) {
+        toolbarActionLabel(item)
+      }
+      .disabled(!item.isEnabled)
+    } else if item.menuActions.isEmpty {
+      Button {
+        if let eventId = item.eventId {
+          model.sendClick(eventId)
+        }
+      } label: {
+        toolbarActionLabel(item)
+      }
+      .disabled(!item.isEnabled)
+    } else {
+      Menu {
+        ForEach(item.menuActions) { action in
+          toolbarMenuActionButton(action)
+        }
+      } label: {
+        toolbarMenuLabel(item)
+      }
+      .disabled(!item.isEnabled)
     }
   }
 }
@@ -6727,6 +6986,17 @@ public func bonsai_native_swiftui_set_tap_action(
   node.tapEventId = eventId < 0 ? nil : eventId
 }
 
+@_cdecl("bonsai_native_swiftui_set_horizontal_swipe")
+public func bonsai_native_swiftui_set_horizontal_swipe(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ leftEventId: Int32,
+  _ rightEventId: Int32
+) {
+  guard let node = nativeNode(from: pointer) else { return }
+  node.horizontalSwipeLeftEventId = leftEventId < 0 ? nil : leftEventId
+  node.horizontalSwipeRightEventId = rightEventId < 0 ? nil : rightEventId
+}
+
 @_cdecl("bonsai_native_swiftui_set_on_appear")
 public func bonsai_native_swiftui_set_on_appear(
   _ pointer: UnsafeMutableRawPointer?,
@@ -6959,6 +7229,9 @@ public func bonsai_native_swiftui_set_date_picker(
   node.text = titlePointer.map(String.init(cString:)) ?? ""
   node.selectedDateText = selectedPointer.map(String.init(cString:)) ?? ""
   node.changeEventId = eventId < 0 ? nil : eventId
+  bonsaiDatePickerDebugLogger.notice(
+    "setDatePicker node=\(node.id.uuidString, privacy: .public) title=\(node.text, privacy: .public) selected=\(node.selectedDateText, privacy: .public) event=\(eventId, privacy: .public)"
+  )
 }
 
 @_cdecl("bonsai_native_swiftui_set_color_picker")
@@ -7339,6 +7612,44 @@ public func bonsai_native_swiftui_set_navigation_title(
 public func bonsai_native_swiftui_clear_toolbar(_ pointer: UnsafeMutableRawPointer?) {
   guard let node = nativeNode(from: pointer) else { return }
   node.toolbarItems = []
+  node.toolbarContents = []
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_group")
+public func bonsai_native_swiftui_append_toolbar_group(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ placement: Int32
+) {
+  guard let node = nativeNode(from: pointer), let idPointer else { return }
+  node.toolbarContents.append(
+    BonsaiNativeToolbarContent(
+      id: String(cString: idPointer),
+      kind: .group,
+      placement: BonsaiNativeToolbarPlacement(rawValue: placement) ?? .automatic,
+      fixed: false,
+      items: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_spacer")
+public func bonsai_native_swiftui_append_toolbar_spacer(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ placement: Int32,
+  _ fixed: Bool
+) {
+  guard let node = nativeNode(from: pointer), let idPointer else { return }
+  node.toolbarContents.append(
+    BonsaiNativeToolbarContent(
+      id: String(cString: idPointer),
+      kind: .spacer,
+      placement: BonsaiNativeToolbarPlacement(rawValue: placement) ?? .automatic,
+      fixed: fixed,
+      items: []
+    )
+  )
 }
 
 @_cdecl("bonsai_native_swiftui_clear_keyboard_toolbar")
@@ -7362,6 +7673,40 @@ public func bonsai_native_swiftui_append_toolbar_item(
         let idPointer,
         let titlePointer else { return }
   node.toolbarItems.append(
+    BonsaiNativeToolbarItem(
+      id: String(cString: idPointer),
+      title: String(cString: titlePointer),
+      systemImage: systemImagePointer.map(String.init(cString:)),
+      isTitleVisible: isTitleVisible,
+      eventId: eventId < 0 ? nil : eventId,
+      isEnabled: isEnabled,
+      shareURL: shareURLPointer.map(String.init(cString:)),
+      menuActions: []
+    )
+  )
+}
+
+@_cdecl("bonsai_native_swiftui_append_toolbar_group_item")
+public func bonsai_native_swiftui_append_toolbar_group_item(
+  _ pointer: UnsafeMutableRawPointer?,
+  _ groupIdPointer: UnsafePointer<CChar>?,
+  _ idPointer: UnsafePointer<CChar>?,
+  _ titlePointer: UnsafePointer<CChar>?,
+  _ systemImagePointer: UnsafePointer<CChar>?,
+  _ isTitleVisible: Bool,
+  _ isEnabled: Bool,
+  _ shareURLPointer: UnsafePointer<CChar>?,
+  _ eventId: Int32
+) {
+  guard let node = nativeNode(from: pointer),
+        let groupIdPointer,
+        let idPointer,
+        let titlePointer else { return }
+  let groupId = String(cString: groupIdPointer)
+  guard let groupIndex = node.toolbarContents.firstIndex(where: {
+    $0.id == groupId && $0.kind == .group
+  }) else { return }
+  node.toolbarContents[groupIndex].items.append(
     BonsaiNativeToolbarItem(
       id: String(cString: idPointer),
       title: String(cString: titlePointer),
@@ -7419,19 +7764,29 @@ public func bonsai_native_swiftui_append_toolbar_menu_action(
         let itemIdPointer,
         let titlePointer else { return }
   let itemId = String(cString: itemIdPointer)
-  guard let index = node.toolbarItems.firstIndex(where: { $0.id == itemId }) else { return }
-  node.toolbarItems[index].menuActions.append(
-    BonsaiNativeRowAction(
-      title: String(cString: titlePointer),
-      systemImage: systemImagePointer.map(String.init(cString:)),
-      style: style,
-      eventId: eventId < 0 ? nil : eventId,
-      startsSection: startsSection,
-      exportFilename: exportFilenamePointer.map(String.init(cString:)),
-      exportContentType: exportContentTypePointer.map(String.init(cString:)),
-      exportContent: exportContentPointer.map(String.init(cString:))
-    )
+  let action = BonsaiNativeRowAction(
+    title: String(cString: titlePointer),
+    systemImage: systemImagePointer.map(String.init(cString:)),
+    style: style,
+    eventId: eventId < 0 ? nil : eventId,
+    startsSection: startsSection,
+    exportFilename: exportFilenamePointer.map(String.init(cString:)),
+    exportContentType: exportContentTypePointer.map(String.init(cString:)),
+    exportContent: exportContentPointer.map(String.init(cString:))
   )
+  if let index = node.toolbarItems.firstIndex(where: { $0.id == itemId }) {
+    node.toolbarItems[index].menuActions.append(action)
+    return
+  }
+  for contentIndex in node.toolbarContents.indices {
+    guard node.toolbarContents[contentIndex].kind == .group else { continue }
+    if let itemIndex = node.toolbarContents[contentIndex].items.firstIndex(where: {
+      $0.id == itemId
+    }) {
+      node.toolbarContents[contentIndex].items[itemIndex].menuActions.append(action)
+      return
+    }
+  }
 }
 
 @_cdecl("bonsai_native_swiftui_clear_tabs")
@@ -7704,6 +8059,7 @@ public func bonsai_native_swiftui_make_window(
 ) -> UnsafeMutableRawPointer? {
   guard let root = nativeNode(from: rootPointer) else { return nil }
   let window = UIWindow(frame: UIScreen.main.bounds)
+  window.backgroundColor = bonsaiHomeBodyUIColor(for: window.traitCollection)
   window.rootViewController = makeHostingController(root: root, callback: callback)
   window.makeKeyAndVisible()
   return Unmanaged.passRetained(window).toOpaque()

@@ -424,6 +424,13 @@ external set_native_tap_action
   -> unit
   = "bonsai_apple_swiftui_set_tap_action"
 
+external set_native_horizontal_swipe
+  :  native
+  -> int
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_set_horizontal_swipe"
+
 external set_native_on_appear
   :  native
   -> int
@@ -783,6 +790,35 @@ external append_native_toolbar_item
   = "bonsai_apple_swiftui_append_toolbar_item_bytecode"
     "bonsai_apple_swiftui_append_toolbar_item"
 
+external append_native_toolbar_group
+  :  native
+  -> string
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_toolbar_group"
+
+external append_native_toolbar_spacer
+  :  native
+  -> string
+  -> int
+  -> bool
+  -> unit
+  = "bonsai_apple_swiftui_append_toolbar_spacer"
+
+external append_native_toolbar_group_item
+  :  native
+  -> string
+  -> string
+  -> string
+  -> string option
+  -> bool
+  -> bool
+  -> string option
+  -> int
+  -> unit
+  = "bonsai_apple_swiftui_append_toolbar_group_item_bytecode"
+    "bonsai_apple_swiftui_append_toolbar_group_item"
+
 external clear_native_keyboard_toolbar
   :  native
   -> unit
@@ -1069,6 +1105,8 @@ module Backend = struct
     ; mutable navigation_activate_event_id : int option
     ; mutable navigation_deactivate_event_id : int option
     ; mutable tap_event_id : int option
+    ; mutable horizontal_swipe_left_event_id : int option
+    ; mutable horizontal_swipe_right_event_id : int option
     ; mutable appear_event_id : int option
     ; mutable change_event_id : int option
     ; mutable text_delete_backward_at_start_event_id : int option
@@ -1116,6 +1154,8 @@ module Backend = struct
     ; navigation_activate_event_id = None
     ; navigation_deactivate_event_id = None
     ; tap_event_id = None
+    ; horizontal_swipe_left_event_id = None
+    ; horizontal_swipe_right_event_id = None
     ; appear_event_id = None
     ; change_event_id = None
     ; text_delete_backward_at_start_event_id = None
@@ -1159,6 +1199,8 @@ module Backend = struct
     clear_lazy_list_provider view;
     clear_handler view.click_event_id;
     clear_handler view.tap_event_id;
+    clear_handler view.horizontal_swipe_left_event_id;
+    clear_handler view.horizontal_swipe_right_event_id;
     clear_handler view.appear_event_id;
     clear_handler view.change_event_id;
     clear_handler view.text_delete_backward_at_start_event_id;
@@ -1716,6 +1758,9 @@ module Backend = struct
         view.change_event_id <- Some event_id;
         event_id
     in
+    Printf.eprintf
+      "[SimpleOutlinerDebug] bridge_set_date_picker title=%s selected=%s event=%d\n%!"
+      title selected event_id;
     set_native_date_picker view.native title selected event_id
   ;;
 
@@ -1894,6 +1939,28 @@ module Backend = struct
       let event_id = install_handler view.tap_event_id (Click handler) in
       view.tap_event_id <- Some event_id;
       set_native_tap_action view.native event_id
+  ;;
+
+  let set_horizontal_swipe view handlers =
+    let clear () =
+      clear_handler view.horizontal_swipe_left_event_id;
+      clear_handler view.horizontal_swipe_right_event_id;
+      view.horizontal_swipe_left_event_id <- None;
+      view.horizontal_swipe_right_event_id <- None;
+      set_native_horizontal_swipe view.native no_event no_event
+    in
+    match handlers with
+    | None -> clear ()
+    | Some (on_left, on_right) ->
+      let left_event_id =
+        install_handler view.horizontal_swipe_left_event_id (Click on_left)
+      in
+      let right_event_id =
+        install_handler view.horizontal_swipe_right_event_id (Click on_right)
+      in
+      view.horizontal_swipe_left_event_id <- Some left_event_id;
+      view.horizontal_swipe_right_event_id <- Some right_event_id;
+      set_native_horizontal_swipe view.native left_event_id right_event_id
   ;;
 
   let set_on_appear view handler =
@@ -2272,13 +2339,61 @@ module Backend = struct
     List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
     view.toolbar_event_ids <- [];
     clear_native_toolbar view.native;
-    List.iter items ~f:(fun (item : Apple.toolbar_item) ->
+    let install_item append_item (item : Apple.toolbar_item) =
       let event_id =
         install_handler None (Click (fun () -> schedule_event item.on_click))
       in
       view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
-      append_native_toolbar_item
+      append_item item event_id;
+      List.iter item.menu_actions ~f:(fun action ->
+        let event_id =
+          install_handler None (Click (fun () -> schedule_event action.on_click))
+        in
+        view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
+        append_native_toolbar_menu_action
+          view.native
+          item.id
+          action.title
+          action.system_image
+          (style_id action.style)
+          event_id
+          action.starts_section
+          (Option.map action.file_export ~f:(fun export -> export.filename))
+          (Option.map action.file_export ~f:(fun export -> export.content_type))
+          (Option.map action.file_export ~f:(fun export -> export.content)))
+    in
+    List.iter items ~f:(fun item ->
+      install_item
+        (fun item event_id ->
+          append_native_toolbar_item
+            view.native
+            item.id
+            item.title
+            item.system_image
+            item.is_title_visible
+            item.is_enabled
+            item.share_url
+            event_id)
+        item)
+  ;;
+
+  let toolbar_placement_id = function
+    | Apple.Automatic -> 0
+    | Apple.Bottom_bar -> 1
+  ;;
+
+  let install_toolbar_groups view ~schedule_event contents =
+    List.iter view.toolbar_event_ids ~f:(fun event_id -> clear_handler (Some event_id));
+    view.toolbar_event_ids <- [];
+    clear_native_toolbar view.native;
+    let install_group_item group_id (item : Apple.toolbar_item) =
+      let event_id =
+        install_handler None (Click (fun () -> schedule_event item.on_click))
+      in
+      view.toolbar_event_ids <- event_id :: view.toolbar_event_ids;
+      append_native_toolbar_group_item
         view.native
+        group_id
         item.id
         item.title
         item.system_image
@@ -2301,7 +2416,18 @@ module Backend = struct
           action.starts_section
           (Option.map action.file_export ~f:(fun export -> export.filename))
           (Option.map action.file_export ~f:(fun export -> export.content_type))
-          (Option.map action.file_export ~f:(fun export -> export.content))))
+          (Option.map action.file_export ~f:(fun export -> export.content)))
+    in
+    List.iter contents ~f:(function
+      | Apple.Toolbar_group { id; placement; items } ->
+        append_native_toolbar_group view.native id (toolbar_placement_id placement);
+        List.iter items ~f:(install_group_item id)
+      | Apple.Toolbar_spacer { id; placement; fixed } ->
+        append_native_toolbar_spacer
+          view.native
+          id
+          (toolbar_placement_id placement)
+          fixed)
   ;;
 
   let clear_toolbar view =
@@ -2345,6 +2471,7 @@ module Backend = struct
     let saw_safe_area_inset_bottom = ref false in
     let saw_alert = ref false in
     let saw_toolbar = ref false in
+    let saw_toolbar_groups = ref false in
     let saw_keyboard_toolbar = ref false in
     let saw_padding = ref false in
     let saw_regular_material_panel = ref false in
@@ -2355,6 +2482,7 @@ module Backend = struct
     let saw_frame = ref false in
     let saw_navigation_title = ref false in
     let saw_tap_action = ref false in
+    let saw_horizontal_swipe = ref false in
     let saw_on_appear = ref false in
     let saw_keyboard_dismiss_controls = ref false in
     let saw_scroll_dismisses_keyboard = ref false in
@@ -2464,12 +2592,22 @@ module Backend = struct
       | Apple.Rendered_toolbar items ->
         saw_toolbar := true;
         install_toolbar view ~schedule_event items
+      | Apple.Rendered_toolbar_groups contents ->
+        saw_toolbar_groups := true;
+        install_toolbar_groups view ~schedule_event contents
       | Apple.Rendered_keyboard_toolbar items ->
         saw_keyboard_toolbar := true;
         install_keyboard_toolbar view ~schedule_event items
       | Apple.Rendered_tap_action { on_click } ->
         saw_tap_action := true;
         set_tap_action view (Some (fun () -> schedule_event on_click))
+      | Apple.Rendered_horizontal_swipe { on_left; on_right } ->
+        saw_horizontal_swipe := true;
+        set_horizontal_swipe
+          view
+          (Some
+             ( (fun () -> schedule_event on_left)
+             , fun () -> schedule_event on_right ))
       | Apple.Rendered_on_appear { on_appear } ->
         saw_on_appear := true;
         set_on_appear view (Some (fun () -> schedule_event on_appear))
@@ -2488,7 +2626,7 @@ module Backend = struct
     if not !saw_confirmation_dialog then clear_confirmation_dialog view;
     if not !saw_safe_area_inset_bottom then set_safe_area_inset_bottom view None;
     if not !saw_alert then clear_alert view;
-    if not !saw_toolbar then clear_toolbar view;
+    if not !saw_toolbar && not !saw_toolbar_groups then clear_toolbar view;
     if not !saw_keyboard_toolbar then clear_keyboard_toolbar view;
     if not !saw_padding then set_native_padding view.native (-1.) (-1.) (-1.) (-1.);
     if not !saw_regular_material_panel
@@ -2503,6 +2641,7 @@ module Backend = struct
     if not !saw_frame then set_native_frame view.native (-1.) (-1.) (-1.) 0;
     if not !saw_navigation_title then set_native_navigation_title view.native None;
     if not !saw_tap_action then set_tap_action view None;
+    if not !saw_horizontal_swipe then set_horizontal_swipe view None;
     if not !saw_on_appear then set_on_appear view None;
     if not !saw_keyboard_dismiss_controls
     then set_native_keyboard_dismiss_controls view.native false;

@@ -2887,6 +2887,71 @@ let test_toolbar_item_can_render_share_link () =
     "toolbar actions should keep the system ToolbarItem button chrome"
 ;;
 
+let test_bottom_toolbar_groups_render_native_toolbar_content () =
+  Backend.reset ();
+  let item id title image =
+    Apple.toolbar_item ~id ~title ~system_image:image ~is_title_visible:false
+      ~on_click:Apple.Action.ignore ()
+  in
+  let component _graph =
+    Apple.text "Preview"
+    |> Apple.toolbar_groups
+         [
+           Apple.toolbar_group ~id:"nav" ~placement:Apple.Bottom_bar
+             [
+               item "home" "Home" "house";
+               item "calendar" "Calendar" "calendar";
+             ];
+           Apple.toolbar_spacer ~id:"split" ~placement:Apple.Bottom_bar ();
+           Apple.toolbar_group ~id:"actions" ~placement:Apple.Bottom_bar
+             [
+               item "search" "Search" "magnifyingglass";
+               item "add" "Add" "plus";
+             ];
+         ]
+  in
+  let app = App.create component in
+  App.flush_and_render app;
+  let root =
+    match App.view app with
+    | Some root -> root
+    | None -> failwith "app did not render"
+  in
+  let rendered = Backend.show root in
+  require
+    (contains rendered
+       ~substring:
+         "toolbar-groups=[group:nav:bottom-bar:[home:Home:enabled:image=house:title-hidden,calendar:Calendar:enabled:image=calendar:title-hidden],spacer:split:bottom-bar:true,group:actions:bottom-bar:[search:Search:enabled:image=magnifyingglass:title-hidden,add:Add:enabled:image=plus:title-hidden]]")
+    ("bottom toolbar groups should render grouped bottom-bar toolbar content:\n"
+     ^ rendered);
+  require
+    (contains rendered ~substring:"toolbar-presentation=system-toolbaritem-groups")
+    "grouped toolbar content should still render through system ToolbarItem chrome";
+  let swift = read_file swiftui_source_path in
+  require
+    (contains swift
+       ~substring:"ToolbarItemGroup(placement: content.placement.swiftUIPlacement)")
+    "SwiftUI backend should render grouped toolbar content through native ToolbarItemGroup";
+  require
+    (contains swift
+       ~substring:"ToolbarSpacer(.fixed, placement: content.placement.swiftUIPlacement)")
+    "SwiftUI backend should render toolbar separators through native fixed ToolbarSpacer"
+;;
+
+let test_navigation_path_stack_uses_grouped_background_chrome () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:".toolbarBackground(bonsaiHomeBodyBackground, for: .navigationBar)")
+    "Navigation path stacks should tint the navigation bar with the same grouped background";
+  require
+    (contains source
+       ~substring:".toolbarBackground(bonsaiHomeBodyBackground, for: .bottomBar)")
+    "Navigation path stacks should tint the bottom toolbar with the same grouped background";
+  require
+    (contains source ~substring:".listRowBackground(bonsaiHomeBodyBackground)")
+    "Native list rows should use the same grouped background as the page"
+;;
+
 let test_movable_rows_move_only_the_group_children () =
   Backend.reset ();
   let filteri list ~f =
@@ -3142,6 +3207,8 @@ let () =
   test_toggle_audio_file_playback_action_updates_test_playback_state ();
   test_audio_recording_actions_update_testing_backend ();
   test_toolbar_item_can_render_share_link ();
+  test_bottom_toolbar_groups_render_native_toolbar_content ();
+  test_navigation_path_stack_uses_grouped_background_chrome ();
   test_movable_rows_move_only_the_group_children ();
   test_list_marks_focused_row_for_native_scroll ();
   test_focused_lazy_row_replacement_does_not_blur_visible_index ();
