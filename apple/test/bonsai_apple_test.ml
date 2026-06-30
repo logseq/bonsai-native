@@ -143,15 +143,76 @@ let test_navigation_value_links_do_not_preempt_system_push () =
      and header transitions remain native"
 ;;
 
-let test_compact_sidebar_close_paths_share_swift_animation () =
+let test_compact_sidebar_uses_chatgpt_drawer () =
   let source = read_file swiftui_source_path in
-  let expected_direct_close_paths = 3 in
   require
-    (count_substrings source ~substring:"setCompactSidebarOpen(false)"
-     >= expected_direct_close_paths)
-    "compact sidebar overlay and drag close paths should go through \
-     setCompactSidebarOpen(false) for the Swift drawer animation, keyboard dismissal, \
-     haptic, and drag-state reset";
+    (contains source ~substring:"@State private var isCompactSidebarOpen = false")
+    "compact sidebar should be a drawer that can stay open over the main page";
+  require
+    (contains source ~substring:"private func compactSidebarDrawerWidth")
+    "compact sidebar should compute a drawer width that leaves the main page visible";
+  require
+    (contains source ~substring:"private func compactSidebarPeekWidth")
+    "compact sidebar should reserve a visible main-page peek like ChatGPT";
+  require
+    (contains source ~substring:"compactSidebarMainCornerRadius")
+    "compact sidebar should round the main page while the drawer is open";
+  require
+    (contains
+       source
+       ~substring:
+         "RoundedRectangle(\n                cornerRadius: \
+          compactSidebarMainCornerRadius(progress: progress),\n                style: \
+          .continuous")
+    "compact sidebar should use the same continuous corner curve as normal page \
+     transitions";
+  require
+    (contains source ~substring:"48 * progress")
+    "compact sidebar main page corner radius should match the larger system page \
+     transition radius";
+  require
+    (contains source ~substring:"compactSidebarMainShadowOpacity")
+    "compact sidebar should cast a shadow from the visible main page edge";
+  require
+    (contains
+       source
+       ~substring:"GeometryReader { proxy in\n        let screenSize = proxy.size")
+    "compact drawer should measure the full screen, not the safe-area content rect";
+  require
+    (contains
+       source
+       ~substring:
+         "}\n      .ignoresSafeArea(.container, edges: .all)\n    }\n  }\n\n  private var compactSidebarMainPage")
+    "compact drawer geometry should ignore safe areas so the rounded main card starts \
+     at the screen top";
+  require
+    (contains source ~substring:"DragGesture(minimumDistance: 16, coordinateSpace: .global)")
+    "compact sidebar should support swipe-right from anywhere on the main page";
+  require
+    (contains source ~substring:".highPriorityGesture(")
+    "compact sidebar root should receive horizontal open drags before nested content \
+     gestures swallow them";
+  require
+    (contains source ~substring:"handleCompactSidebarDragChanged")
+    "compact sidebar should update interactively during horizontal drags";
+  require
+    (contains source ~substring:".allowsHitTesting(!isCompactSidebarOpen)")
+    "compact sidebar should disable main-page taps while the drawer is open";
+  require
+    (contains
+       source
+       ~substring:
+         ".environment(\\.bonsaiSuppressNativeToolbar, isCompactSidebarOpen || \
+          isCompactSidebarDragging)")
+    "compact sidebar should hide main-page bottom toolbar while the drawer is open or \
+     dragging";
+  require
+    (not (contains source ~substring:"preferredCompactColumn: $compactSidebarPreferredColumn"))
+    "compact sidebar should not rely on split-view compact column selection for the \
+     ChatGPT-style drawer";
+  require
+    (not (contains source ~substring:"NavigationLink(isActive: $isCompactSidebarMainPagePresented)"))
+    "compact sidebar should not rely on a hidden deprecated NavigationLink to push on launch";
   require
     (count_substrings source ~substring:"performSidebarAction(action)" >= 2)
     "compact sidebar action taps should share the data-driven action helper";
@@ -160,15 +221,50 @@ let test_compact_sidebar_close_paths_share_swift_animation () =
     "compact sidebar actions should select the route locally before the OCaml rerender";
   require
     (contains source ~substring:"node.selectedTabId = selectedTab")
-    "compact sidebar route selection should update the selected route in the Swift \
-     animation transaction";
+    "compact sidebar route selection should update the selected route before pushing the \
+     main page";
   require
     (count_substrings source ~substring:"closeCompactSidebarIfNeeded(action)" = 1)
-    "compact sidebar action close policy should stay centralized";
+    "compact sidebar action close policy should stay centralized"
+;;
+
+let test_compact_sidebar_keeps_drawer_drag_arbitration_local () =
+  let source = read_file swiftui_source_path in
   require
-    (count_substrings source ~substring:"isCompactSidebarOpen = false" = 1)
-    "compact sidebar close paths should not mutate isCompactSidebarOpen directly \
-     outside its @State initial value"
+    (not (contains source ~substring:"private var canSelectCompactSidebarItem"))
+    "compact drawer should not keep the old tap lockout helper";
+  require
+    (contains source ~substring:"private enum DragAxis")
+    "compact drawer should classify drag axis before opening the sidebar";
+  require
+    (not (contains source ~substring:"didContentHorizontalSwipeOwnCurrentDrag"))
+    "row swipe ownership tracking should not be reintroduced"
+;;
+
+let test_compact_sidebar_uses_drawer_for_content_swipes () =
+  let source = read_file swiftui_source_path in
+  require
+    (not (contains source ~substring:"bonsaiContentHorizontalSwipeActiveChanged"))
+    "drawer swipe should rely on directional event gating instead of content swipe callbacks";
+  require
+    (contains source ~substring:"handleCompactSidebarDragEnded")
+    "compact sidebar should finish right/left swipes through the drawer transition"
+;;
+
+let test_horizontal_swipe_ignores_disabled_directions () =
+  let source = read_file swiftui_source_path in
+  require
+    (contains source ~substring:"private func horizontalSwipeOffset")
+    "horizontal swipe modifier should centralize directional offset gating";
+  require
+    (contains source ~substring:"guard node.horizontalSwipeRightEventId != nil else { return 0 }")
+    "right swipe should not move row content when the right action is disabled";
+  require
+    (contains source ~substring:"guard node.horizontalSwipeLeftEventId != nil else { return 0 }")
+    "left swipe should not move row content when the left action is disabled";
+  require
+    (contains source ~substring:"guard let eventId = horizontalSwipeEventId")
+    "horizontal swipe should only haptic/send for an enabled direction"
 ;;
 
 let test_native_list_uses_stable_node_identity () =
@@ -1965,7 +2061,7 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
        ~substring:
          "sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 \
           bottom=max-safe-area-or-34")
-    "compact sidebar should use the same safe-area padding as the Swift drawer";
+    "compact sidebar should use the same safe-area padding as the Swift page root";
   require
     (contains
        rendered
@@ -1981,26 +2077,31 @@ let test_compact_sidebar_top_bar_uses_system_toolbar_item_chrome () =
     (contains
        rendered
        ~substring:
-         "sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging")
-    "compact sidebar should disable scroll during the same drawer states as Swift";
+         "sidebar-navigation=chatgpt-drawer")
+    "compact sidebar should use a ChatGPT-style drawer";
   require
     (contains
        rendered
        ~substring:
-         "sidebar-route-selection-animation=swift-interactive-spring \
-          route-change-and-close")
-    "compact sidebar route selection should animate route changes and drawer close";
+         "sidebar-transition=interactive-drawer sidebar-toggle=open-drawer")
+    "compact sidebar toggle should open the drawer through the Swift drawer animation";
   require
     (contains
        rendered
-       ~substring:"sidebar-edge-gesture=enabled-when-compact-top-bar-visible")
-    "compact sidebar edge gesture should follow the same route gating as Swift";
+       ~substring:"sidebar-route-selection=select-route-and-close-drawer")
+    "compact sidebar route selection should close the drawer";
   require
     (contains
        rendered
        ~substring:
-         "sidebar-open-close=swift-interactive-spring keyboard-dismiss haptic-on-change")
-    "compact sidebar should use the same open and close interaction behavior as Swift"
+         "sidebar-main-chrome=peek-rounded-shadow-continuous sidebar-swipe=open-anywhere")
+    "compact sidebar should advertise the visible continuous-rounded main-page peek and \
+     swipe-open behavior";
+  require
+    (contains
+       rendered
+       ~substring:"toolbaritem-leading-chrome=liquid-glass")
+    "compact sidebar leading toolbar item should keep the liquid glass chrome"
 ;;
 
 let test_compact_sidebar_bottom_search_tracks_keyboard () =
@@ -2011,8 +2112,7 @@ let test_compact_sidebar_bottom_search_tracks_keyboard () =
      staying behind the keyboard";
   require
     (contains source ~substring:"keyboardWillChangeFrameNotification")
-    "compact sidebar should observe keyboard frame changes for the custom full-screen \
-     drawer";
+    "compact sidebar should observe keyboard frame changes on the drawer root";
   require
     (contains source ~substring:".padding(.bottom, sidebarKeyboardBottomPadding)")
     "compact sidebar bottom search should relayout above the keyboard instead of only \
@@ -2038,7 +2138,7 @@ let test_compact_sidebar_keyboard_tracking_stays_on_drawer_root () =
     | None -> failwith "compactSidebarContent call not found"
   in
   let route_detail_start =
-    match substring_index split_source ~substring:"ZStack(alignment: .top)" ~from:sidebar_content_start with
+    match substring_index split_source ~substring:"compactSidebarMainPage" ~from:sidebar_content_start with
     | Some index -> index
     | None -> failwith "selected route detail stack not found"
   in
@@ -3112,7 +3212,10 @@ let () =
   test_custom_label_buttons_use_full_label_hit_target ();
   test_navigation_value_links_do_not_preempt_system_push ();
   test_navigation_links_render_without_system_link_chrome ();
-  test_compact_sidebar_close_paths_share_swift_animation ();
+  test_compact_sidebar_uses_chatgpt_drawer ();
+  test_compact_sidebar_keeps_drawer_drag_arbitration_local ();
+  test_compact_sidebar_uses_drawer_for_content_swipes ();
+  test_horizontal_swipe_ignores_disabled_directions ();
   test_native_list_uses_stable_node_identity ();
   test_list_virtualization_probe_does_not_log_per_row_events ();
   test_swiftui_library_builds_in_default_ios_context ();

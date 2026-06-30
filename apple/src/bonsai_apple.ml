@@ -4825,19 +4825,16 @@ module For_testing = struct
         match view.kind with
         | Sidebar_split when view.sidebar_compact_top_bar_visible ->
           let title = Option.value view.sidebar_title ~default:"Menu" in
-          " sidebar-drawer=full-screen sidebar-padding=12 sidebar-header-title="
+          " sidebar-navigation=chatgpt-drawer sidebar-padding=12 sidebar-header-title="
           ^ title
           ^ " sidebar-primary-row-height=52 sidebar-selected-corner-radius=12"
           ^ " sidebar-safe-area-padding=swift top=max-safe-area-plus-5-or-54 \
              bottom=max-safe-area-or-34"
           ^ " sidebar-shell-background=home-body-ignores-safe-area-outside-clip"
           ^ " sidebar-bottom-controls=safe-area-inset keyboard-padding top-padding=10"
-          ^ " sidebar-scroll-disabled=dragging content-scroll-disabled=open-or-dragging"
-          ^ " sidebar-route-selection-animation=swift-interactive-spring \
-             route-change-and-close"
-          ^ " sidebar-edge-gesture=enabled-when-compact-top-bar-visible"
-          ^ " sidebar-open-close=swift-interactive-spring keyboard-dismiss \
-             haptic-on-change"
+          ^ " sidebar-transition=interactive-drawer sidebar-toggle=open-drawer"
+          ^ " sidebar-route-selection=select-route-and-close-drawer"
+          ^ " sidebar-main-chrome=peek-rounded-shadow-continuous sidebar-swipe=open-anywhere"
           ^ " sidebar-search-style=liquid-glass compact-top-bar=system-toolbar"
           ^ " toolbaritem-leading=sidebar-toggle toolbaritem-title=navigation-title"
           ^ " toolbaritem-leading-chrome=liquid-glass"

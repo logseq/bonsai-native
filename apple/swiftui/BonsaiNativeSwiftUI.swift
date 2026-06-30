@@ -2333,10 +2333,24 @@ private struct BonsaiNativeHorizontalSwipeModifier: ViewModifier {
   @GestureState private var dragTranslation: CGSize = .zero
 
   private var horizontalOffset: CGFloat {
-    let horizontal = dragTranslation.width
-    let vertical = dragTranslation.height
+    horizontalSwipeOffset(for: dragTranslation)
+  }
+
+  private func horizontalSwipeOffset(for translation: CGSize) -> CGFloat {
+    let horizontal = translation.width
+    let vertical = translation.height
     guard abs(horizontal) > abs(vertical) * 1.2 else { return 0 }
+    if horizontal < 0 {
+      guard node.horizontalSwipeLeftEventId != nil else { return 0 }
+    } else if horizontal > 0 {
+      guard node.horizontalSwipeRightEventId != nil else { return 0 }
+    }
     return max(-64, min(64, horizontal * 0.35))
+  }
+
+  private func horizontalSwipeEventId(for translation: CGSize) -> Int32? {
+    let horizontal = translation.width
+    return horizontal < 0 ? node.horizontalSwipeLeftEventId : node.horizontalSwipeRightEventId
   }
 
   func body(content: Content) -> some View {
@@ -2355,12 +2369,11 @@ private struct BonsaiNativeHorizontalSwipeModifier: ViewModifier {
             guard abs(horizontal) >= 44, abs(horizontal) > abs(vertical) * 1.4 else {
               return
             }
-            bonsaiPerformLightHapticFeedback()
-            if horizontal < 0 {
-              model.sendClick(node.horizontalSwipeLeftEventId)
-            } else {
-              model.sendClick(node.horizontalSwipeRightEventId)
+            guard let eventId = horizontalSwipeEventId(for: value.translation) else {
+              return
             }
+            bonsaiPerformLightHapticFeedback()
+            model.sendClick(eventId)
           }
       )
   }
@@ -4471,9 +4484,10 @@ private struct BonsaiNativeNodeView: View {
         .ignoresSafeArea(.container, edges: .all)
 
       GeometryReader { proxy in
-        let revealWidth = proxy.size.width
-        let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
-        let progress = revealWidth > 0 ? visibleWidth / revealWidth : 0
+        let screenSize = proxy.size
+        let drawerWidth = compactSidebarDrawerWidth(containerWidth: screenSize.width)
+        let visibleWidth = compactSidebarVisibleWidth(drawerWidth: drawerWidth)
+        let progress = drawerWidth > 0 ? visibleWidth / drawerWidth : 0
         let sidebarTopInset = bonsaiDrawerSidebarTopInset(proxy.safeAreaInsets.top)
         let sidebarBottomInset = bonsaiDrawerSidebarBottomInset(proxy.safeAreaInsets.bottom)
 
@@ -4484,44 +4498,36 @@ private struct BonsaiNativeNodeView: View {
           compactSidebarContent
             .padding(.top, sidebarTopInset)
             .padding(.bottom, sidebarBottomInset)
-            .frame(width: revealWidth, height: proxy.size.height, alignment: .topLeading)
+            .frame(width: drawerWidth, height: screenSize.height, alignment: .topLeading)
             .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
             .opacity(progress)
             .scrollDisabled(isCompactSidebarDragging)
 
-          ZStack(alignment: .top) {
-            if node.sidebarCompactTopBarVisible {
-              selectedRouteDetail
-                .id(node.selectedTabId)
-                .transition(.opacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(compactSidebarSpringAnimation, value: node.selectedTabId)
-                .environment(
-                  \.bonsaiCompactSidebarToolbar,
-                  BonsaiCompactSidebarToolbar(
-                    title: selectedRouteTitle,
-                    openSidebar: {
-                      setCompactSidebarOpen(true)
-                    }
-                  )
-                )
-            } else {
-              selectedRouteDetail
-                .id(node.selectedTabId)
-                .transition(.opacity)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .animation(compactSidebarSpringAnimation, value: node.selectedTabId)
-            }
-          }
-          .frame(width: proxy.size.width, height: proxy.size.height)
-          .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
-          .offset(x: visibleWidth)
-          .scrollDisabled(isCompactSidebarOpen || isCompactSidebarDragging)
-          .clipShape(RoundedRectangle(cornerRadius: 28 * progress, style: .continuous))
+          compactSidebarMainPage
+            .frame(width: screenSize.width, height: screenSize.height)
+            .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+            .clipShape(
+              RoundedRectangle(
+                cornerRadius: compactSidebarMainCornerRadius(progress: progress),
+                style: .continuous
+              )
+            )
+            .shadow(
+              color: .black.opacity(compactSidebarMainShadowOpacity(progress: progress)),
+              radius: 24 * progress,
+              x: -10 * progress,
+              y: 0
+            )
+            .offset(x: visibleWidth)
+            .allowsHitTesting(!isCompactSidebarOpen)
+            .scrollDisabled(isCompactSidebarOpen || isCompactSidebarDragging)
 
           if isCompactSidebarOpen {
             Color.clear
-              .frame(width: max(0, proxy.size.width - visibleWidth), height: proxy.size.height)
+              .frame(
+                width: max(0, screenSize.width - visibleWidth),
+                height: screenSize.height
+              )
               .contentShape(Rectangle())
               .offset(x: visibleWidth)
               .onTapGesture {
@@ -4529,16 +4535,16 @@ private struct BonsaiNativeNodeView: View {
               }
           }
         }
-        .frame(width: proxy.size.width, height: proxy.size.height)
+        .frame(width: screenSize.width, height: screenSize.height)
         .clipped()
         .contentShape(Rectangle())
-        .simultaneousGesture(
+        .highPriorityGesture(
           DragGesture(minimumDistance: 16, coordinateSpace: .global)
             .onChanged { value in
-              handleCompactSidebarDragChanged(value, revealWidth: revealWidth)
+              handleCompactSidebarDragChanged(value, drawerWidth: drawerWidth)
             }
             .onEnded { value in
-              handleCompactSidebarDragEnded(value, revealWidth: revealWidth)
+              handleCompactSidebarDragEnded(value, drawerWidth: drawerWidth)
             }
         )
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillChangeFrameNotification)) { notification in
@@ -4552,7 +4558,35 @@ private struct BonsaiNativeNodeView: View {
           sidebarKeyboardBottomPadding = 0
         }
       }
+      .ignoresSafeArea(.container, edges: .all)
     }
+  }
+
+  private var compactSidebarMainPage: some View {
+    Group {
+      if node.sidebarCompactTopBarVisible {
+        selectedRouteDetail
+          .id(node.selectedTabId)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .environment(\.bonsaiSuppressNativeToolbar, isCompactSidebarOpen || isCompactSidebarDragging)
+          .environment(
+            \.bonsaiCompactSidebarToolbar,
+            BonsaiCompactSidebarToolbar(
+              title: selectedRouteTitle,
+              openSidebar: {
+                setCompactSidebarOpen(true)
+              }
+            )
+          )
+      } else {
+        selectedRouteDetail
+          .id(node.selectedTabId)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .environment(\.bonsaiSuppressNativeToolbar, isCompactSidebarOpen || isCompactSidebarDragging)
+      }
+    }
+    .background(bonsaiHomeBodyBackground.ignoresSafeArea(.container, edges: .all))
+    .navigationBarBackButtonHidden(true)
   }
 
   private var compactSidebarContent: some View {
@@ -4598,8 +4632,24 @@ private struct BonsaiNativeNodeView: View {
     return max(0, overlap - safeAreaBottom)
   }
 
-  private func compactSidebarVisibleWidth(revealWidth: CGFloat) -> CGFloat {
-    max(0, min(revealWidth, (isCompactSidebarOpen ? revealWidth : 0) + compactSidebarDragOffset))
+  private func compactSidebarPeekWidth(containerWidth: CGFloat) -> CGFloat {
+    min(max(56, containerWidth * 0.16), 88)
+  }
+
+  private func compactSidebarDrawerWidth(containerWidth: CGFloat) -> CGFloat {
+    max(0, containerWidth - compactSidebarPeekWidth(containerWidth: containerWidth))
+  }
+
+  private func compactSidebarVisibleWidth(drawerWidth: CGFloat) -> CGFloat {
+    max(0, min(drawerWidth, (isCompactSidebarOpen ? drawerWidth : 0) + compactSidebarDragOffset))
+  }
+
+  private func compactSidebarMainCornerRadius(progress: CGFloat) -> CGFloat {
+    48 * progress
+  }
+
+  private func compactSidebarMainShadowOpacity(progress: CGFloat) -> Double {
+    0.18 * Double(progress)
   }
 
   private func setCompactSidebarOpen(_ isOpen: Bool) {
@@ -4621,7 +4671,7 @@ private struct BonsaiNativeNodeView: View {
 
   private func handleCompactSidebarDragChanged(
     _ value: DragGesture.Value,
-    revealWidth: CGFloat
+    drawerWidth: CGFloat
   ) {
     guard node.sidebarCompactTopBarVisible || isCompactSidebarOpen else { return }
     let horizontal = value.translation.width
@@ -4634,13 +4684,13 @@ private struct BonsaiNativeNodeView: View {
       bonsaiDismissKeyboard()
     }
     isCompactSidebarDragging = true
-    let baseWidth = isCompactSidebarOpen ? revealWidth : 0
-    compactSidebarDragOffset = max(-baseWidth, min(revealWidth - baseWidth, horizontal))
+    let baseWidth = isCompactSidebarOpen ? drawerWidth : 0
+    compactSidebarDragOffset = max(-baseWidth, min(drawerWidth - baseWidth, horizontal))
   }
 
   private func handleCompactSidebarDragEnded(
     _ value: DragGesture.Value,
-    revealWidth: CGFloat
+    drawerWidth: CGFloat
   ) {
     defer {
       compactSidebarDragAxis = nil
@@ -4650,21 +4700,31 @@ private struct BonsaiNativeNodeView: View {
       compactSidebarDragOffset = 0
       return
     }
-    guard compactSidebarDragAxis == .horizontal else {
+    let horizontal = value.translation.width
+    let vertical = value.translation.height
+    let resolvedAxis =
+      compactSidebarDragAxis ?? (abs(horizontal) >= abs(vertical) ? DragAxis.horizontal : .vertical)
+    guard resolvedAxis == .horizontal else {
       compactSidebarDragOffset = 0
       return
     }
-    let visibleWidth = compactSidebarVisibleWidth(revealWidth: revealWidth)
+    let visibleWidth: CGFloat
+    if isCompactSidebarDragging {
+      visibleWidth = compactSidebarVisibleWidth(drawerWidth: drawerWidth)
+    } else {
+      visibleWidth = max(0, min(drawerWidth, (isCompactSidebarOpen ? drawerWidth : 0) + horizontal))
+    }
     let shouldOpen: Bool
     if isCompactSidebarOpen {
       let predictedCloseDistance = max(0, -value.predictedEndTranslation.width)
       let currentCloseDistance = max(0, -compactSidebarDragOffset)
       shouldOpen =
-        predictedCloseDistance < max(56, revealWidth * 0.18)
-        && currentCloseDistance < max(88, revealWidth * 0.28)
+        predictedCloseDistance < max(56, drawerWidth * 0.18)
+        && currentCloseDistance < max(72, drawerWidth * 0.24)
     } else {
-      let predictedVisibleWidth = max(0, min(revealWidth, value.predictedEndTranslation.width))
-      shouldOpen = predictedVisibleWidth > revealWidth * 0.48 || visibleWidth > revealWidth * 0.55
+      let predictedVisibleWidth = max(0, min(drawerWidth, value.predictedEndTranslation.width))
+      shouldOpen =
+        horizontal > 44 || predictedVisibleWidth > 56 || visibleWidth > drawerWidth * 0.28
     }
     setCompactSidebarOpen(shouldOpen)
   }
@@ -4773,7 +4833,7 @@ private struct BonsaiNativeNodeView: View {
       node.selectedTabId = tab.id
       updateCompactSidebarOpenState(false)
     }
-    model.sendChange(node.tabSelectEventId, text: tab.id, animation: compactSidebarSpringAnimation)
+    model.sendChange(node.tabSelectEventId, text: tab.id)
   }
 
   @ViewBuilder
@@ -4828,14 +4888,13 @@ private struct BonsaiNativeNodeView: View {
 
   private func performSidebarAction(_ action: BonsaiNativeSidebarAction) {
     let selectedTab = sidebarActionSelectedTab(action)
-    let animation = action.closesSidebar ? compactSidebarSpringAnimation : nil
     if let selectedTab {
       selectSidebarActionRoute(selectedTab, closesSidebar: action.closesSidebar)
     } else {
       closeCompactSidebarIfNeeded(action)
     }
     if let eventId = action.eventId {
-      model.sendClick(eventId, animation: animation)
+      model.sendClick(eventId)
     }
   }
 
@@ -4847,8 +4906,8 @@ private struct BonsaiNativeNodeView: View {
   }
 
   private func selectSidebarActionRoute(_ selectedTab: String, closesSidebar: Bool) {
+    bonsaiDismissKeyboard()
     if closesSidebar {
-      bonsaiDismissKeyboard()
       if isCompactSidebarOpen {
         bonsaiPerformLightHapticFeedback()
       }
